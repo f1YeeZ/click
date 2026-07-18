@@ -1,0 +1,61 @@
+server:
+  port: ${BACKEND_PORT:8080}
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+spring:
+  application:
+    name: clicker-index-api
+  config:
+    import:
+      - optional:file:../.env[.properties]
+      - optional:file:.env[.properties]
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/click}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+      schema-locations: classpath:schema.sql
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: ${QQ_MAIL_USERNAME:}
+    password: ${QQ_MAIL_AUTH_CODE:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.ssl.enable: true
+  servlet:
+    multipart:
+      max-file-size: 6MB
+      max-request-size: 6MB
+
+mybatis-plus:
+  type-handlers-package: com.clicker.mousehub.common
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  jwt:
+    secret: ${JWT_SECRET:clicker-index-development-secret-change-before-production-2026}
+    expires-hours: ${JWT_EXPIRES_HOURS:168}
+  mail:
+    enabled: ${MAIL_ENABLED:false}
+    from: ${QQ_MAIL_FROM:${QQ_MAIL_USERNAME:}}
+  images:
+    storage-path: ${IMAGE_STORAGE_PATH:data/mouse-images}
+    max-size-bytes: ${IMAGE_MAX_SIZE_BYTES:5242880}
+  seed:
+    enabled: ${APP_SEED_ENABLED:true}
+    admin-email: ${APP_SEED_ADMIN_EMAIL:}
+    admin-password: ${APP_SEED_ADMIN_PASSWORD:}

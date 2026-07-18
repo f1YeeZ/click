@@ -1,0 +1,23 @@
+package com.clicker.mousehub.common;
+
+import org.apache.ibatis.type.*;
+
+import java.sql.*;
+import java.util.UUID;
+
+@MappedTypes(UUID.class)
+public class UuidTypeHandler extends BaseTypeHandler<UUID> {
+    @Override
+    public void setNonNullParameter(PreparedStatement ps, int i, UUID parameter, JdbcType jdbcType) throws SQLException {
+        ps.setObject(i, parameter);
+    }
+
+    @Override public UUID getNullableResult(ResultSet rs, String columnName) throws SQLException { return toUuid(rs.getObject(columnName)); }
+    @Override public UUID getNullableResult(ResultSet rs, int columnIndex) throws SQLException { return toUuid(rs.getObject(columnIndex)); }
+    @Override public UUID getNullableResult(CallableStatement cs, int columnIndex) throws SQLException { return toUuid(cs.getObject(columnIndex)); }
+
+    private UUID toUuid(Object value) {
+        if (value == null) return null;
+        return value instanceof UUID uuid ? uuid : UUID.fromString(value.toString());
+    }
+}

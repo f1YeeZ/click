@@ -1,0 +1,76 @@
+package com.clicker.mousehub.service;
+
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.clicker.mousehub.common.BusinessException;
+import com.clicker.mousehub.dto.AuthDtos.*;
+import com.clicker.mousehub.entity.UserAccount;
+import com.clicker.mousehub.mapper.UserMapper;
+import com.clicker.mousehub.security.JwtService;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+@Service
+public class AuthService {
+    private final UserMapper users;
+    private final PasswordEncoder encoder;
+    private final JwtService jwt;
+    private final MailService mail;
+
+    public AuthService(UserMapper users, PasswordEncoder encoder, JwtService jwt, MailService mail) {
+        this.users = users;
+        this.encoder = encoder;
+        this.jwt = jwt;
+        this.mail = mail;
+    }
+
+    @Transactional
+    public AuthResponse register(RegisterRequest request) {
+        String email = UserAccount.normalizeEmail(request.email());
+        if (find(email) != null) throw new BusinessException("ACCOUNT_UNAVAILABLE", "该邮箱暂不可注册", HttpStatus.CONFLICT);
+        OffsetDateTime now = OffsetDateTime.now();
+        UserAccount user = new UserAccount();
+        user.setId(UUID.randomUUID());
+        user.setEmail(email);
+        user.setPasswordHash(encoder.encode(request.password()));
+        user.setRole("USER");
+        user.setStatus("ACTIVE");
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+        users.insert(user);
+        mail.welcome(email);
+        return response(user);
+    }
+
+    public AuthResponse login(LoginRequest request) {
+        UserAccount user = find(UserAccount.normalizeEmail(request.email()));
+        if (user == null || !"ACTIVE".equals(user.getStatus()) || !encoder.matches(request.password(), user.getPasswordHash())) {
+            throw new BusinessException("INVALID_CREDENTIALS", "账号或密码错误", HttpStatus.UNAUTHORIZED);
+        }
+        return response(user);
+    }
+
+    public UserView me(String email) {
+        UserAccount user = find(UserAccount.normalizeEmail(email));
+        if (user == null) throw new BusinessException("UNAUTHORIZED", "登录已失效", HttpStatus.UNAUTHORIZED);
+        return new UserView(user.getId(), user.getEmail(), user.getRole());
+    }
+
+    public UserAccount require(String email) {
+        UserAccount user = find(UserAccount.normalizeEmail(email));
+        if (user == null || !"ACTIVE".equals(user.getStatus())) throw new BusinessException("UNAUTHORIZED", "登录已失效", HttpStatus.UNAUTHORIZED);
+        return user;
+    }
+
+    private UserAccount find(String email) {
+        return users.selectOne(Wrappers.<UserAccount>lambdaQuery().eq(UserAccount::getEmail, email));
+    }
+
+    private AuthResponse response(UserAccount user) {
+        return new AuthResponse(jwt.create(user), new UserView(user.getId(), user.getEmail(), user.getRole()));
+    }
+}
