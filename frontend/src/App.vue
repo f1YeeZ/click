@@ -1,15 +1,20 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
 import CompareTray from './components/CompareTray.vue'
 import { useAuthStore } from './stores/auth'
+import { startRealtime, stopRealtime } from './services/realtime'
 
 const auth = useAuthStore()
 const route = useRoute()
 const year = new Date().getFullYear()
 const isAdminRoute = computed(() => route.path === '/admin' || route.path === '/admin/login')
-onMounted(() => { if (!isAdminRoute.value) auth.refresh() })
+onMounted(() => {
+  startRealtime()
+  if (!isAdminRoute.value) auth.refresh()
+})
+onBeforeUnmount(stopRealtime)
 </script>
 
 <template>

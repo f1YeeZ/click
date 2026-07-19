@@ -21,9 +21,11 @@ public class AdminService {
     private final UserMapper users;
     private final ReviewMapper reviews;
     private final MouseService mouseService;
+    private final RealtimeEventService events;
 
-    public AdminService(MouseMapper mice, UserMapper users, ReviewMapper reviews, MouseService mouseService) {
-        this.mice = mice; this.users = users; this.reviews = reviews; this.mouseService = mouseService;
+    public AdminService(MouseMapper mice, UserMapper users, ReviewMapper reviews, MouseService mouseService,
+                        RealtimeEventService events) {
+        this.mice = mice; this.users = users; this.reviews = reviews; this.mouseService = mouseService; this.events = events;
     }
 
     public DashboardResponse dashboard() {
@@ -76,12 +78,16 @@ public class AdminService {
         if (!Set.of("ACTIVE", "DISABLED", "PENDING").contains(request.status())) throw invalidStatus();
         Review review = reviews.selectById(id); if (review == null) throw notFound("评价");
         review.setStatus(request.status()); review.setDeletedAt("DISABLED".equals(request.status()) ? OffsetDateTime.now() : null);
-        review.setUpdatedAt(OffsetDateTime.now()); reviews.updateById(review); return reviewView(review);
+        review.setUpdatedAt(OffsetDateTime.now()); reviews.updateById(review);
+        events.publishAfterCommit("review.changed", review.getMouseId());
+        return reviewView(review);
     }
 
     private AdminReviewView reviewView(Review review) {
         UserAccount user = users.selectById(review.getUserId()); MouseDevice mouse = mice.selectById(review.getMouseId());
-        return AdminReviewView.from(review, user == null ? "—" : user.getEmail(), mouse == null ? "—" : mouse.displayName());
+        AdminReviewView base = AdminReviewView.from(review, user == null ? "—" : user.getEmail(), mouse == null ? "—" : mouse.displayName());
+        return new AdminReviewView(base.id(), base.userId(), base.mouseId(), base.userEmail(), base.mouseName(), base.status(),
+                base.gripStyle(), user == null ? null : user.getHandSize(), null, base.overallScore(), base.coatingScore(), base.createdAt());
     }
     private static boolean hasText(String value) { return value != null && !value.isBlank(); }
     private static long safeSize(long size) { return Set.of(12L, 24L, 48L).contains(size) ? size : 12; }

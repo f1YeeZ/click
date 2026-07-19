@@ -36,6 +36,7 @@ const createAuthStore = (id, storagePrefix, migrateLegacyAdmin = false) => defin
   },
   actions: {
     async login(payload) { const { data } = await api.post('/auth/login', payload); this.persist(data) },
+    async sendRegistrationCode(email) { const { data } = await api.post('/auth/register/code', { email }); return data },
     async register(payload) { const { data } = await api.post('/auth/register', payload); this.persist(data) },
     async refresh() {
       if (!this.token) return

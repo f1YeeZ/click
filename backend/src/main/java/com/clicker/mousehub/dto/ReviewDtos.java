@@ -12,24 +12,58 @@ public final class ReviewDtos {
 
     public record ReviewRequest(
             @NotBlank String gripStyle,
-            @NotBlank String handSize,
-            @NotBlank String usageDuration,
-            @Min(1) @Max(5) int comfortScore,
-            @Min(1) @Max(5) int clickScore,
-            @Min(1) @Max(5) int scrollScore,
-            @Min(1) @Max(5) int buildScore,
-            @Min(1) @Max(5) int valueScore,
+            String handSize,
+            String usageDuration,
+            @Min(1) @Max(10) Integer comfortScore,
+            @Min(1) @Max(10) Integer clickScore,
+            @Min(1) @Max(10) Integer scrollScore,
+            @Min(1) @Max(10) Integer buildScore,
+            @Min(1) @Max(10) Integer valueScore,
+            @Min(1) @Max(10) Integer coatingScore,
             @Size(max = 3) List<String> proTags,
-            @Size(max = 3) List<String> conTags) {}
+            @Size(max = 3) List<String> conTags) {
+        /** Compatibility constructor for the previous five-point payload. */
+        public ReviewRequest(String gripStyle, String handSize, String usageDuration,
+                             int comfortScore, int clickScore, int scrollScore, int buildScore, int valueScore,
+                             List<String> proTags, List<String> conTags) {
+            this(gripStyle, handSize, usageDuration, comfortScore, clickScore, scrollScore, buildScore,
+                    valueScore, valueScore, proTags, conTags);
+        }
+        public ReviewRequest(String gripStyle, int comfortScore, int clickScore, int scrollScore,
+                             int buildScore, int coatingScore) {
+            this(gripStyle, null, null, comfortScore, clickScore, scrollScore, buildScore,
+                    null, coatingScore, List.of(), List.of());
+        }
+    }
 
+    public record BaseScoreRequest(
+            @Min(1) @Max(10) int clickScore,
+            @Min(1) @Max(10) int scrollScore,
+            @Min(1) @Max(10) int buildScore,
+            @Min(1) @Max(10) int coatingScore) {}
+
+    public record GripScoreRequest(@Min(1) @Max(10) int comfortScore) {}
+
+    public record GripComfort(String gripStyle, int comfortScore) {}
     public record ReviewView(UUID id, UUID mouseId, String gripStyle, String handSize, String usageDuration,
                              int comfortScore, int clickScore, int scrollScore, int buildScore, int valueScore,
-                             BigDecimal overallScore, List<String> proTags, List<String> conTags) {}
+                             int coatingScore, BigDecimal overallScore, List<String> proTags, List<String> conTags,
+                             List<GripComfort> gripComforts, boolean baseSubmitted, BigDecimal handLengthCm) {}
 
     public record TagCount(String code, String label, long count) {}
     public record ReviewSummary(int sampleCount, BigDecimal overallAverage,
                                 Map<String, BigDecimal> dimensionAverages,
-                                List<TagCount> topPros, List<TagCount> topCons, boolean lowSample) {}
+                                List<TagCount> topPros, List<TagCount> topCons, boolean lowSample,
+                                String gripStyle, String handSize,
+                                int baseSampleCount, int gripSampleCount,
+                                BigDecimal baseAverage, BigDecimal gripAverage) {
+        public ReviewSummary(int sampleCount, BigDecimal overallAverage,
+                             Map<String, BigDecimal> dimensionAverages,
+                             List<TagCount> topPros, List<TagCount> topCons, boolean lowSample) {
+            this(sampleCount, overallAverage, dimensionAverages, topPros, topCons, lowSample,
+                    null, null, sampleCount, sampleCount, overallAverage, overallAverage);
+        }
+    }
 
     public record ReviewOptions(List<Option> gripStyles, List<Option> handSizes,
                                 List<Option> usageDurations, List<Option> proTags, List<Option> conTags) {}

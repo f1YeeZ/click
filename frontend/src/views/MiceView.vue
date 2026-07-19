@@ -5,6 +5,7 @@ import api, { errorMessage } from '../api/client'
 import MouseCard from '../components/MouseCard.vue'
 import RangeSlider from '../components/RangeSlider.vue'
 import FilterCheckGroup from '../components/FilterCheckGroup.vue'
+import { onRealtime } from '../services/realtime'
 
 const route = useRoute()
 const router = useRouter()
@@ -75,6 +76,8 @@ const activeFilterChips = computed(() => {
 })
 const filterSignature = computed(() => Object.entries(filters).filter(([key]) => key !== 'page').map(([key, value]) => `${key}:${value}`).join('|'))
 let filterTimer
+let realtimeTimer
+let stopRealtime = () => {}
 
 const compact = (source) => Object.fromEntries(Object.entries(source).filter(([, value]) => (Array.isArray(value) ? value.length : value !== '' && value != null)).map(([key, value]) => [key, Array.isArray(value) ? value.join(',') : value]))
 const load = async () => {
@@ -101,17 +104,21 @@ watch(filterSignature, () => {
 onMounted(async () => {
   try { brands.value = (await api.get('/mice/brands')).data } catch (e) { error.value = errorMessage(e) }
   load()
+  stopRealtime = onRealtime((event) => {
+    if (event.type !== 'mouse.changed') return
+    clearTimeout(realtimeTimer)
+    realtimeTimer = setTimeout(async () => {
+      try { brands.value = (await api.get('/mice/brands')).data } catch (e) { error.value = errorMessage(e) }
+      await load()
+    }, 250)
+  })
 })
-onBeforeUnmount(() => clearTimeout(filterTimer))
+onBeforeUnmount(() => { stopRealtime(); clearTimeout(filterTimer); clearTimeout(realtimeTimer) })
 </script>
 
 <template>
   <main class="section-shell database-page">
     <div class="page-kicker"><span>DATABASE / MICE</span><span>{{ result.page.totalItems }} MATCHES</span></div>
-    <div class="database-heading">
-      <div><h1>鼠标数据库</h1><p>按照尺寸、外形、传感器、微动与滚轮等参数精确筛选，最多选择四款进行横向对比。</p></div>
-      <RouterLink class="button button-ghost" to="/compare">打开对比台</RouterLink>
-    </div>
 
     <div class="database-content-layout">
       <aside class="database-filter-rail">

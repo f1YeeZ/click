@@ -22,8 +22,12 @@ public class MouseService {
     private static final Set<String> SHAPES = Set.of("SYMMETRICAL", "ERGONOMIC", "HYBRID");
     private static final Set<String> CONNECTIONS = Set.of("wired", "wireless_2_4g", "bluetooth");
     private final MouseMapper mice;
+    private final RealtimeEventService events;
 
-    public MouseService(MouseMapper mice) { this.mice = mice; }
+    public MouseService(MouseMapper mice, RealtimeEventService events) {
+        this.mice = mice;
+        this.events = events;
+    }
 
     public PageResponse<MouseView> search(String q, String brand, String size, String shape, String connection,
                                           String hand, String humpPlacement, String frontFlare, String sideCurvature,
@@ -135,13 +139,16 @@ public class MouseService {
         validateCode(request.shapeType(), SHAPES, "外形类型");
         if (request.connectionModes().stream().anyMatch(mode -> !CONNECTIONS.contains(mode))) throw new BusinessException("INVALID_CONNECTION", "连接模式不符合要求", HttpStatus.BAD_REQUEST);
         MouseDevice mouse = mice.selectById(id); if (mouse == null) throw new BusinessException("MOUSE_NOT_FOUND", "未找到这款鼠标", HttpStatus.NOT_FOUND);
-        applyRequest(mouse, request); mouse.setUpdatedAt(OffsetDateTime.now()); mice.updateById(mouse); return MouseView.from(mouse);
+        applyRequest(mouse, request); mouse.setUpdatedAt(OffsetDateTime.now()); mice.updateById(mouse);
+        events.publishAfterCommit("mouse.changed", mouse.getId());
+        return MouseView.from(mouse);
     }
 
     @Transactional
     public void archive(UUID id) {
         MouseDevice mouse = mice.selectById(id); if (mouse == null) throw new BusinessException("MOUSE_NOT_FOUND", "未找到这款鼠标", HttpStatus.NOT_FOUND);
         mouse.setStatus("ARCHIVED"); mouse.setUpdatedAt(OffsetDateTime.now()); mice.updateById(mouse);
+        events.publishAfterCommit("mouse.changed", mouse.getId());
     }
 
     public List<MouseDevice> publishedInOrder(List<UUID> ids) {
@@ -175,6 +182,7 @@ public class MouseService {
         mouse.setId(UUID.randomUUID()); mouse.setStatus("PUBLISHED"); mouse.setCreatedAt(now); mouse.setVerifiedAt(now);
         applyRequest(mouse, request); mouse.setUpdatedAt(now);
         mice.insert(mouse);
+        events.publishAfterCommit("mouse.changed", mouse.getId());
         return MouseView.from(mouse);
     }
 

@@ -1,6 +1,8 @@
 package com.clicker.mousehub.service;
 
+import com.clicker.mousehub.common.BusinessException;
 import org.slf4j.*;
+import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -32,6 +34,27 @@ public class MailService {
             sender.send(message);
         } catch (RuntimeException exception) {
             log.warn("欢迎邮件发送失败，不影响注册：{}", exception.getMessage());
+        }
+    }
+
+    public void verificationCode(String recipient, String code, long expiresMinutes, String purpose) {
+        if (!enabled || !StringUtils.hasText(from)) {
+            throw new BusinessException("MAIL_UNAVAILABLE", "邮件服务尚未配置，请联系管理员", HttpStatus.SERVICE_UNAVAILABLE);
+        }
+        try {
+            String action = EmailVerificationService.REGISTER.equals(purpose) ? "注册账号" : "修改密码";
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(from);
+            message.setTo(recipient);
+            message.setSubject("Clicker Index 邮箱验证码");
+            message.setText("你正在" + action + "，验证码为：" + code + "\n\n验证码 " + expiresMinutes
+                    + " 分钟内有效，请勿转发给他人。如非本人操作，请忽略本邮件。");
+            sender.send(message);
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            log.warn("验证码邮件发送失败：{}", exception.getMessage());
+            throw new BusinessException("MAIL_SEND_FAILED", "验证码邮件发送失败，请稍后重试", HttpStatus.SERVICE_UNAVAILABLE);
         }
     }
 }

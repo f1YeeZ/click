@@ -16,19 +16,19 @@ public final class AdminDtos {
                                     List<AdminUserView> recentUsers, List<AdminReviewView> recentReviews,
                                     List<MouseDtos.MouseView> recentMice) {}
 
-    public record AdminUserView(UUID id, String email, String role, String status,
+    public record AdminUserView(UUID id, String email, String role, String status, String handSize, java.math.BigDecimal handLengthCm,
                                 OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         public static AdminUserView from(UserAccount user) {
-            return new AdminUserView(user.getId(), user.getEmail(), user.getRole(), user.getStatus(), user.getCreatedAt(), user.getUpdatedAt());
+            return new AdminUserView(user.getId(), user.getEmail(), user.getRole(), user.getStatus(), user.getHandSize(), user.getHandLengthCm(), user.getCreatedAt(), user.getUpdatedAt());
         }
     }
 
     public record AdminReviewView(UUID id, UUID userId, UUID mouseId, String userEmail, String mouseName,
                                   String status, String gripStyle, String handSize, String usageDuration,
-                                  java.math.BigDecimal overallScore, OffsetDateTime createdAt) {
+                                  java.math.BigDecimal overallScore, Integer coatingScore, OffsetDateTime createdAt) {
         public static AdminReviewView from(Review review, String userEmail, String mouseName) {
             return new AdminReviewView(review.getId(), review.getUserId(), review.getMouseId(), userEmail, mouseName,
-                    review.getStatus(), review.getGripStyle(), review.getHandSize(), review.getUsageDuration(), review.getOverallScore(), review.getCreatedAt());
+                    review.getStatus(), review.getGripStyle(), review.getHandSize(), review.getUsageDuration(), review.getOverallScore(), review.getCoatingScore(), review.getCreatedAt());
         }
     }
 

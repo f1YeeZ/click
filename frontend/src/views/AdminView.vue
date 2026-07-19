@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api, { errorMessage } from "../api/client";
 import { useAdminAuthStore } from "../stores/auth";
@@ -10,6 +10,8 @@ const activeTab = ref("overview");
 const loading = ref(false);
 const error = ref("");
 const notice = ref("");
+let noticeTimer = null;
+let errorTimer = null;
 const dashboard = ref(null);
 const mice = ref({
     items: [],
@@ -349,13 +351,31 @@ const handleEscape = (event) => {
     if (showImageLibrary.value) showImageLibrary.value = false;
     else if (showEditor.value) resetForm();
 };
+watch(notice, (value) => {
+    if (noticeTimer) window.clearTimeout(noticeTimer);
+    if (!value) return;
+    noticeTimer = window.setTimeout(() => {
+        if (notice.value === value) notice.value = "";
+    }, 3200);
+});
+watch(error, (value) => {
+    if (errorTimer) window.clearTimeout(errorTimer);
+    if (!value) return;
+    errorTimer = window.setTimeout(() => {
+        if (error.value === value) error.value = "";
+    }, 4200);
+});
 onMounted(() => {
     auth.refresh();
     loadDashboard();
     loadBrands();
     window.addEventListener("keydown", handleEscape);
 });
-onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
+onBeforeUnmount(() => {
+    window.removeEventListener("keydown", handleEscape);
+    if (noticeTimer) window.clearTimeout(noticeTimer);
+    if (errorTimer) window.clearTimeout(errorTimer);
+});
 </script>
 
 <template>
@@ -369,6 +389,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
                 ><button class="admin-logout" @click="logout">退出后台</button>
             </div>
         </header>
+        <div class="admin-toast-stack" aria-live="polite">
+            <Transition name="admin-toast">
+                <div class="flash success admin-toast" role="status" v-if="notice">{{ notice }}</div>
+            </Transition>
+            <Transition name="admin-toast">
+                <div class="flash error admin-toast" role="alert" v-if="error">{{ error }}</div>
+            </Transition>
+        </div>
         <div class="admin-layout">
             <aside class="admin-sidebar">
                 <div class="sidebar-kicker">WORKSPACE / 01</div>
@@ -414,8 +442,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
                         ↻ 刷新数据
                     </button>
                 </div>
-                <div class="flash success" v-if="notice">{{ notice }}</div>
-                <div class="flash error" v-if="error">{{ error }}</div>
                 <section v-if="activeTab === 'overview'" class="admin-overview">
                     <div class="metric-grid">
                         <article>
@@ -1356,6 +1382,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
                             <tr>
                                 <th>用户</th>
                                 <th>角色</th>
+                                <th>手长资料</th>
                                 <th>状态</th>
                                 <th>注册时间</th>
                                 <th></th>
@@ -1374,9 +1401,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
                                                 ? 'role-admin'
                                                 : ''
                                         "
-                                        >{{ user.role }}</em
+                                    >{{ user.role }}</em
                                     >
                                 </td>
+                                <td>{{ user.handLengthCm != null ? `${user.handLengthCm} cm` : '未填写' }}</td>
                                 <td>
                                     <em
                                         :class="`status-${user.status?.toLowerCase()}`"
@@ -1406,7 +1434,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
                                 </td>
                             </tr>
                             <tr v-if="!users.items.length">
-                                <td colspan="5" class="table-empty">
+                                <td colspan="6" class="table-empty">
                                     暂无用户
                                 </td>
                             </tr>
@@ -1470,13 +1498,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
                                 <td>
                                     <strong>{{ review.userEmail }}</strong
                                     ><small
-                                        >{{ review.gripStyle }} /
-                                        {{ review.handSize }}</small
+                                        >{{ review.gripStyle || '—' }} /
+                                        {{ review.handSize || '未填写手长' }}</small
                                     >
                                 </td>
                                 <td>{{ review.mouseName }}</td>
                                 <td class="score-value">
-                                    {{ review.overallScore }} / 5
+                                    {{ review.overallScore }} / 10
                                 </td>
                                 <td>
                                     <em

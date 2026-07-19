@@ -48,10 +48,19 @@ app:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   jwt:
     secret: ${JWT_SECRET:clicker-index-development-secret-change-before-production-2026}
-    expires-hours: ${JWT_EXPIRES_HOURS:168}
+    expires-hours: ${JWT_EXPIRES_HOURS:24}
+    issuer: ${JWT_ISSUER:clicker-index}
+    audience: ${JWT_AUDIENCE:clicker-index-web}
+  realtime:
+    max-connections: ${SSE_MAX_CONNECTIONS:200}
+    max-connections-per-address: ${SSE_MAX_CONNECTIONS_PER_ADDRESS:5}
+    heartbeat-ms: ${SSE_HEARTBEAT_MS:20000}
   mail:
     enabled: ${MAIL_ENABLED:false}
     from: ${QQ_MAIL_FROM:${QQ_MAIL_USERNAME:}}
+  verification:
+    expires-minutes: ${VERIFICATION_CODE_EXPIRES_MINUTES:10}
+    resend-seconds: ${VERIFICATION_CODE_RESEND_SECONDS:60}
   images:
     storage-path: ${IMAGE_STORAGE_PATH:data/mouse-images}
     max-size-bytes: ${IMAGE_MAX_SIZE_BYTES:5242880}

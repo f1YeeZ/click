@@ -4,9 +4,24 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(120) NOT NULL,
     role VARCHAR(20) NOT NULL DEFAULT 'USER',
     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    hand_size VARCHAR(20),
+    hand_length_cm NUMERIC(4,1),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS email_verification_codes (
+    id UUID PRIMARY KEY,
+    email VARCHAR(180) NOT NULL,
+    purpose VARCHAR(30) NOT NULL,
+    code_hash VARCHAR(120) NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    consumed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_verification_email_purpose
+    ON email_verification_codes(email, purpose, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS mice (
     id UUID PRIMARY KEY,
@@ -82,6 +97,8 @@ ALTER TABLE mice ADD COLUMN IF NOT EXISTS encoder_type VARCHAR(20);
 ALTER TABLE mice ADD COLUMN IF NOT EXISTS encoder_steps INTEGER;
 ALTER TABLE mice ADD COLUMN IF NOT EXISTS purchase_channels VARCHAR(500);
 ALTER TABLE mice ADD COLUMN IF NOT EXISTS image_url VARCHAR(600);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS hand_size VARCHAR(20);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS hand_length_cm NUMERIC(4,1);
 
 CREATE INDEX IF NOT EXISTS idx_mice_status_created ON mice(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mice_brand ON mice(brand);
@@ -90,15 +107,16 @@ CREATE TABLE IF NOT EXISTS reviews (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id),
     mouse_id UUID NOT NULL REFERENCES mice(id),
-    grip_style VARCHAR(20) NOT NULL,
-    hand_size VARCHAR(20) NOT NULL,
-    usage_duration VARCHAR(30) NOT NULL,
-    comfort_score INTEGER NOT NULL CHECK (comfort_score BETWEEN 1 AND 5),
-    click_score INTEGER NOT NULL CHECK (click_score BETWEEN 1 AND 5),
-    scroll_score INTEGER NOT NULL CHECK (scroll_score BETWEEN 1 AND 5),
-    build_score INTEGER NOT NULL CHECK (build_score BETWEEN 1 AND 5),
-    value_score INTEGER NOT NULL CHECK (value_score BETWEEN 1 AND 5),
-    overall_score NUMERIC(2,1) NOT NULL,
+    grip_style VARCHAR(20),
+    hand_size VARCHAR(20),
+    usage_duration VARCHAR(30),
+    comfort_score INTEGER CHECK (comfort_score BETWEEN 1 AND 10),
+    click_score INTEGER CHECK (click_score BETWEEN 1 AND 10),
+    scroll_score INTEGER CHECK (scroll_score BETWEEN 1 AND 10),
+    build_score INTEGER CHECK (build_score BETWEEN 1 AND 10),
+    value_score INTEGER CHECK (value_score BETWEEN 1 AND 10),
+    coating_score INTEGER CHECK (coating_score BETWEEN 1 AND 10),
+    overall_score NUMERIC(3,1) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
     deleted_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -107,7 +125,42 @@ CREATE TABLE IF NOT EXISTS reviews (
     CONSTRAINT uk_review_user_mouse UNIQUE (user_id, mouse_id)
 );
 
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS coating_score INTEGER;
+ALTER TABLE reviews ALTER COLUMN overall_score TYPE NUMERIC(3,1);
+ALTER TABLE reviews ALTER COLUMN hand_size DROP NOT NULL;
+ALTER TABLE reviews ALTER COLUMN usage_duration DROP NOT NULL;
+ALTER TABLE reviews ALTER COLUMN value_score DROP NOT NULL;
+ALTER TABLE reviews ALTER COLUMN grip_style DROP NOT NULL;
+ALTER TABLE reviews ALTER COLUMN comfort_score DROP NOT NULL;
+ALTER TABLE reviews ALTER COLUMN click_score DROP NOT NULL;
+ALTER TABLE reviews ALTER COLUMN scroll_score DROP NOT NULL;
+ALTER TABLE reviews ALTER COLUMN build_score DROP NOT NULL;
+ALTER TABLE reviews ALTER COLUMN coating_score DROP NOT NULL;
+ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_comfort_score_check;
+ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_click_score_check;
+ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_scroll_score_check;
+ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_build_score_check;
+ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_value_score_check;
+ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_coating_score_check;
+ALTER TABLE reviews ADD CONSTRAINT reviews_comfort_score_check CHECK (comfort_score BETWEEN 1 AND 10);
+ALTER TABLE reviews ADD CONSTRAINT reviews_click_score_check CHECK (click_score BETWEEN 1 AND 10);
+ALTER TABLE reviews ADD CONSTRAINT reviews_scroll_score_check CHECK (scroll_score BETWEEN 1 AND 10);
+ALTER TABLE reviews ADD CONSTRAINT reviews_build_score_check CHECK (build_score BETWEEN 1 AND 10);
+ALTER TABLE reviews ADD CONSTRAINT reviews_value_score_check CHECK (value_score IS NULL OR value_score BETWEEN 1 AND 10);
+ALTER TABLE reviews ADD CONSTRAINT reviews_coating_score_check CHECK (coating_score IS NULL OR coating_score BETWEEN 1 AND 10);
+
 CREATE INDEX IF NOT EXISTS idx_reviews_mouse_active ON reviews(mouse_id, status, deleted_at);
+
+CREATE TABLE IF NOT EXISTS review_grip_scores (
+    id UUID PRIMARY KEY,
+    review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+    grip_style VARCHAR(20) NOT NULL,
+    comfort_score INTEGER NOT NULL CHECK (comfort_score BETWEEN 1 AND 10),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT uk_review_grip UNIQUE (review_id, grip_style)
+);
+CREATE INDEX IF NOT EXISTS idx_review_grip_review ON review_grip_scores(review_id);
 
 CREATE TABLE IF NOT EXISTS review_pro_tags (
     review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,

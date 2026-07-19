@@ -86,15 +86,19 @@ public class MouseController {
     }
 
     @GetMapping("/{slug}")
-    public MouseDetail detail(@PathVariable String slug) {
+    public MouseDetail detail(@PathVariable String slug,
+                               @RequestParam(required = false) String gripStyle,
+                               @RequestParam(required = false) String handSize) {
         MouseDevice mouse = mice.requirePublishedBySlug(slug);
-        return new MouseDetail(MouseView.from(mouse), reviews.summary(mouse.getId()));
+        return new MouseDetail(MouseView.from(mouse), reviews.summary(mouse.getId(), gripStyle, handSize));
     }
 
     @GetMapping("/{id}/review-summary")
-    public ReviewSummary summary(@PathVariable UUID id) {
+    public ReviewSummary summary(@PathVariable UUID id,
+                                 @RequestParam(required = false) String gripStyle,
+                                 @RequestParam(required = false) String handSize) {
         mice.requirePublished(id);
-        return reviews.summary(id);
+        return reviews.summary(id, gripStyle, handSize);
     }
 
     public record MouseDetail(MouseView mouse, ReviewSummary reviewSummary) {}

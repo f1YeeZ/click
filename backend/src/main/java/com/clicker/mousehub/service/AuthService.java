@@ -2,6 +2,7 @@ package com.clicker.mousehub.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.clicker.mousehub.common.BusinessException;
+import com.clicker.mousehub.common.VerificationCodeException;
 import com.clicker.mousehub.dto.AuthDtos.*;
 import com.clicker.mousehub.entity.UserAccount;
 import com.clicker.mousehub.mapper.UserMapper;
@@ -20,18 +21,28 @@ public class AuthService {
     private final PasswordEncoder encoder;
     private final JwtService jwt;
     private final MailService mail;
+    private final EmailVerificationService verification;
 
-    public AuthService(UserMapper users, PasswordEncoder encoder, JwtService jwt, MailService mail) {
+    public AuthService(UserMapper users, PasswordEncoder encoder, JwtService jwt, MailService mail,
+                       EmailVerificationService verification) {
         this.users = users;
         this.encoder = encoder;
         this.jwt = jwt;
         this.mail = mail;
+        this.verification = verification;
     }
 
-    @Transactional
+    public VerificationCodeResponse sendRegistrationCode(EmailRequest request) {
+        String email = UserAccount.normalizeEmail(request.email());
+        if (find(email) != null) throw new BusinessException("ACCOUNT_UNAVAILABLE", "该邮箱暂不可注册", HttpStatus.CONFLICT);
+        return verification.send(email, EmailVerificationService.REGISTER);
+    }
+
+    @Transactional(noRollbackFor = VerificationCodeException.class)
     public AuthResponse register(RegisterRequest request) {
         String email = UserAccount.normalizeEmail(request.email());
         if (find(email) != null) throw new BusinessException("ACCOUNT_UNAVAILABLE", "该邮箱暂不可注册", HttpStatus.CONFLICT);
+        verification.verifyAndConsume(email, EmailVerificationService.REGISTER, request.verificationCode());
         OffsetDateTime now = OffsetDateTime.now();
         UserAccount user = new UserAccount();
         user.setId(UUID.randomUUID());
@@ -46,6 +57,24 @@ public class AuthService {
         return response(user);
     }
 
+    public VerificationCodeResponse sendPasswordCode(String email) {
+        UserAccount user = require(email);
+        return verification.send(user.getEmail(), EmailVerificationService.CHANGE_PASSWORD);
+    }
+
+    @Transactional(noRollbackFor = VerificationCodeException.class)
+    public MessageResponse changePassword(String email, ChangePasswordRequest request) {
+        UserAccount user = require(email);
+        verification.verifyAndConsume(user.getEmail(), EmailVerificationService.CHANGE_PASSWORD, request.verificationCode());
+        if (encoder.matches(request.newPassword(), user.getPasswordHash())) {
+            throw new BusinessException("PASSWORD_UNCHANGED", "新密码不能与当前密码相同", HttpStatus.BAD_REQUEST);
+        }
+        user.setPasswordHash(encoder.encode(request.newPassword()));
+        user.setUpdatedAt(OffsetDateTime.now());
+        users.updateById(user);
+        return new MessageResponse("密码修改成功");
+    }
+
     public AuthResponse login(LoginRequest request) {
         UserAccount user = find(UserAccount.normalizeEmail(request.email()));
         if (user == null || !"ACTIVE".equals(user.getStatus()) || !encoder.matches(request.password(), user.getPasswordHash())) {
@@ -57,7 +86,17 @@ public class AuthService {
     public UserView me(String email) {
         UserAccount user = find(UserAccount.normalizeEmail(email));
         if (user == null) throw new BusinessException("UNAUTHORIZED", "登录已失效", HttpStatus.UNAUTHORIZED);
-        return new UserView(user.getId(), user.getEmail(), user.getRole());
+        return view(user);
+    }
+
+    @Transactional
+    public UserView updateProfile(String email, ProfileRequest request) {
+        UserAccount user = require(email);
+        user.setHandLengthCm(request.handLengthCm());
+        user.setHandSize(handSize(request.handLengthCm()));
+        user.setUpdatedAt(OffsetDateTime.now());
+        users.updateById(user);
+        return view(user);
     }
 
     public UserAccount require(String email) {
@@ -71,6 +110,17 @@ public class AuthService {
     }
 
     private AuthResponse response(UserAccount user) {
-        return new AuthResponse(jwt.create(user), new UserView(user.getId(), user.getEmail(), user.getRole()));
+        return new AuthResponse(jwt.create(user), view(user));
+    }
+
+    private UserView view(UserAccount user) {
+        return new UserView(user.getId(), user.getEmail(), user.getRole(), user.getHandSize(), user.getHandLengthCm());
+    }
+
+    private String handSize(java.math.BigDecimal length) {
+        if (length == null) return null;
+        if (length.compareTo(new java.math.BigDecimal("17.0")) < 0) return "SMALL";
+        if (length.compareTo(new java.math.BigDecimal("19.0")) < 0) return "MEDIUM";
+        return "LARGE";
     }
 }

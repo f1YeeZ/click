@@ -19,6 +19,20 @@ public class ReviewController {
     @PutMapping public ReviewView save(@PathVariable UUID mouseId, Authentication auth, @Valid @RequestBody ReviewRequest request) {
         return reviews.save(mouseId, auth.getName(), request);
     }
+    @PutMapping("/base") public ReviewView saveBase(@PathVariable UUID mouseId, Authentication auth,
+                                                    @Valid @RequestBody BaseScoreRequest request) {
+        return reviews.saveBase(mouseId, auth.getName(), request);
+    }
+    @PutMapping("/grips/{gripStyle}") public ReviewView saveGrip(@PathVariable UUID mouseId, @PathVariable String gripStyle,
+                                                                 Authentication auth, @Valid @RequestBody GripScoreRequest request) {
+        return reviews.saveGrip(mouseId, auth.getName(), gripStyle, request);
+    }
+    @DeleteMapping("/base") @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteBase(@PathVariable UUID mouseId, Authentication auth) { reviews.deleteBase(mouseId, auth.getName()); }
+    @DeleteMapping("/grips/{gripStyle}") @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteGrip(@PathVariable UUID mouseId, @PathVariable String gripStyle, Authentication auth) {
+        reviews.deleteGrip(mouseId, auth.getName(), gripStyle);
+    }
     @DeleteMapping @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable UUID mouseId, Authentication auth) { reviews.delete(mouseId, auth.getName()); }
 }

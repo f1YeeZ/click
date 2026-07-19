@@ -22,6 +22,7 @@ clicker_demo/
 - 鼠标搜索、筛选、排序、分页和详情 API；
 - 2～4 款鼠标参数对比与差值计算；
 - 邮箱注册登录、JWT 鉴权和管理员权限；
+- SSE 实时刷新鼠标列表、详情、对比和评价汇总；
 - 固定维度评价、固定标签、修改、软删除和聚合；
 - MyBatis-Plus Mapper、分页插件和 UUID 类型处理；
 - PostgreSQL 初始化表结构和 8 款演示数据；
@@ -88,7 +89,7 @@ npm run dev
 
 ## QQ 邮件
 
-邮件默认关闭。取得新的 QQ SMTP 授权码后设置：
+邮件默认关闭。邮箱验证码注册和修改密码依赖邮件服务；取得新的 QQ SMTP 授权码后设置：
 
 ```powershell
 $env:QQ_MAIL_USERNAME="<QQ邮箱>"
@@ -133,18 +134,28 @@ npm run build
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/v1/auth/register` | 注册并返回 JWT |
+| POST | `/api/v1/auth/register/code` | 向待注册邮箱发送验证码 |
+| POST | `/api/v1/auth/register` | 使用邮箱、密码和验证码注册并返回 JWT |
 | POST | `/api/v1/auth/login` | 登录并返回 JWT |
 | GET | `/api/v1/auth/me` | 当前用户 |
+| POST | `/api/v1/auth/password/code` | 向当前登录邮箱发送修改密码验证码 |
+| PUT | `/api/v1/auth/password` | 使用邮箱验证码修改当前账号密码 |
+| GET | `/api/v1/events` | 公开的低敏 SSE 资源变更事件流 |
 | GET | `/api/v1/mice` | 搜索、筛选和分页 |
 | GET | `/api/v1/mice/{slug}` | 鼠标详情和评价汇总 |
 | GET | `/api/v1/mice/compare?ids=...` | 参数对比 |
 | GET/PUT/DELETE | `/api/v1/mice/{id}/my-review` | 当前用户评价 |
 | POST | `/api/v1/admin/mice` | 管理员新增鼠标 |
 
+## 实时更新与安全配置
+
+SSE 事件只包含事件类型、鼠标 ID 和发生时间；浏览器收到事件后重新请求 REST API，不会通过事件流发送邮箱、用户 ID、评价内容或评分明细。生产反向代理需要关闭 `/api/v1/events` 的响应缓冲，并为长连接设置足够长的读取超时。
+
+JWT 默认有效期为 24 小时，并校验 `issuer`、`audience` 和唯一 `jti`；生产环境必须设置独立的强随机 `JWT_SECRET`。CORS 只接受 `CORS_ALLOWED_ORIGINS` 中的明确来源，不允许 `*`。登录、注册验证码、注册和改密接口已按 IP 限流；单机部署使用内存窗口，多实例部署时应将限流状态迁移到 Redis 或网关。
+
 ## 初始版暂未实现
 
 - CSV 两阶段导入；
 - 管理后台编辑、下架及评价治理；
-- 邮箱验证和忘记密码；
+- 忘记密码；
 - 评分排行、图片、轮廓和 3D 模型。

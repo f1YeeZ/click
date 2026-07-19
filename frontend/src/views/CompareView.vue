@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api, { errorMessage } from '../api/client'
 import { useCompareStore } from '../stores/compare'
+import { onRealtime } from '../services/realtime'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,6 +20,8 @@ const searchOpen = ref(false)
 const searchLoading = ref(false)
 let searchTimer
 let searchRequest = 0
+let realtimeTimer
+let stopRealtime = () => {}
 
 const selectedItems = computed(() => store.items.map((item) => comparison.value.items.find((full) => full.id === item.id) || item))
 const selectedCount = computed(() => store.items.length)
@@ -108,8 +111,15 @@ watch(searchQuery, () => {
   }, 240)
 })
 watch(() => route.query.ids, load)
-onMounted(load)
-onBeforeUnmount(() => clearTimeout(searchTimer))
+onMounted(() => {
+  load()
+  stopRealtime = onRealtime((event) => {
+    if (event.type !== 'mouse.changed' || !store.contains(event.mouseId)) return
+    clearTimeout(realtimeTimer)
+    realtimeTimer = setTimeout(load, 250)
+  })
+})
+onBeforeUnmount(() => { stopRealtime(); clearTimeout(searchTimer); clearTimeout(realtimeTimer) })
 </script>
 
 <template>

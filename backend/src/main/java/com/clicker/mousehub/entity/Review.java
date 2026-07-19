@@ -22,6 +22,7 @@ public class Review {
     private Integer scrollScore;
     private Integer buildScore;
     private Integer valueScore;
+    private Integer coatingScore;
     private BigDecimal overallScore;
     private String status;
     private OffsetDateTime deletedAt;
@@ -51,6 +52,8 @@ public class Review {
     public void setBuildScore(Integer buildScore) { this.buildScore = buildScore; }
     public Integer getValueScore() { return valueScore; }
     public void setValueScore(Integer valueScore) { this.valueScore = valueScore; }
+    public Integer getCoatingScore() { return coatingScore; }
+    public void setCoatingScore(Integer coatingScore) { this.coatingScore = coatingScore; }
     public BigDecimal getOverallScore() { return overallScore; }
     public void setOverallScore(BigDecimal overallScore) { this.overallScore = overallScore; }
     public String getStatus() { return status; }

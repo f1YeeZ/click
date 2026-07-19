@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api, { errorMessage } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import { useCompareStore } from '../stores/compare'
+import { onRealtime } from '../services/realtime'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -11,10 +12,21 @@ const compare = useCompareStore()
 const mouse = ref(null)
 const summary = ref(null)
 const options = ref(null)
-const hasReview = ref(false)
+const selectedGrip = ref('')
+const selectedHand = ref('')
+const mine = ref(null)
+const baseLoading = ref(false)
+const gripLoading = ref('')
 const message = ref('')
 const error = ref('')
-const form = reactive({ gripStyle: '', handSize: '', usageDuration: '', comfortScore: 5, clickScore: 5, scrollScore: 5, buildScore: 5, valueScore: 5, proTags: [], conTags: [] })
+const baseForm = reactive({ clickScore: 8, scrollScore: 8, buildScore: 8, coatingScore: 8 })
+const gripScores = reactive({ PALM: 8, CLAW: 8, FINGERTIP: 8, MIXED: 8 })
+const hasBase = computed(() => Boolean(mine.value?.baseSubmitted))
+const profileReady = computed(() => Boolean(auth.user?.handLengthCm))
+const submittedGrip = (code) => mine.value?.gripComforts?.find((item) => item.gripStyle === code)
+const gripSummaryLabel = computed(() => selectedGrip.value
+  ? `${options.value?.gripStyles?.find((item) => item.code === selectedGrip.value)?.label || '当前握姿'}总评`
+  : '全部握姿总评')
 const labels = {
   FINGERTIP: 'Fingertip', EXTRA_SMALL: '超小', SMALL: '小', MEDIUM: '中', LARGE: '大',
   SYMMETRICAL: '对称', ERGONOMIC: '人体工学', HYBRID: '混合', RIGHT: '右手', LEFT: '左手', AMBIDEXTROUS: '双手',
@@ -31,26 +43,72 @@ const loadMine = async () => {
   if (!auth.authenticated || !mouse.value) return
   try {
     const { data } = await api.get(`/mice/${mouse.value.id}/my-review`)
-    if (data) { Object.assign(form, data); hasReview.value = true }
-  } catch { hasReview.value = false }
+    mine.value = data || null
+    if (data) {
+      baseForm.clickScore = data.clickScore || 8; baseForm.scrollScore = data.scrollScore || 8
+      baseForm.buildScore = data.buildScore || 8; baseForm.coatingScore = data.coatingScore || 8
+    }
+  } catch { mine.value = null }
 }
 const load = async () => {
   error.value = ''
   try {
     const [{ data }, optionResponse] = await Promise.all([api.get(`/mice/${route.params.slug}`), api.get('/review-options')])
     mouse.value = data.mouse; summary.value = data.reviewSummary; options.value = optionResponse.data
+    if (auth.authenticated) await auth.refresh()
     await loadMine()
   } catch (e) { error.value = errorMessage(e) }
 }
+const filterSummary = async () => {
+  if (!mouse.value) return
+  const params = new URLSearchParams()
+  if (selectedGrip.value) params.set('gripStyle', selectedGrip.value)
+  if (selectedHand.value) params.set('handSize', selectedHand.value)
+  try { summary.value = (await api.get(`/mice/${mouse.value.id}/review-summary?${params}`)).data } catch (e) { error.value = errorMessage(e) }
+}
 const toggleCompare = () => { try { compare.toggle(mouse.value) } catch (e) { error.value = e.message } }
-const limitTags = (key, event) => { if (form[key].length > 3) { form[key].splice(form[key].indexOf(event.target.value), 1); window.alert('每类标签最多选择 3 个') } }
-const save = async () => {
+const refreshReview = async () => { await loadMine(); await filterSummary() }
+const saveBase = async () => {
+  baseLoading.value = true; message.value = ''; error.value = ''
+  try { await api.put(`/mice/${mouse.value.id}/my-review/base`, baseForm); message.value = '四项基础评分已提交'; await refreshReview() }
+  catch (e) { error.value = errorMessage(e) } finally { baseLoading.value = false }
+}
+const saveGrip = async (code) => {
+  gripLoading.value = code; message.value = ''; error.value = ''
+  try { await api.put(`/mice/${mouse.value.id}/my-review/grips/${code}`, { comfortScore: gripScores[code] }); message.value = '握持舒适度已提交'; await refreshReview() }
+  catch (e) { error.value = errorMessage(e) } finally { gripLoading.value = '' }
+}
+const deleteBase = async () => {
+  if (!window.confirm('确定只删除四项基础评分吗？已提交的握姿评分会保留。')) return
   message.value = ''; error.value = ''
-  try { await api.put(`/mice/${mouse.value.id}/my-review`, form); message.value = '评价已保存'; hasReview.value = true; await load() }
+  try { await api.delete(`/mice/${mouse.value.id}/my-review/base`); message.value = '基础四项评分已删除'; await refreshReview() }
   catch (e) { error.value = errorMessage(e) }
 }
-const remove = async () => { if (!window.confirm('确定删除自己的评价吗？')) return; await api.delete(`/mice/${mouse.value.id}/my-review`); hasReview.value = false; message.value = '评价已删除'; await load() }
-onMounted(load)
+const deleteGrip = async (item) => {
+  if (!window.confirm(`确定删除${item.label}的舒适度评分吗？`)) return
+  message.value = ''; error.value = ''
+  try { await api.delete(`/mice/${mouse.value.id}/my-review/grips/${item.code}`); message.value = `${item.label}评分已删除`; await refreshReview() }
+  catch (e) { error.value = errorMessage(e) }
+}
+let realtimeTimer
+let stopRealtime = () => {}
+const pendingRealtimeTypes = new Set()
+onMounted(() => {
+  load()
+  stopRealtime = onRealtime((event) => {
+    if (!mouse.value || event.mouseId !== mouse.value.id) return
+    pendingRealtimeTypes.add(event.type)
+    clearTimeout(realtimeTimer)
+    realtimeTimer = setTimeout(() => {
+      const reloadMouse = pendingRealtimeTypes.has('mouse.changed')
+      const reloadReview = pendingRealtimeTypes.has('review.changed')
+      pendingRealtimeTypes.clear()
+      if (reloadMouse) load()
+      else if (reloadReview) refreshReview()
+    }, 200)
+  })
+})
+onBeforeUnmount(() => { stopRealtime(); clearTimeout(realtimeTimer); pendingRealtimeTypes.clear() })
 watch(() => route.params.slug, load)
 </script>
 
@@ -90,18 +148,34 @@ watch(() => route.params.slug, load)
         </dl></div>
         <div class="source-card"><span>DATA SOURCE</span><p v-if="mouse.sourceNotes">{{ mouse.sourceNotes }}</p><a v-if="mouse.primarySourceUrl" :href="mouse.primarySourceUrl" target="_blank" rel="noopener noreferrer">查看原始数据来源 ↗</a></div>
       </section>
-      <aside class="review-panel"><div class="section-heading compact"><div><p class="eyebrow">SUBJECTIVE INDEX</p><h2>用户评价</h2></div><span class="sample-badge" :class="{ low: summary.lowSample }">{{ summary.sampleCount }} SAMPLES</span></div>
-        <div class="score-overview"><div class="score-dial"><strong>{{ summary.sampleCount ? summary.overallAverage : '—' }}</strong><span>/ 5.0</span></div><p>{{ summary.sampleCount ? (summary.lowSample ? '样本较少，数据仅供参考。' : '样本量已达到公开排行门槛。') : '暂无结构化评价，成为第一位评价者。' }}</p></div>
-        <div class="dimension-bars" v-if="summary.sampleCount"><div v-for="(label, key) in { comfort:'握持舒适', click:'按键手感', scroll:'滚轮手感', build:'做工质量', value:'性价比' }" :key="key"><span>{{ label }}</span><i><b :style="{ width: summary.dimensionAverages[key] * 20 + '%' }"></b></i><strong>{{ summary.dimensionAverages[key] }}</strong></div></div>
+      <aside class="review-panel"><div class="section-heading compact"><div><p class="eyebrow">SUBJECTIVE INDEX</p><h2>用户评价</h2></div><span class="sample-badge" :class="{ low: summary.lowSample }">基础 {{ summary.baseSampleCount }} · 握姿 {{ summary.gripSampleCount }}</span></div>
+        <div class="review-filters"><label><span>握持方式</span><select v-model="selectedGrip" @change="filterSummary"><option value="">全部握持方式</option><option v-for="item in options?.gripStyles || []" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label><span>手长范围</span><select v-model="selectedHand" @change="filterSummary"><option value="">全部手长</option><option v-for="item in options?.handSizes || []" :key="item.code" :value="item.code">{{ item.label }}</option></select></label></div>
+        <div class="split-score-overview"><article class="score-summary-card base-summary"><div class="score-dial"><strong>{{ summary.baseSampleCount ? summary.baseAverage : '—' }}</strong><span>/ 10.0</span></div><div><small>BASE SCORE</small><h3>基础综合评分</h3><p>{{ summary.baseSampleCount ? `全部 ${summary.baseSampleCount} 份基础评价 · 不受筛选影响` : '暂无基础评分' }}</p></div></article><article class="score-summary-card grip-summary"><div class="score-dial"><strong>{{ summary.gripSampleCount ? summary.gripAverage : '—' }}</strong><span>/ 10.0</span></div><div><small>GRIP SCORE</small><h3>{{ gripSummaryLabel }}</h3><p>{{ summary.gripSampleCount ? `${summary.gripSampleCount} 份握姿评分` : '暂无对应握姿评分' }}</p></div></article></div>
+        <div class="dimension-bars" v-if="summary.baseSampleCount"><div class="dimension-title">基础四项明细</div><div v-for="(label, key) in { click:'按键手感', scroll:'滚轮手感', build:'做工质量', coating:'涂层质感' }" :key="key"><span>{{ label }}</span><i><b :style="{ width: (summary.dimensionAverages[key] || 0) * 10 + '%' }"></b></i><strong>{{ summary.dimensionAverages[key] }}</strong></div></div>
         <div class="flash success" v-if="message">{{ message }}</div><div class="flash error" v-if="error">{{ error }}</div>
         <div class="login-callout" v-if="!auth.authenticated"><span>LOGIN REQUIRED</span><h3>用固定模板分享体验</h3><p>无自由文本，所有评价都可直接聚合比较。</p><RouterLink class="button" to="/login">登录后评价</RouterLink></div>
-        <form class="review-form" v-else-if="options" @submit.prevent="save"><h3>{{ hasReview ? '更新我的评价' : '提交我的评价' }}</h3>
-          <div class="review-context"><label>握持方式<select v-model="form.gripStyle" required><option value="">请选择</option><option v-for="item in options.gripStyles" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label>手长范围<select v-model="form.handSize" required><option value="">请选择</option><option v-for="item in options.handSizes" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label>使用时长<select v-model="form.usageDuration" required><option value="">请选择</option><option v-for="item in options.usageDurations" :key="item.code" :value="item.code">{{ item.label }}</option></select></label></div>
-          <div class="score-inputs"><label v-for="field in [['comfortScore','握持舒适度'],['clickScore','按键手感'],['scrollScore','滚轮手感'],['buildScore','做工质量'],['valueScore','性价比']]" :key="field[0]">{{ field[1] }} <output>{{ form[field[0]] }}</output><input v-model.number="form[field[0]]" type="range" min="1" max="5"></label></div>
-          <fieldset class="tag-picker"><legend>优点标签 <small>最多 3 个</small></legend><label v-for="tag in options.proTags" :key="tag.code"><input v-model="form.proTags" type="checkbox" :value="tag.code" @change="limitTags('proTags', $event)"><span>{{ tag.label }}</span></label></fieldset>
-          <fieldset class="tag-picker"><legend>问题标签 <small>最多 3 个</small></legend><label v-for="tag in options.conTags" :key="tag.code"><input v-model="form.conTags" type="checkbox" :value="tag.code" @change="limitTags('conTags', $event)"><span>{{ tag.label }}</span></label></fieldset>
-          <button class="button full">{{ hasReview ? '保存修改' : '提交评价' }}</button><button v-if="hasReview" class="text-button danger delete-review" type="button" @click="remove">删除我的评价</button>
-        </form>
+        <div class="review-entry-stack" v-else-if="options">
+          <div class="profile-required" v-if="!profileReady"><span>PROFILE REQUIRED</span><p>评分时会自动读取个人资料中的手长，请先填写后再回来提交。</p><RouterLink class="button button-ghost" to="/profile">填写个人手长 →</RouterLink></div>
+          <section class="review-entry-card base-entry" :class="{ locked: hasBase }">
+            <header><div><span>01 / BASE SCORE</span><h3>四项基础评分</h3></div><em>{{ hasBase ? '已提交 · 不可重复' : '每款鼠标仅一次' }}</em></header>
+            <template v-if="hasBase"><div class="locked-score-grid"><div v-for="field in [['clickScore','按键手感'],['scrollScore','滚轮手感'],['buildScore','做工质量'],['coatingScore','涂层质感']]" :key="field[0]"><span>{{ field[1] }}</span><strong>{{ mine[field[0]] }}</strong><small>/ 10</small></div></div><button class="item-delete-button" type="button" @click="deleteBase">删除基础四项</button></template>
+            <form v-else @submit.prevent="saveBase">
+              <div class="score-inputs"><label v-for="field in [['clickScore','按键手感'],['scrollScore','滚轮手感'],['buildScore','做工质量'],['coatingScore','涂层质感']]" :key="field[0]">{{ field[1] }} <output>{{ baseForm[field[0]] }}</output><input v-model.number="baseForm[field[0]]" type="range" min="1" max="10"></label></div>
+              <button class="button full" :disabled="!profileReady || baseLoading">{{ baseLoading ? '提交中…' : '确认提交四项评分' }}</button>
+            </form>
+          </section>
+          <section class="review-entry-card grip-entry">
+            <header><div><span>02 / GRIP COMFORT</span><h3>握持舒适度</h3></div><em>{{ mine?.gripComforts?.length || 0 }} / 4 已评价</em></header>
+            <p class="review-hint">四种握持方式分别记录，每种方式仅可提交一次。</p>
+            <div class="grip-score-list">
+              <article v-for="item in options.gripStyles" :key="item.code" :class="{ completed: submittedGrip(item.code) }">
+                <div class="grip-score-head"><div><span>{{ item.label }}</span><small>{{ item.code }}</small></div><strong>{{ submittedGrip(item.code)?.comfortScore ?? gripScores[item.code] }}</strong></div>
+                <template v-if="submittedGrip(item.code)"><div class="completed-grip-actions"><span class="grip-complete-mark">✓ 已完成该握姿评分</span><button class="item-delete-button compact" type="button" @click="deleteGrip(item)">删除此项</button></div></template>
+                <template v-else><input v-model.number="gripScores[item.code]" type="range" min="1" max="10"><button type="button" @click="saveGrip(item.code)" :disabled="!profileReady || !hasBase || gripLoading === item.code">{{ !hasBase ? '先提交基础四项' : gripLoading === item.code ? '提交中…' : `提交${item.label}评分` }}</button></template>
+              </article>
+            </div>
+          </section>
+        </div>
       </aside>
     </div>
   </main>

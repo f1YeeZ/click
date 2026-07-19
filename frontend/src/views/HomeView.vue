@@ -1,8 +1,9 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api/client'
 import MouseCard from '../components/MouseCard.vue'
+import { onRealtime } from '../services/realtime'
 
 const router = useRouter()
 const query = ref('')
@@ -14,11 +15,22 @@ const quickFilters = [
   { label: 'PAW3395', params: { q: 'PAW3395' } },
   { label: '人体工学', params: { shape: 'ERGONOMIC' } }
 ]
-onMounted(async () => {
+const loadLatest = async () => {
   const { data } = await api.get('/mice', { params: { pageSize: 12, sort: 'newest' } })
   latest.value = data.items.slice(0, 4)
   total.value = data.page.totalItems
+}
+let stopRealtime = () => {}
+let realtimeTimer
+onMounted(() => {
+  loadLatest()
+  stopRealtime = onRealtime((event) => {
+    if (event.type !== 'mouse.changed') return
+    clearTimeout(realtimeTimer)
+    realtimeTimer = setTimeout(loadLatest, 250)
+  })
 })
+onBeforeUnmount(() => { stopRealtime(); clearTimeout(realtimeTimer) })
 const search = () => router.push({ path: '/mice', query: query.value ? { q: query.value } : {} })
 const quickSearch = (params) => router.push({ path: '/mice', query: params })
 </script>
