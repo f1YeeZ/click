@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.net.URI;
 import java.util.concurrent.TimeUnit;
 
 @RestController
@@ -20,8 +21,10 @@ public class ImageController {
     public List<ImageAsset> list() { return images.list(); }
 
     @PostMapping(value = "/api/v1/admin/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @ResponseStatus(HttpStatus.CREATED)
-    public ImageAsset upload(@RequestPart("file") MultipartFile file) { return images.store(file); }
+    public ResponseEntity<ImageAsset> upload(@RequestPart("file") MultipartFile file) {
+        ImageAsset asset = images.store(file);
+        return ResponseEntity.created(URI.create(asset.url())).body(asset);
+    }
 
     @GetMapping("/api/v1/images/{filename:.+}")
     public ResponseEntity<Resource> image(@PathVariable String filename) {

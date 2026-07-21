@@ -1,4 +1,5 @@
 <script setup>
+defineOptions({ name: 'HomeView' })
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api/client'
@@ -9,6 +10,7 @@ const router = useRouter()
 const query = ref('')
 const latest = ref([])
 const total = ref(0)
+const contentReady = ref(false)
 const quickFilters = [
   { label: '无线', params: { connection: 'wireless_2_4g' } },
   { label: '超轻量', params: { weightMax: 60 } },
@@ -22,15 +24,19 @@ const loadLatest = async () => {
 }
 let stopRealtime = () => {}
 let realtimeTimer
+let initialLoadTimer
+let contentReadyTimer
 onMounted(() => {
-  loadLatest()
+  contentReadyTimer = window.setTimeout(() => { contentReady.value = true }, 190)
+  // Let the route fade finish before inserting the initial card grid.
+  initialLoadTimer = window.setTimeout(loadLatest, 220)
   stopRealtime = onRealtime((event) => {
     if (event.type !== 'mouse.changed') return
     clearTimeout(realtimeTimer)
     realtimeTimer = setTimeout(loadLatest, 250)
   })
 })
-onBeforeUnmount(() => { stopRealtime(); clearTimeout(realtimeTimer) })
+onBeforeUnmount(() => { stopRealtime(); clearTimeout(realtimeTimer); clearTimeout(initialLoadTimer); clearTimeout(contentReadyTimer) })
 const search = () => router.push({ path: '/mice', query: query.value ? { q: query.value } : {} })
 const quickSearch = (params) => router.push({ path: '/mice', query: params })
 </script>
@@ -52,6 +58,7 @@ const quickSearch = (params) => router.push({ path: '/mice', query: params })
         </div>
       </div>
     </section>
+    <template v-if="contentReady">
     <section class="section-shell trending-section">
       <div class="section-heading ruled-heading">
         <div><p class="eyebrow">LATEST ARRIVALS / {{ total }} VERIFIED</p><h2>近期新品</h2></div>
@@ -77,5 +84,6 @@ const quickSearch = (params) => router.push({ path: '/mice', query: params })
         </RouterLink>
       </div>
     </section>
+    </template>
   </main>
 </template>

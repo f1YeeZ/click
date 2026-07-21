@@ -44,11 +44,18 @@ public final class ReviewDtos {
 
     public record GripScoreRequest(@Min(1) @Max(10) int comfortScore) {}
 
+    public record SupportPositionRequest(
+            @NotNull @Size(min = 1, max = 7) List<@NotBlank String> positions) {}
+
     public record GripComfort(String gripStyle, int comfortScore) {}
     public record ReviewView(UUID id, UUID mouseId, String gripStyle, String handSize, String usageDuration,
                              int comfortScore, int clickScore, int scrollScore, int buildScore, int valueScore,
                              int coatingScore, BigDecimal overallScore, List<String> proTags, List<String> conTags,
-                             List<GripComfort> gripComforts, boolean baseSubmitted, BigDecimal handLengthCm) {}
+                             List<GripComfort> gripComforts, boolean baseSubmitted, BigDecimal handLengthCm,
+                             List<String> supportPositions) {}
+
+    public record SupportPositionCount(String code, String label, long count, int percentage) {}
+    public record SupportPositionSummary(int sampleCount, List<SupportPositionCount> positions) {}
 
     public record TagCount(String code, String label, long count) {}
     public record ReviewSummary(int sampleCount, BigDecimal overallAverage,
@@ -56,12 +63,23 @@ public final class ReviewDtos {
                                 List<TagCount> topPros, List<TagCount> topCons, boolean lowSample,
                                 String gripStyle, String handSize,
                                 int baseSampleCount, int gripSampleCount,
-                                BigDecimal baseAverage, BigDecimal gripAverage) {
+                                BigDecimal baseAverage, BigDecimal gripAverage,
+                                boolean baseLowSample, boolean gripLowSample) {
         public ReviewSummary(int sampleCount, BigDecimal overallAverage,
                              Map<String, BigDecimal> dimensionAverages,
                              List<TagCount> topPros, List<TagCount> topCons, boolean lowSample) {
             this(sampleCount, overallAverage, dimensionAverages, topPros, topCons, lowSample,
                     null, null, sampleCount, sampleCount, overallAverage, overallAverage);
+        }
+        public ReviewSummary(int sampleCount, BigDecimal overallAverage,
+                             Map<String, BigDecimal> dimensionAverages,
+                             List<TagCount> topPros, List<TagCount> topCons, boolean lowSample,
+                             String gripStyle, String handSize,
+                             int baseSampleCount, int gripSampleCount,
+                             BigDecimal baseAverage, BigDecimal gripAverage) {
+            this(sampleCount, overallAverage, dimensionAverages, topPros, topCons, lowSample,
+                    gripStyle, handSize, baseSampleCount, gripSampleCount, baseAverage, gripAverage,
+                    baseSampleCount < 5, gripSampleCount < 5);
         }
     }
 

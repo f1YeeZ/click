@@ -5,6 +5,7 @@ import api, { errorMessage } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import { useCompareStore } from '../stores/compare'
 import { onRealtime } from '../services/realtime'
+import palmSupportMap from '../assets/palm-support-map.svg'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -12,21 +13,51 @@ const compare = useCompareStore()
 const mouse = ref(null)
 const summary = ref(null)
 const options = ref(null)
+const supportSummary = ref({ sampleCount: 0, positions: [] })
+const supportSelection = ref([])
 const selectedGrip = ref('')
 const selectedHand = ref('')
 const mine = ref(null)
 const baseLoading = ref(false)
 const gripLoading = ref('')
+const supportLoading = ref(false)
+const reviewEditorOpen = ref(false)
+const supportMessage = ref('')
+const supportError = ref('')
 const message = ref('')
 const error = ref('')
 const baseForm = reactive({ clickScore: 8, scrollScore: 8, buildScore: 8, coatingScore: 8 })
 const gripScores = reactive({ PALM: 8, CLAW: 8, FINGERTIP: 8, MIXED: 8 })
+const supportAreas = [
+  { code: 'THUMB_BASE', label: '拇指根部', x: 22, y: 52 },
+  { code: 'INDEX_BASE', label: '食指根部', x: 35, y: 38 },
+  { code: 'MIDDLE_BASE', label: '中指根部', x: 49, y: 36 },
+  { code: 'RING_BASE', label: '无名指根部', x: 62, y: 39 },
+  { code: 'LITTLE_BASE', label: '小指根部', x: 74, y: 46 },
+  { code: 'PALM_CENTER', label: '掌心', x: 50, y: 61 },
+  { code: 'PALM_HEEL', label: '掌根', x: 50, y: 78 }
+]
 const hasBase = computed(() => Boolean(mine.value?.baseSubmitted))
-const profileReady = computed(() => Boolean(auth.user?.handLengthCm))
+const profileReady = computed(() => Boolean(auth.user?.handLengthCm && auth.user?.preferredGripStyle))
 const submittedGrip = (code) => mine.value?.gripComforts?.find((item) => item.gripStyle === code)
+const supportCount = (code) => supportSummary.value.positions?.find((item) => item.code === code) || { count: 0, percentage: 0 }
+const hottestSupportCount = computed(() => Math.max(1, ...(supportSummary.value.positions || []).map((item) => item.count)))
+const supportSelected = (code) => supportSelection.value.includes(code)
+const supportAreaStyle = (area) => {
+  const { count } = supportCount(area.code)
+  const intensity = Math.min(100, count / Math.max(10, hottestSupportCount.value) * 100)
+  const hue = Math.max(0, 132 - intensity * 1.32)
+  const heat = `hsl(${hue} 78% 51%)`
+  return { left: `${area.x}%`, top: `${area.y}%`, '--heat': heat, backgroundColor: `hsl(${hue} 78% 51% / ${0.3 + intensity * 0.006})` }
+}
 const gripSummaryLabel = computed(() => selectedGrip.value
   ? `${options.value?.gripStyles?.find((item) => item.code === selectedGrip.value)?.label || '当前握姿'}总评`
   : '全部握姿总评')
+const supportFilterLabel = computed(() => {
+  const grip = options.value?.gripStyles?.find((item) => item.code === selectedGrip.value)?.label || '全部握姿'
+  const hand = options.value?.handSizes?.find((item) => item.code === selectedHand.value)?.label || '全部手长'
+  return `${grip} · ${hand}`
+})
 const labels = {
   FINGERTIP: 'Fingertip', EXTRA_SMALL: '超小', SMALL: '小', MEDIUM: '中', LARGE: '大',
   SYMMETRICAL: '对称', ERGONOMIC: '人体工学', HYBRID: '混合', RIGHT: '右手', LEFT: '左手', AMBIDEXTROUS: '双手',
@@ -42,53 +73,85 @@ const valueLabel = (value) => labels[value] || value || '—'
 const loadMine = async () => {
   if (!auth.authenticated || !mouse.value) return
   try {
-    const { data } = await api.get(`/mice/${mouse.value.id}/my-review`)
+    const { data } = await api.get(`/mice/${mouse.value.id}/reviews/mine`)
     mine.value = data || null
     if (data) {
       baseForm.clickScore = data.clickScore || 8; baseForm.scrollScore = data.scrollScore || 8
       baseForm.buildScore = data.buildScore || 8; baseForm.coatingScore = data.coatingScore || 8
+      supportSelection.value = [...(data.supportPositions || [])]
     }
-  } catch { mine.value = null }
+    else supportSelection.value = []
+  } catch { mine.value = null; supportSelection.value = [] }
+}
+const reviewFilterParams = () => {
+  const params = new URLSearchParams()
+  if (selectedGrip.value) params.set('gripStyle', selectedGrip.value)
+  if (selectedHand.value) params.set('handSize', selectedHand.value)
+  return params
+}
+const loadSupportSummary = async (params = reviewFilterParams()) => {
+  if (!mouse.value) return
+  supportSummary.value = (await api.get(`/mice/${mouse.value.id}/support-summary?${params}`)).data
 }
 const load = async () => {
   error.value = ''
   try {
-    const [{ data }, optionResponse] = await Promise.all([api.get(`/mice/${route.params.slug}`), api.get('/review-options')])
+    const [{ data }, optionResponse] = await Promise.all([api.get(`/mice/${route.params.id}`), api.get('/review-options')])
     mouse.value = data.mouse; summary.value = data.reviewSummary; options.value = optionResponse.data
+    await loadSupportSummary()
     if (auth.authenticated) await auth.refresh()
     await loadMine()
   } catch (e) { error.value = errorMessage(e) }
 }
 const filterSummary = async () => {
   if (!mouse.value) return
-  const params = new URLSearchParams()
-  if (selectedGrip.value) params.set('gripStyle', selectedGrip.value)
-  if (selectedHand.value) params.set('handSize', selectedHand.value)
-  try { summary.value = (await api.get(`/mice/${mouse.value.id}/review-summary?${params}`)).data } catch (e) { error.value = errorMessage(e) }
+  const params = reviewFilterParams()
+  try {
+    const [reviewResponse] = await Promise.all([
+      api.get(`/mice/${mouse.value.id}/review-summary?${params}`),
+      loadSupportSummary(params)
+    ])
+    summary.value = reviewResponse.data
+  } catch (e) { error.value = errorMessage(e) }
 }
 const toggleCompare = () => { try { compare.toggle(mouse.value) } catch (e) { error.value = e.message } }
-const refreshReview = async () => { await loadMine(); await filterSummary() }
+const refreshReview = async () => { await Promise.all([loadMine(), filterSummary()]) }
 const saveBase = async () => {
   baseLoading.value = true; message.value = ''; error.value = ''
-  try { await api.put(`/mice/${mouse.value.id}/my-review/base`, baseForm); message.value = '四项基础评分已提交'; await refreshReview() }
+  try { await api.put(`/mice/${mouse.value.id}/reviews/mine/base-score`, baseForm); message.value = '四项基础评分已提交'; await refreshReview() }
   catch (e) { error.value = errorMessage(e) } finally { baseLoading.value = false }
 }
 const saveGrip = async (code) => {
   gripLoading.value = code; message.value = ''; error.value = ''
-  try { await api.put(`/mice/${mouse.value.id}/my-review/grips/${code}`, { comfortScore: gripScores[code] }); message.value = '握持舒适度已提交'; await refreshReview() }
+  try { await api.put(`/mice/${mouse.value.id}/reviews/mine/grip-scores/${code}`, { comfortScore: gripScores[code] }); message.value = '握持舒适度已提交'; await refreshReview() }
   catch (e) { error.value = errorMessage(e) } finally { gripLoading.value = '' }
 }
 const deleteBase = async () => {
   if (!window.confirm('确定只删除四项基础评分吗？已提交的握姿评分会保留。')) return
   message.value = ''; error.value = ''
-  try { await api.delete(`/mice/${mouse.value.id}/my-review/base`); message.value = '基础四项评分已删除'; await refreshReview() }
+  try { await api.delete(`/mice/${mouse.value.id}/reviews/mine/base-score`); message.value = '基础四项评分已删除'; await refreshReview() }
   catch (e) { error.value = errorMessage(e) }
 }
 const deleteGrip = async (item) => {
   if (!window.confirm(`确定删除${item.label}的舒适度评分吗？`)) return
   message.value = ''; error.value = ''
-  try { await api.delete(`/mice/${mouse.value.id}/my-review/grips/${item.code}`); message.value = `${item.label}评分已删除`; await refreshReview() }
+  try { await api.delete(`/mice/${mouse.value.id}/reviews/mine/grip-scores/${item.code}`); message.value = `${item.label}评分已删除`; await refreshReview() }
   catch (e) { error.value = errorMessage(e) }
+}
+const toggleSupport = (code) => {
+  if (!auth.authenticated || !profileReady.value) return
+  supportMessage.value = ''; supportError.value = ''
+  supportSelection.value = supportSelected(code)
+    ? supportSelection.value.filter((item) => item !== code)
+    : [...supportSelection.value, code]
+}
+const saveSupport = async () => {
+  supportLoading.value = true; supportMessage.value = ''; supportError.value = ''
+  try {
+    await api.put(`/mice/${mouse.value.id}/reviews/mine/support-positions`, { positions: supportSelection.value })
+    supportMessage.value = '支撑位置已保存并计入热度'
+    await refreshReview()
+  } catch (e) { supportError.value = errorMessage(e) } finally { supportLoading.value = false }
 }
 let realtimeTimer
 let stopRealtime = () => {}
@@ -109,7 +172,7 @@ onMounted(() => {
   })
 })
 onBeforeUnmount(() => { stopRealtime(); clearTimeout(realtimeTimer); pendingRealtimeTypes.clear() })
-watch(() => route.params.slug, load)
+watch(() => route.params.id, load)
 </script>
 
 <template>
@@ -119,43 +182,18 @@ watch(() => route.params.slug, load)
       <div class="detail-title"><div><p class="eyebrow">{{ mouse.brand }} / SPEC SHEET</p><h1>{{ mouse.model }}</h1><p class="detail-variant">{{ mouse.variant || 'STANDARD EDITION' }}</p></div><button class="button" @click="toggleCompare">{{ compare.contains(mouse.id) ? '✓ 已加入对比' : '+ 加入对比清单' }}</button></div>
       <div class="hero-statline"><div><span>DIMENSIONS</span><strong>{{ dimensions }}</strong></div><div><span>WEIGHT</span><strong>{{ mouse.weightG ?? '—' }} g</strong></div><div><span>SENSOR</span><strong>{{ mouse.sensorName || '—' }}</strong></div><div><span>POLLING</span><strong>{{ mouse.maxPollingRateHz ?? '—' }} Hz</strong></div></div>
     </section>
-    <div class="section-shell detail-grid">
-      <section class="spec-sheet"><div class="section-heading compact"><div><p class="eyebrow">OBJECTIVE DATA</p><h2>客观参数</h2></div><span class="verified-mark">● DATA VERIFIED</span></div>
-        <div class="spec-group"><h3>尺寸与重量</h3><dl><div><dt>尺寸分类</dt><dd>{{ labels[mouse.sizeCategory] || '—' }}</dd></div><div><dt>长度</dt><dd>{{ mouse.lengthMm ?? '—' }} mm</dd></div><div><dt>宽度</dt><dd>{{ mouse.widthMm ?? '—' }} mm</dd></div><div><dt>高度</dt><dd>{{ mouse.heightMm ?? '—' }} mm</dd></div><div><dt>重量</dt><dd>{{ mouse.weightG ?? '—' }} g</dd></div></dl></div>
-        <div class="spec-group"><h3>外形细节</h3><dl>
-          <div><dt>外形类型</dt><dd>{{ valueLabel(mouse.shapeType) }}</dd></div><div><dt>适用手</dt><dd>{{ valueLabel(mouse.handCompatibility) }}</dd></div>
-          <div><dt>隆起位置</dt><dd>{{ valueLabel(mouse.humpPlacement) }}</dd></div><div><dt>前端外扩</dt><dd>{{ valueLabel(mouse.frontFlare) }}</dd></div>
-          <div><dt>侧面曲率</dt><dd>{{ valueLabel(mouse.sideCurvature) }}</dd></div><div><dt>拇指托</dt><dd>{{ yesNo(mouse.thumbRest) }}</dd></div>
-          <div><dt>无名指托</dt><dd>{{ yesNo(mouse.ringFingerRest) }}</dd></div>
-        </dl></div>
-        <div class="spec-group"><h3>传感器与性能</h3><dl>
-          <div><dt>传感器型号</dt><dd>{{ mouse.sensorName || '—' }}</dd></div><div><dt>传感器类型</dt><dd>{{ valueLabel(mouse.sensorType) }}</dd></div>
-          <div><dt>最大 DPI</dt><dd>{{ mouse.maxDpi ?? '—' }}</dd></div><div><dt>最大回报率</dt><dd>{{ mouse.maxPollingRateHz ?? '—' }} Hz</dd></div>
-          <div><dt>追踪速度</dt><dd>{{ mouse.trackingSpeedIps ?? '—' }} IPS</dd></div><div><dt>最大加速度</dt><dd>{{ mouse.accelerationG ?? '—' }} G</dd></div>
-          <div><dt>可调位置</dt><dd>{{ yesNo(mouse.adjustableSensorPosition) }}</dd></div><div><dt>传感器位置</dt><dd>{{ mouse.sensorPositionX ?? '—' }} / {{ mouse.sensorPositionY ?? '—' }}</dd></div>
-          <div v-if="mouse.sensorPositionX2 != null || mouse.sensorPositionY2 != null"><dt>第二位置</dt><dd>{{ mouse.sensorPositionX2 ?? '—' }} / {{ mouse.sensorPositionY2 ?? '—' }}</dd></div>
-        </dl></div>
-        <div class="spec-group"><h3>按键与微动</h3><dl>
-          <div><dt>总按键数</dt><dd>{{ mouse.buttonCount ?? '—' }}</dd></div><div><dt>侧键数</dt><dd>{{ mouse.sideButtonCount ?? '—' }}</dd></div>
-          <div><dt>微动型号</dt><dd>{{ mouse.switchName || '—' }}</dd></div><div><dt>微动类型</dt><dd>{{ valueLabel(mouse.switchType) }}</dd></div>
-          <div><dt>微动寿命</dt><dd>{{ mouse.switchLifeSpanM != null ? `${mouse.switchLifeSpanM} 百万次` : '—' }}</dd></div><div><dt>热插拔微动</dt><dd>{{ yesNo(mouse.hotSwappableSwitches) }}</dd></div>
-        </dl></div>
-        <div class="spec-group"><h3>滚轮、材质与连接</h3><dl>
-          <div><dt>编码器型号</dt><dd>{{ mouse.encoderName || '—' }}</dd></div><div><dt>编码器类型</dt><dd>{{ valueLabel(mouse.encoderType) }}</dd></div>
-          <div><dt>滚轮步数</dt><dd>{{ mouse.encoderSteps ?? '—' }}</dd></div><div><dt>连接方式</dt><dd>{{ connection }}</dd></div>
-          <div><dt>主要材质</dt><dd>{{ mouse.materialGeneral || mouse.material || '—' }}</dd></div><div><dt>具体材质</dt><dd>{{ mouse.materialSpecific || '—' }}</dd></div>
-          <div><dt>购买渠道</dt><dd>{{ mouse.purchaseChannels || '—' }}</dd></div>
-        </dl></div>
-        <div class="source-card"><span>DATA SOURCE</span><p v-if="mouse.sourceNotes">{{ mouse.sourceNotes }}</p><a v-if="mouse.primarySourceUrl" :href="mouse.primarySourceUrl" target="_blank" rel="noopener noreferrer">查看原始数据来源 ↗</a></div>
-      </section>
-      <aside class="review-panel"><div class="section-heading compact"><div><p class="eyebrow">SUBJECTIVE INDEX</p><h2>用户评价</h2></div><span class="sample-badge" :class="{ low: summary.lowSample }">基础 {{ summary.baseSampleCount }} · 握姿 {{ summary.gripSampleCount }}</span></div>
+    <div class="section-shell detail-experience-grid">
+      <section class="review-panel"><div class="section-heading compact"><div><p class="eyebrow">SUBJECTIVE INDEX</p><h2>用户评价</h2></div><span class="sample-badge" :class="{ low: summary.baseLowSample || summary.gripLowSample || summary.lowSample }">基础 {{ summary.baseSampleCount }} · 握姿 {{ summary.gripSampleCount }}</span></div>
         <div class="review-filters"><label><span>握持方式</span><select v-model="selectedGrip" @change="filterSummary"><option value="">全部握持方式</option><option v-for="item in options?.gripStyles || []" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label><span>手长范围</span><select v-model="selectedHand" @change="filterSummary"><option value="">全部手长</option><option v-for="item in options?.handSizes || []" :key="item.code" :value="item.code">{{ item.label }}</option></select></label></div>
         <div class="split-score-overview"><article class="score-summary-card base-summary"><div class="score-dial"><strong>{{ summary.baseSampleCount ? summary.baseAverage : '—' }}</strong><span>/ 10.0</span></div><div><small>BASE SCORE</small><h3>基础综合评分</h3><p>{{ summary.baseSampleCount ? `全部 ${summary.baseSampleCount} 份基础评价 · 不受筛选影响` : '暂无基础评分' }}</p></div></article><article class="score-summary-card grip-summary"><div class="score-dial"><strong>{{ summary.gripSampleCount ? summary.gripAverage : '—' }}</strong><span>/ 10.0</span></div><div><small>GRIP SCORE</small><h3>{{ gripSummaryLabel }}</h3><p>{{ summary.gripSampleCount ? `${summary.gripSampleCount} 份握姿评分` : '暂无对应握姿评分' }}</p></div></article></div>
         <div class="dimension-bars" v-if="summary.baseSampleCount"><div class="dimension-title">基础四项明细</div><div v-for="(label, key) in { click:'按键手感', scroll:'滚轮手感', build:'做工质量', coating:'涂层质感' }" :key="key"><span>{{ label }}</span><i><b :style="{ width: (summary.dimensionAverages[key] || 0) * 10 + '%' }"></b></i><strong>{{ summary.dimensionAverages[key] }}</strong></div></div>
         <div class="flash success" v-if="message">{{ message }}</div><div class="flash error" v-if="error">{{ error }}</div>
         <div class="login-callout" v-if="!auth.authenticated"><span>LOGIN REQUIRED</span><h3>用固定模板分享体验</h3><p>无自由文本，所有评价都可直接聚合比较。</p><RouterLink class="button" to="/login">登录后评价</RouterLink></div>
-        <div class="review-entry-stack" v-else-if="options">
-          <div class="profile-required" v-if="!profileReady"><span>PROFILE REQUIRED</span><p>评分时会自动读取个人资料中的手长，请先填写后再回来提交。</p><RouterLink class="button button-ghost" to="/profile">填写个人手长 →</RouterLink></div>
+        <button v-else-if="options" class="review-editor-toggle" type="button" :aria-expanded="reviewEditorOpen" @click="reviewEditorOpen = !reviewEditorOpen">
+          <span><small>MY REVIEW</small><strong>{{ mine ? '管理我的评分' : '添加我的评分' }}</strong></span><em>{{ reviewEditorOpen ? '收起 ↑' : '展开 ↓' }}</em>
+        </button>
+        <div class="review-entry-stack" v-if="auth.authenticated && options && reviewEditorOpen">
+          <div class="profile-required" v-if="!profileReady"><span>PROFILE REQUIRED</span><p>评分时会自动读取个人资料中的手长和习惯握姿，请先填写后再回来提交。</p><RouterLink class="button button-ghost" to="/profile">完善个人资料 →</RouterLink></div>
           <section class="review-entry-card base-entry" :class="{ locked: hasBase }">
             <header><div><span>01 / BASE SCORE</span><h3>四项基础评分</h3></div><em>{{ hasBase ? '已提交 · 不可重复' : '每款鼠标仅一次' }}</em></header>
             <template v-if="hasBase"><div class="locked-score-grid"><div v-for="field in [['clickScore','按键手感'],['scrollScore','滚轮手感'],['buildScore','做工质量'],['coatingScore','涂层质感']]" :key="field[0]"><span>{{ field[1] }}</span><strong>{{ mine[field[0]] }}</strong><small>/ 10</small></div></div><button class="item-delete-button" type="button" @click="deleteBase">删除基础四项</button></template>
@@ -166,18 +204,90 @@ watch(() => route.params.slug, load)
           </section>
           <section class="review-entry-card grip-entry">
             <header><div><span>02 / GRIP COMFORT</span><h3>握持舒适度</h3></div><em>{{ mine?.gripComforts?.length || 0 }} / 4 已评价</em></header>
-            <p class="review-hint">四种握持方式分别记录，每种方式仅可提交一次。</p>
+            <p class="review-hint">四种握持方式分别记录，每种方式仅可提交一次；汇总会按用户习惯握姿加权。</p>
             <div class="grip-score-list">
               <article v-for="item in options.gripStyles" :key="item.code" :class="{ completed: submittedGrip(item.code) }">
                 <div class="grip-score-head"><div><span>{{ item.label }}</span><small>{{ item.code }}</small></div><strong>{{ submittedGrip(item.code)?.comfortScore ?? gripScores[item.code] }}</strong></div>
                 <template v-if="submittedGrip(item.code)"><div class="completed-grip-actions"><span class="grip-complete-mark">✓ 已完成该握姿评分</span><button class="item-delete-button compact" type="button" @click="deleteGrip(item)">删除此项</button></div></template>
-                <template v-else><input v-model.number="gripScores[item.code]" type="range" min="1" max="10"><button type="button" @click="saveGrip(item.code)" :disabled="!profileReady || !hasBase || gripLoading === item.code">{{ !hasBase ? '先提交基础四项' : gripLoading === item.code ? '提交中…' : `提交${item.label}评分` }}</button></template>
+                <template v-else><input v-model.number="gripScores[item.code]" type="range" min="1" max="10"><button type="button" @click="saveGrip(item.code)" :disabled="!profileReady || gripLoading === item.code">{{ gripLoading === item.code ? '提交中…' : `提交${item.label}评分` }}</button></template>
               </article>
             </div>
           </section>
         </div>
+      </section>
+
+      <aside class="support-panel">
+        <div class="section-heading compact support-heading">
+          <div><p class="eyebrow">CONTACT HEATMAP</p><h2>支撑位置评价</h2></div>
+          <span class="sample-badge" :class="{ low: supportSummary.sampleCount < 5 }">{{ supportSummary.sampleCount }} 人标记</span>
+        </div>
+        <p class="support-intro">选择握持时鼠标实际托住手掌的位置，可多选。被选择的次数越多，颜色越接近红色。</p>
+        <div class="support-filter-context"><span>同步筛选</span><strong>{{ supportFilterLabel }}</strong><small>握姿按用户资料中的习惯握姿归类</small></div>
+        <div class="support-map" :class="{ readonly: !auth.authenticated || !profileReady }">
+          <img :src="palmSupportMap" alt="手心朝上的手掌支撑位置示意图">
+          <button
+            v-for="area in supportAreas"
+            :key="area.code"
+            class="support-hotspot"
+            :class="{ selected: supportSelected(area.code) }"
+            :style="supportAreaStyle(area)"
+            type="button"
+            :aria-label="`${area.label}，${supportCount(area.code).count} 人选择，选择率 ${supportCount(area.code).percentage}%`"
+            :aria-pressed="supportSelected(area.code)"
+            :tabindex="auth.authenticated && profileReady ? 0 : -1"
+            @click="toggleSupport(area.code)"
+          >
+            <span>{{ supportSelected(area.code) ? '✓' : supportCount(area.code).count }}</span>
+            <small>{{ area.label }}</small>
+          </button>
+        </div>
+        <div class="heat-legend"><span>较少</span><i></i><span>较多</span></div>
+        <div class="support-selection-status" v-if="auth.authenticated">
+          <strong>{{ supportSelection.length ? `已选择 ${supportSelection.length} 个位置` : '尚未选择位置' }}</strong>
+          <span>{{ supportSelection.length ? supportAreas.filter(area => supportSelected(area.code)).map(area => area.label).join('、') : '点击手掌上的圆点进行多选' }}</span>
+        </div>
+        <div class="flash success" v-if="supportMessage">{{ supportMessage }}</div>
+        <div class="flash error" v-if="supportError">{{ supportError }}</div>
+        <div class="support-profile-required" v-if="auth.authenticated && !profileReady"><span>需要先填写手长与习惯握姿</span><RouterLink to="/profile">完善个人资料 →</RouterLink></div>
+        <button v-if="auth.authenticated" class="button full support-submit" type="button" :disabled="!profileReady || !supportSelection.length || supportLoading" @click="saveSupport">
+          {{ supportLoading ? '保存中…' : mine?.supportPositions?.length ? '更新支撑位置' : '提交支撑位置' }}
+        </button>
+        <div class="support-login" v-else><span>登录后即可在手掌图上标记你的支撑位置</span><RouterLink to="/login">登录评价 →</RouterLink></div>
       </aside>
     </div>
+
+    <section class="section-shell detail-spec-section">
+      <div class="spec-sheet"><div class="section-heading compact"><div><p class="eyebrow">OBJECTIVE DATA</p><h2>客观参数</h2></div><span class="verified-mark">● DATA VERIFIED</span></div>
+        <div class="spec-groups-grid">
+          <div class="spec-group"><h3>尺寸与重量</h3><dl><div><dt>尺寸分类</dt><dd>{{ labels[mouse.sizeCategory] || '—' }}</dd></div><div><dt>长度</dt><dd>{{ mouse.lengthMm ?? '—' }} mm</dd></div><div><dt>宽度</dt><dd>{{ mouse.widthMm ?? '—' }} mm</dd></div><div><dt>高度</dt><dd>{{ mouse.heightMm ?? '—' }} mm</dd></div><div><dt>重量</dt><dd>{{ mouse.weightG ?? '—' }} g</dd></div></dl></div>
+          <div class="spec-group"><h3>外形细节</h3><dl>
+            <div><dt>外形类型</dt><dd>{{ valueLabel(mouse.shapeType) }}</dd></div><div><dt>适用手</dt><dd>{{ valueLabel(mouse.handCompatibility) }}</dd></div>
+            <div><dt>隆起位置</dt><dd>{{ valueLabel(mouse.humpPlacement) }}</dd></div><div><dt>前端外扩</dt><dd>{{ valueLabel(mouse.frontFlare) }}</dd></div>
+            <div><dt>侧面曲率</dt><dd>{{ valueLabel(mouse.sideCurvature) }}</dd></div><div><dt>拇指托</dt><dd>{{ yesNo(mouse.thumbRest) }}</dd></div>
+            <div><dt>无名指托</dt><dd>{{ yesNo(mouse.ringFingerRest) }}</dd></div>
+          </dl></div>
+          <div class="spec-group"><h3>传感器与性能</h3><dl>
+            <div><dt>传感器型号</dt><dd>{{ mouse.sensorName || '—' }}</dd></div><div><dt>传感器类型</dt><dd>{{ valueLabel(mouse.sensorType) }}</dd></div>
+            <div><dt>最大 DPI</dt><dd>{{ mouse.maxDpi ?? '—' }}</dd></div><div><dt>最大回报率</dt><dd>{{ mouse.maxPollingRateHz ?? '—' }} Hz</dd></div>
+            <div><dt>追踪速度</dt><dd>{{ mouse.trackingSpeedIps ?? '—' }} IPS</dd></div><div><dt>最大加速度</dt><dd>{{ mouse.accelerationG ?? '—' }} G</dd></div>
+            <div><dt>可调位置</dt><dd>{{ yesNo(mouse.adjustableSensorPosition) }}</dd></div><div><dt>传感器位置</dt><dd>{{ mouse.sensorPositionX ?? '—' }} / {{ mouse.sensorPositionY ?? '—' }}</dd></div>
+            <div v-if="mouse.sensorPositionX2 != null || mouse.sensorPositionY2 != null"><dt>第二位置</dt><dd>{{ mouse.sensorPositionX2 ?? '—' }} / {{ mouse.sensorPositionY2 ?? '—' }}</dd></div>
+          </dl></div>
+          <div class="spec-group"><h3>按键与微动</h3><dl>
+            <div><dt>总按键数</dt><dd>{{ mouse.buttonCount ?? '—' }}</dd></div><div><dt>侧键数</dt><dd>{{ mouse.sideButtonCount ?? '—' }}</dd></div>
+            <div><dt>微动型号</dt><dd>{{ mouse.switchName || '—' }}</dd></div><div><dt>微动类型</dt><dd>{{ valueLabel(mouse.switchType) }}</dd></div>
+            <div><dt>微动寿命</dt><dd>{{ mouse.switchLifeSpanM != null ? `${mouse.switchLifeSpanM} 百万次` : '—' }}</dd></div><div><dt>热插拔微动</dt><dd>{{ yesNo(mouse.hotSwappableSwitches) }}</dd></div>
+          </dl></div>
+          <div class="spec-group"><h3>滚轮、材质与连接</h3><dl>
+            <div><dt>编码器型号</dt><dd>{{ mouse.encoderName || '—' }}</dd></div><div><dt>编码器类型</dt><dd>{{ valueLabel(mouse.encoderType) }}</dd></div>
+            <div><dt>滚轮步数</dt><dd>{{ mouse.encoderSteps ?? '—' }}</dd></div><div><dt>连接方式</dt><dd>{{ connection }}</dd></div>
+            <div><dt>主要材质</dt><dd>{{ mouse.materialGeneral || mouse.material || '—' }}</dd></div><div><dt>具体材质</dt><dd>{{ mouse.materialSpecific || '—' }}</dd></div>
+            <div><dt>购买渠道</dt><dd>{{ mouse.purchaseChannels || '—' }}</dd></div>
+          </dl></div>
+        </div>
+        <div class="source-card"><span>DATA SOURCE</span><p v-if="mouse.sourceNotes">{{ mouse.sourceNotes }}</p><a v-if="mouse.primarySourceUrl" :href="mouse.primarySourceUrl" target="_blank" rel="noopener noreferrer">查看原始数据来源 ↗</a></div>
+      </div>
+    </section>
   </main>
   <main v-else class="section-shell error-page"><div class="flash error" v-if="error">{{ error }}</div><div v-else class="loading-state">LOADING SPEC SHEET...</div></main>
 </template>

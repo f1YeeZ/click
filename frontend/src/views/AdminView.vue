@@ -319,21 +319,21 @@ const saveMouse = () =>
 const archiveMouse = (id) =>
     request(async () => {
         if (!window.confirm("确定归档这条鼠标数据吗？")) return;
-        await api.delete(`/admin/mice/${id}`);
+        await api.patch(`/admin/mice/${id}`, { status: 'ARCHIVED' });
         notice.value = "鼠标已归档";
         await loadMice();
     });
 const changeUserStatus = (user) =>
     request(async () => {
         const status = user.status === "ACTIVE" ? "DISABLED" : "ACTIVE";
-        await api.patch(`/admin/users/${user.id}/status`, { status });
+        await api.patch(`/admin/users/${user.id}`, { status });
         notice.value = `用户已${status === "ACTIVE" ? "启用" : "禁用"}`;
         await loadUsers();
     });
 const changeReviewStatus = (review) =>
     request(async () => {
         const status = review.status === "ACTIVE" ? "DISABLED" : "ACTIVE";
-        await api.patch(`/admin/reviews/${review.id}/status`, { status });
+        await api.patch(`/admin/reviews/${review.id}`, { status });
         notice.value = `评价已${status === "ACTIVE" ? "恢复" : "停用"}`;
         await loadReviews();
     });
@@ -346,6 +346,7 @@ const statusLabel = (status) =>
         DISABLED: "已停用",
         PENDING: "待审核",
     })[status] || status;
+const gripLabel = (grip) => ({ PALM: '趴握', CLAW: '抓握', FINGERTIP: '指握', MIXED: '混合' }[grip] || '未设置');
 const handleEscape = (event) => {
     if (event.key !== "Escape") return;
     if (showImageLibrary.value) showImageLibrary.value = false;
@@ -1383,6 +1384,7 @@ onBeforeUnmount(() => {
                                 <th>用户</th>
                                 <th>角色</th>
                                 <th>手长资料</th>
+                                <th>习惯握姿</th>
                                 <th>状态</th>
                                 <th>注册时间</th>
                                 <th></th>
@@ -1405,6 +1407,7 @@ onBeforeUnmount(() => {
                                     >
                                 </td>
                                 <td>{{ user.handLengthCm != null ? `${user.handLengthCm} cm` : '未填写' }}</td>
+                                <td>{{ gripLabel(user.preferredGripStyle) }}</td>
                                 <td>
                                     <em
                                         :class="`status-${user.status?.toLowerCase()}`"

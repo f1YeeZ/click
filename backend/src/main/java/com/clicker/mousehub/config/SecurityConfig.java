@@ -58,7 +58,7 @@ public class SecurityConfig {
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "Last-Event-ID"));
-        config.setExposedHeaders(List.of("Retry-After"));
+        config.setExposedHeaders(List.of("Location", "Retry-After"));
         config.setAllowCredentials(false);
         config.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -79,10 +79,13 @@ public class SecurityConfig {
                     headers.httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000));
                 })
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/register/code", "/api/v1/review-options").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/sessions", "/api/v1/users", "/api/v1/registration-verification-codes").permitAll()
+                        .requestMatchers("/api/v1/review-options").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/images/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/mice/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/mouse-rankings", "/api/v1/mouse-recommendations", "/api/v1/mouse-comparisons").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors

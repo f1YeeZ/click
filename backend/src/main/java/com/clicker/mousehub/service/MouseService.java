@@ -121,12 +121,6 @@ public class MouseService {
                 new PageResponse.PageMeta(result.getCurrent(), result.getSize(), result.getTotal(), result.getPages()));
     }
 
-    public MouseDevice requirePublishedBySlug(String slug) {
-        MouseDevice mouse = mice.selectOne(new LambdaQueryWrapper<MouseDevice>()
-                .eq(MouseDevice::getSlug, slug).eq(MouseDevice::getStatus, "PUBLISHED"));
-        return require(mouse);
-    }
-
     public MouseDevice requirePublished(UUID id) {
         MouseDevice mouse = mice.selectOne(new LambdaQueryWrapper<MouseDevice>()
                 .eq(MouseDevice::getId, id).eq(MouseDevice::getStatus, "PUBLISHED"));
@@ -145,10 +139,17 @@ public class MouseService {
     }
 
     @Transactional
-    public void archive(UUID id) {
-        MouseDevice mouse = mice.selectById(id); if (mouse == null) throw new BusinessException("MOUSE_NOT_FOUND", "未找到这款鼠标", HttpStatus.NOT_FOUND);
-        mouse.setStatus("ARCHIVED"); mouse.setUpdatedAt(OffsetDateTime.now()); mice.updateById(mouse);
+    public MouseView updateStatus(UUID id, String status) {
+        if (!Set.of("PUBLISHED", "DRAFT", "ARCHIVED").contains(status)) {
+            throw new BusinessException("INVALID_STATUS", "状态值不符合要求", HttpStatus.BAD_REQUEST);
+        }
+        MouseDevice mouse = mice.selectById(id);
+        if (mouse == null) throw new BusinessException("MOUSE_NOT_FOUND", "未找到这款鼠标", HttpStatus.NOT_FOUND);
+        mouse.setStatus(status);
+        mouse.setUpdatedAt(OffsetDateTime.now());
+        mice.updateById(mouse);
         events.publishAfterCommit("mouse.changed", mouse.getId());
+        return MouseView.from(mouse);
     }
 
     public List<MouseDevice> publishedInOrder(List<UUID> ids) {

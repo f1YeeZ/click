@@ -50,6 +50,17 @@ class SecurityComponentsTest {
     }
 
     @Test
+    void recommendationRateLimitUsesTheNormalizedResourcePath() throws Exception {
+        SecurityRateLimitFilter filter = new SecurityRateLimitFilter(new ObjectMapper().findAndRegisterModules());
+
+        for (int attempt = 0; attempt < 30; attempt++) {
+            assertThat(invoke(filter, "GET", "/api/v1/mouse-recommendations").getStatus()).isEqualTo(204);
+        }
+        assertThat(invoke(filter, "GET", "/api/v1/mouse-recommendations").getStatus()).isEqualTo(429);
+        assertThat(invoke(filter, "GET", "/api/v1/mice/recommendations").getStatus()).isEqualTo(204);
+    }
+
+    @Test
     void realtimePayloadIsLowSensitivityAndConnectionsAreLimitedPerAddress() throws Exception {
         ObjectMapper json = new ObjectMapper().findAndRegisterModules();
         String payload = json.writeValueAsString(new RealtimeEventService.RealtimeEvent(
@@ -68,7 +79,11 @@ class SecurityComponentsTest {
     }
 
     private MockHttpServletResponse invokeLogin(SecurityRateLimitFilter filter) throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/auth/login");
+        return invoke(filter, "POST", "/api/v1/sessions");
+    }
+
+    private MockHttpServletResponse invoke(SecurityRateLimitFilter filter, String method, String path) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         request.setRemoteAddr("192.0.2.10");
         MockHttpServletResponse response = new MockHttpServletResponse();
         filter.doFilter(request, response, (ignoredRequest, targetResponse) ->

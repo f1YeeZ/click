@@ -17,9 +17,9 @@ public final class AdminDtos {
                                     List<MouseDtos.MouseView> recentMice) {}
 
     public record AdminUserView(UUID id, String email, String role, String status, String handSize, java.math.BigDecimal handLengthCm,
-                                OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+                                String preferredGripStyle, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         public static AdminUserView from(UserAccount user) {
-            return new AdminUserView(user.getId(), user.getEmail(), user.getRole(), user.getStatus(), user.getHandSize(), user.getHandLengthCm(), user.getCreatedAt(), user.getUpdatedAt());
+            return new AdminUserView(user.getId(), user.getEmail(), user.getRole(), user.getStatus(), user.getHandSize(), user.getHandLengthCm(), user.getPreferredGripStyle(), user.getCreatedAt(), user.getUpdatedAt());
         }
     }
 

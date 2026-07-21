@@ -13,7 +13,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/login')) {
+    if (error.response?.status === 401 && !error.config?.url?.includes('/sessions')) {
       const prefix = storagePrefix()
       localStorage.removeItem(`${prefix}.token`)
       localStorage.removeItem(`${prefix}.user`)

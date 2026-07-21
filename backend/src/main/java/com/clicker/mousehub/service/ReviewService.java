@@ -26,18 +26,25 @@ public class ReviewService {
     private static final Map<String, String> GRIPS = map("PALM", "趴握", "CLAW", "抓握", "FINGERTIP", "指握", "MIXED", "混合");
     private static final Map<String, String> HANDS = map("SMALL", "小于 17 cm", "MEDIUM", "17～19 cm", "LARGE", "19 cm 及以上");
     private static final Map<String, String> DURATIONS = map("UNDER_7_DAYS", "少于 7 天", "DAYS_7_TO_29", "7～29 天", "DAYS_30_TO_179", "30～179 天", "DAYS_180_PLUS", "180 天及以上");
+    private static final Map<String, String> SUPPORT_POSITIONS = map(
+            "THUMB_BASE", "拇指根部", "INDEX_BASE", "食指根部", "MIDDLE_BASE", "中指根部",
+            "RING_BASE", "无名指根部", "LITTLE_BASE", "小指根部", "PALM_CENTER", "掌心",
+            "PALM_HEEL", "掌根");
 
     private final ReviewMapper reviews;
     private final ReviewGripScoreMapper gripScores;
+    private final ReviewSupportPositionMapper supportPositions;
     private final ReviewTagMapper tags;
     private final UserMapper users;
     private final AuthService auth;
     private final MouseService mice;
     private final RealtimeEventService events;
 
-    public ReviewService(ReviewMapper reviews, ReviewGripScoreMapper gripScores, ReviewTagMapper tags,
+    public ReviewService(ReviewMapper reviews, ReviewGripScoreMapper gripScores,
+                         ReviewSupportPositionMapper supportPositions, ReviewTagMapper tags,
                          UserMapper users, AuthService auth, MouseService mice, RealtimeEventService events) {
-        this.reviews = reviews; this.gripScores = gripScores; this.tags = tags; this.users = users; this.auth = auth; this.mice = mice;
+        this.reviews = reviews; this.gripScores = gripScores; this.supportPositions = supportPositions;
+        this.tags = tags; this.users = users; this.auth = auth; this.mice = mice;
         this.events = events;
     }
 
@@ -65,6 +72,7 @@ public class ReviewService {
         } else {
             if (restoringDeleted) {
                 gripScores.delete(new LambdaQueryWrapper<ReviewGripScore>().eq(ReviewGripScore::getReviewId, review.getId()));
+                supportPositions.delete(new LambdaQueryWrapper<ReviewSupportPosition>().eq(ReviewSupportPosition::getReviewId, review.getId()));
                 tags.deletePros(review.getId()); tags.deleteCons(review.getId());
                 review.setComfortScore(null);
             }
@@ -87,28 +95,96 @@ public class ReviewService {
     }
 
     @Transactional
+    public ReviewView saveSupportPositions(UUID mouseId, String email, SupportPositionRequest request) {
+        UserAccount user = auth.require(email);
+        requireHandLength(user);
+        if (user.getPreferredGripStyle() == null || user.getPreferredGripStyle().isBlank()) {
+            throw new BusinessException("PROFILE_GRIP_STYLE_REQUIRED", "请先在个人资料中选择习惯握姿", HttpStatus.CONFLICT);
+        }
+        mice.requirePublished(mouseId);
+        LinkedHashSet<String> selected = new LinkedHashSet<>(request.positions());
+        if (selected.stream().anyMatch(code -> !SUPPORT_POSITIONS.containsKey(code))) {
+            throw new BusinessException("INVALID_SUPPORT_POSITION", "支撑位置不符合要求", HttpStatus.BAD_REQUEST);
+        }
+
+        Review review = find(user.getId(), mouseId);
+        OffsetDateTime now = OffsetDateTime.now();
+        if (review != null && "DISABLED".equals(review.getStatus())) {
+            throw new BusinessException("REVIEW_DISABLED", "该评价已被管理员停用", HttpStatus.CONFLICT);
+        }
+        if (review == null) {
+            review = new Review();
+            review.setId(UUID.randomUUID()); review.setUserId(user.getId()); review.setMouseId(mouseId);
+            review.setCreatedAt(now); review.setUpdatedAt(now); review.setVersion(0L); review.setStatus("ACTIVE");
+            review.setOverallScore(BigDecimal.ZERO); review.setHandSize(user.getHandSize());
+            reviews.insert(review);
+        } else {
+            if (review.getDeletedAt() != null) {
+                gripScores.delete(new LambdaQueryWrapper<ReviewGripScore>().eq(ReviewGripScore::getReviewId, review.getId()));
+                supportPositions.delete(new LambdaQueryWrapper<ReviewSupportPosition>().eq(ReviewSupportPosition::getReviewId, review.getId()));
+                tags.deletePros(review.getId()); tags.deleteCons(review.getId());
+                review.setGripStyle(null); review.setUsageDuration(null); review.setComfortScore(null);
+                review.setClickScore(null); review.setScrollScore(null); review.setBuildScore(null);
+                review.setValueScore(null); review.setCoatingScore(null); review.setOverallScore(BigDecimal.ZERO);
+            }
+            review.setDeletedAt(null); review.setStatus("ACTIVE"); review.setUpdatedAt(now);
+            review.setVersion((review.getVersion() == null ? 0 : review.getVersion()) + 1);
+            if (review.getHandSize() == null) review.setHandSize(user.getHandSize());
+            reviews.updateById(review);
+        }
+
+        supportPositions.delete(new LambdaQueryWrapper<ReviewSupportPosition>()
+                .eq(ReviewSupportPosition::getReviewId, review.getId()));
+        for (String code : selected) {
+            ReviewSupportPosition position = new ReviewSupportPosition();
+            position.setId(UUID.randomUUID()); position.setReviewId(review.getId());
+            position.setPositionCode(code); position.setCreatedAt(now);
+            supportPositions.insert(position);
+        }
+        events.publishAfterCommit("review.changed", mouseId);
+        return view(review);
+    }
+
+    @Transactional
     public ReviewView saveGrip(UUID mouseId, String email, String gripStyle, GripScoreRequest request) {
         UserAccount user = auth.require(email);
         requireHandLength(user);
         mice.requirePublished(mouseId);
         if (!GRIPS.containsKey(gripStyle)) throw new BusinessException("INVALID_OPTION", "握持方式不符合要求", HttpStatus.BAD_REQUEST);
         Review review = find(user.getId(), mouseId);
-        if (review == null || review.getDeletedAt() != null) {
-            throw new BusinessException("BASE_REVIEW_REQUIRED", "请先提交按键、滚轮、做工和涂层四项评分", HttpStatus.CONFLICT);
+        OffsetDateTime now = OffsetDateTime.now();
+        if (review != null && "DISABLED".equals(review.getStatus())) {
+            throw new BusinessException("REVIEW_DISABLED", "该评价已被管理员停用", HttpStatus.CONFLICT);
         }
-        if ("DISABLED".equals(review.getStatus())) throw new BusinessException("REVIEW_DISABLED", "该评价已被管理员停用", HttpStatus.CONFLICT);
+        if (review == null) {
+            review = new Review();
+            review.setId(UUID.randomUUID()); review.setUserId(user.getId()); review.setMouseId(mouseId);
+            review.setCreatedAt(now); review.setUpdatedAt(now); review.setVersion(0L); review.setStatus("ACTIVE");
+            review.setOverallScore(BigDecimal.ZERO); review.setHandSize(user.getHandSize());
+            reviews.insert(review);
+        } else if (review.getDeletedAt() != null) {
+            gripScores.delete(new LambdaQueryWrapper<ReviewGripScore>().eq(ReviewGripScore::getReviewId, review.getId()));
+            supportPositions.delete(new LambdaQueryWrapper<ReviewSupportPosition>().eq(ReviewSupportPosition::getReviewId, review.getId()));
+            tags.deletePros(review.getId()); tags.deleteCons(review.getId());
+            review.setGripStyle(null); review.setUsageDuration(null); review.setComfortScore(null);
+            review.setClickScore(null); review.setScrollScore(null); review.setBuildScore(null);
+            review.setValueScore(null); review.setCoatingScore(null); review.setOverallScore(BigDecimal.ZERO);
+            review.setDeletedAt(null); review.setStatus("ACTIVE"); review.setUpdatedAt(now);
+            reviews.updateById(review);
+        }
         ReviewGripScore existing = gripScores.selectOne(new LambdaQueryWrapper<ReviewGripScore>()
                 .eq(ReviewGripScore::getReviewId, review.getId()).eq(ReviewGripScore::getGripStyle, gripStyle));
         if (existing != null) throw new BusinessException("GRIP_REVIEW_ALREADY_SUBMITTED", "该握持方式已经评价过", HttpStatus.CONFLICT);
-        OffsetDateTime now = OffsetDateTime.now();
         ReviewGripScore grip = new ReviewGripScore();
         grip.setId(UUID.randomUUID()); grip.setReviewId(review.getId()); grip.setGripStyle(gripStyle);
         grip.setComfortScore(request.comfortScore()); grip.setCreatedAt(now); grip.setUpdatedAt(now);
         gripScores.insert(grip);
         List<ReviewGripScore> allGrips = gripScores.selectList(new LambdaQueryWrapper<ReviewGripScore>().eq(ReviewGripScore::getReviewId, review.getId()));
         int averageComfort = Math.round((float) allGrips.stream().mapToInt(ReviewGripScore::getComfortScore).sum() / allGrips.size());
-        review.setComfortScore(averageComfort); review.setHandSize(user.getHandSize());
-        review.setOverallScore(overall(review, averageComfort)); review.setUpdatedAt(now);
+        review.setComfortScore(averageComfort);
+        if (review.getHandSize() == null) review.setHandSize(user.getHandSize());
+        review.setOverallScore(review.getClickScore() == null ? BigDecimal.valueOf(averageComfort) : overall(review, averageComfort));
+        review.setUpdatedAt(now);
         review.setVersion((review.getVersion() == null ? 0 : review.getVersion()) + 1);
         reviews.updateById(review);
         events.publishAfterCommit("review.changed", mouseId);
@@ -123,13 +199,21 @@ public class ReviewService {
             throw new BusinessException("BASE_REVIEW_NOT_FOUND", "基础四项评分不存在", HttpStatus.NOT_FOUND);
         }
         List<ReviewGripScore> grips = gripScores.selectList(new LambdaQueryWrapper<ReviewGripScore>().eq(ReviewGripScore::getReviewId, review.getId()));
+        OffsetDateTime now = OffsetDateTime.now();
         if (grips.isEmpty()) {
-            reviews.deleteById(review.getId());
+            if (!hasSupportPositions(review.getId())) {
+                reviews.deleteById(review.getId());
+            } else {
+                reviews.update(null, new LambdaUpdateWrapper<Review>().eq(Review::getId, review.getId())
+                        .set(Review::getClickScore, null).set(Review::getScrollScore, null)
+                        .set(Review::getBuildScore, null).set(Review::getCoatingScore, null)
+                        .set(Review::getValueScore, null).set(Review::getOverallScore, BigDecimal.ZERO)
+                        .set(Review::getUpdatedAt, now).set(Review::getVersion, (review.getVersion() == null ? 0 : review.getVersion()) + 1));
+            }
             events.publishAfterCommit("review.changed", mouseId);
             return;
         }
         int averageComfort = roundedComfort(grips);
-        OffsetDateTime now = OffsetDateTime.now();
         reviews.update(null, new LambdaUpdateWrapper<Review>().eq(Review::getId, review.getId())
                 .set(Review::getClickScore, null).set(Review::getScrollScore, null)
                 .set(Review::getBuildScore, null).set(Review::getCoatingScore, null)
@@ -148,7 +232,7 @@ public class ReviewService {
                 .eq(ReviewGripScore::getReviewId, review.getId()).eq(ReviewGripScore::getGripStyle, gripStyle));
         if (deleted == 0) throw new BusinessException("GRIP_REVIEW_NOT_FOUND", "握姿评分不存在", HttpStatus.NOT_FOUND);
         List<ReviewGripScore> remaining = gripScores.selectList(new LambdaQueryWrapper<ReviewGripScore>().eq(ReviewGripScore::getReviewId, review.getId()));
-        if (review.getClickScore() == null && remaining.isEmpty()) {
+        if (review.getClickScore() == null && remaining.isEmpty() && !hasSupportPositions(review.getId())) {
             reviews.deleteById(review.getId());
             events.publishAfterCommit("review.changed", mouseId);
             return;
@@ -180,6 +264,7 @@ public class ReviewService {
             review = new Review(); review.setId(UUID.randomUUID()); review.setUserId(user.getId()); review.setMouseId(mouseId);
             review.setCreatedAt(now); review.setVersion(0L);
             review.setGripStyle(request.gripStyle());
+            review.setHandSize(user.getHandSize());
             review.setComfortScore(required(request.comfortScore(), "握持舒适度"));
             review.setClickScore(required(request.clickScore(), "按键手感"));
             review.setScrollScore(required(request.scrollScore(), "滚轮手感"));
@@ -198,12 +283,13 @@ public class ReviewService {
             reviews.updateById(review);
         }
         ReviewGripScore grip = gripScores.selectOne(new LambdaQueryWrapper<ReviewGripScore>().eq(ReviewGripScore::getReviewId, review.getId()).eq(ReviewGripScore::getGripStyle, request.gripStyle()));
+        boolean creatingGrip = grip == null;
         if (grip == null) {
             grip = new ReviewGripScore(); grip.setId(UUID.randomUUID()); grip.setReviewId(review.getId()); grip.setGripStyle(request.gripStyle()); grip.setCreatedAt(now);
         }
         grip.setComfortScore(required(request.comfortScore(), "握持舒适度")); grip.setUpdatedAt(now);
         if (grip.getCreatedAt() == null) grip.setCreatedAt(now);
-        if (grip.getId() == null) gripScores.insert(grip); else gripScores.updateById(grip);
+        if (creatingGrip) gripScores.insert(grip); else gripScores.updateById(grip);
         review.setComfortScore(grip.getComfortScore());
         int averageComfort = gripScores.selectList(new LambdaQueryWrapper<ReviewGripScore>().eq(ReviewGripScore::getReviewId, review.getId())).stream()
                 .mapToInt(ReviewGripScore::getComfortScore).sum();
@@ -227,6 +313,7 @@ public class ReviewService {
     }
 
     public ReviewView mine(UUID mouseId, String email) {
+        mice.requirePublished(mouseId);
         UserAccount user = auth.require(email);
         Review review = reviews.selectOne(new LambdaQueryWrapper<Review>().eq(Review::getUserId, user.getId()).eq(Review::getMouseId, mouseId).eq(Review::getStatus, "ACTIVE").isNull(Review::getDeletedAt));
         return review == null ? null : view(review);
@@ -234,17 +321,61 @@ public class ReviewService {
 
     public ReviewSummary summary(UUID mouseId) { return summary(mouseId, null, null); }
 
+    public SupportPositionSummary supportSummary(UUID mouseId) { return supportSummary(mouseId, null, null); }
+
+    public SupportPositionSummary supportSummary(UUID mouseId, String gripStyle, String handSize) {
+        List<Review> active = reviews.selectList(new LambdaQueryWrapper<Review>()
+                .eq(Review::getMouseId, mouseId).eq(Review::getStatus, "ACTIVE").isNull(Review::getDeletedAt));
+        if (active.isEmpty()) return new SupportPositionSummary(0, supportPositionCounts(Map.of(), 0));
+        Map<UUID, UserAccount> userById = users.selectBatchIds(active.stream().map(Review::getUserId).distinct().toList()).stream()
+                .collect(java.util.stream.Collectors.toMap(UserAccount::getId, user -> user));
+        List<UUID> reviewIds = active.stream()
+                .filter(review -> handMatches(review, handSize, userById.get(review.getUserId())))
+                .filter(review -> gripStyle == null || gripStyle.isBlank()
+                        || gripStyle.equals(Optional.ofNullable(userById.get(review.getUserId()))
+                        .map(UserAccount::getPreferredGripStyle).orElse(null)))
+                .map(Review::getId).toList();
+        if (reviewIds.isEmpty()) return new SupportPositionSummary(0, supportPositionCounts(Map.of(), 0));
+        List<ReviewSupportPosition> rows = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
+                .in(ReviewSupportPosition::getReviewId, reviewIds));
+        Map<String, Long> counts = rows.stream().collect(java.util.stream.Collectors.groupingBy(
+                ReviewSupportPosition::getPositionCode, java.util.stream.Collectors.counting()));
+        int samples = (int) rows.stream().map(ReviewSupportPosition::getReviewId).distinct().count();
+        return new SupportPositionSummary(samples, supportPositionCounts(counts, samples));
+    }
+
     public ReviewSummary summary(UUID mouseId, String gripStyle, String handSize) {
         List<Review> all = reviews.selectList(new LambdaQueryWrapper<Review>().eq(Review::getMouseId, mouseId).eq(Review::getStatus, "ACTIVE").isNull(Review::getDeletedAt));
         if (all.isEmpty()) return empty(gripStyle, handSize);
-        List<Review> gripReviews = all.stream().filter(r -> handMatches(r, handSize))
-                .filter(r -> gripStyle == null || gripStyle.isBlank() || hasGrip(r.getId(), gripStyle)).toList();
+        Map<UUID, UserAccount> userById = users.selectBatchIds(all.stream().map(Review::getUserId).distinct().toList()).stream()
+                .collect(java.util.stream.Collectors.toMap(UserAccount::getId, u -> u));
+        Map<UUID, List<ReviewGripScore>> gripsByReview = gripScores.selectList(new LambdaQueryWrapper<ReviewGripScore>()
+                        .in(ReviewGripScore::getReviewId, all.stream().map(Review::getId).toList()))
+                .stream().collect(java.util.stream.Collectors.groupingBy(ReviewGripScore::getReviewId));
+        List<Review> gripReviews = all.stream().filter(r -> handMatches(r, handSize, userById.get(r.getUserId())))
+                .filter(r -> gripStyle == null || gripStyle.isBlank() || gripsByReview.getOrDefault(r.getId(), List.of()).stream().anyMatch(g -> gripStyle.equals(g.getGripStyle()))).toList();
         List<Integer> comforts = new ArrayList<>();
+        BigDecimal comfortWeightedTotal = BigDecimal.ZERO;
+        BigDecimal comfortWeightTotal = BigDecimal.ZERO;
+        int gripSamples = 0;
         for (Review review : gripReviews) {
-            List<ReviewGripScore> grips = gripScores.selectList(new LambdaQueryWrapper<ReviewGripScore>().eq(ReviewGripScore::getReviewId, review.getId()));
+            List<ReviewGripScore> grips = gripsByReview.getOrDefault(review.getId(), List.of());
             if (gripStyle != null && !gripStyle.isBlank()) grips = grips.stream().filter(g -> gripStyle.equals(g.getGripStyle())).toList();
-            if (grips.isEmpty() && (gripStyle == null || gripStyle.isBlank()) && review.getComfortScore() != null) comforts.add(normalizeLegacy(review.getComfortScore()));
-            else grips.forEach(g -> comforts.add(normalizeLegacy(g.getComfortScore())));
+            if (grips.isEmpty() && (gripStyle == null || gripStyle.isBlank()) && review.getComfortScore() != null) {
+                comforts.add(normalizeLegacy(review.getComfortScore()));
+                double weight = gripWeight(userById.get(review.getUserId()), review.getGripStyle());
+                comfortWeightedTotal = comfortWeightedTotal.add(BigDecimal.valueOf(normalizeLegacy(review.getComfortScore())).multiply(BigDecimal.valueOf(weight)));
+                comfortWeightTotal = comfortWeightTotal.add(BigDecimal.valueOf(weight));
+                gripSamples++;
+            } else {
+                for (ReviewGripScore grip : grips) {
+                    comforts.add(normalizeLegacy(grip.getComfortScore()));
+                    double weight = gripWeight(userById.get(review.getUserId()), grip.getGripStyle());
+                    comfortWeightedTotal = comfortWeightedTotal.add(BigDecimal.valueOf(normalizeLegacy(grip.getComfortScore())).multiply(BigDecimal.valueOf(weight)));
+                    comfortWeightTotal = comfortWeightTotal.add(BigDecimal.valueOf(weight));
+                    gripSamples++;
+                }
+            }
         }
         List<Integer> clicks = all.stream().map(Review::getClickScore).filter(Objects::nonNull).map(this::normalizeLegacy).toList();
         List<Integer> scrolls = all.stream().map(Review::getScrollScore).filter(Objects::nonNull).map(this::normalizeLegacy).toList();
@@ -269,17 +400,29 @@ public class ReviewService {
         if (!coatings.isEmpty()) baseDimensions.add(averages.get("coating"));
         BigDecimal baseAverage = baseDimensions.isEmpty() ? BigDecimal.ZERO : baseDimensions.stream().reduce(BigDecimal.ZERO, BigDecimal::add)
                 .divide(BigDecimal.valueOf(baseDimensions.size()), 1, RoundingMode.HALF_UP);
-        BigDecimal gripAverage = average(comforts);
+        BigDecimal gripAverage = comfortWeightTotal.signum() == 0 ? BigDecimal.ZERO : comfortWeightedTotal.divide(comfortWeightTotal, 1, RoundingMode.HALF_UP);
+        averages.put("comfort", gripAverage);
+        List<BigDecimal> weightedAvailable = new ArrayList<>();
+        if (gripSamples > 0) weightedAvailable.add(gripAverage);
+        if (!clicks.isEmpty()) weightedAvailable.add(averages.get("click"));
+        if (!scrolls.isEmpty()) weightedAvailable.add(averages.get("scroll"));
+        if (!builds.isEmpty()) weightedAvailable.add(averages.get("build"));
+        if (!coatings.isEmpty()) weightedAvailable.add(averages.get("coating"));
+        overall = weightedAvailable.isEmpty() ? BigDecimal.ZERO : weightedAvailable.stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+                .divide(BigDecimal.valueOf(weightedAvailable.size()), 1, RoundingMode.HALF_UP);
         int baseSamples = (int) all.stream().filter(r -> r.getClickScore() != null).count();
-        int gripSamples = comforts.size();
-        return new ReviewSummary(all.size(), overall, averages, List.of(), List.of(), all.size() < 5,
-                blank(gripStyle), blank(handSize), baseSamples, gripSamples, baseAverage, gripAverage);
+        boolean baseLowSample = baseSamples < 5;
+        boolean gripLowSample = gripSamples < 5;
+        int ratingSamples = (int) all.stream().filter(review -> review.getClickScore() != null
+                || review.getComfortScore() != null || !gripsByReview.getOrDefault(review.getId(), List.of()).isEmpty()).count();
+        return new ReviewSummary(ratingSamples, overall, averages, List.of(), List.of(), baseLowSample || gripLowSample,
+                blank(gripStyle), blank(handSize), baseSamples, gripSamples, baseAverage, gripAverage, baseLowSample, gripLowSample);
     }
 
-    private boolean handMatches(Review review, String handSize) {
+    private boolean handMatches(Review review, String handSize, UserAccount user) {
         if (handSize == null || handSize.isBlank()) return true;
-        UserAccount user = users.selectById(review.getUserId());
-        return user != null && handSize.equals(user.getHandSize());
+        String snapshot = review.getHandSize() == null && user != null ? user.getHandSize() : review.getHandSize();
+        return handSize.equals(snapshot);
     }
 
     private boolean hasGrip(UUID reviewId, String gripStyle) {
@@ -288,7 +431,7 @@ public class ReviewService {
 
     private ReviewSummary empty(String grip, String hand) { return new ReviewSummary(0, BigDecimal.ZERO,
             Map.of("comfort", BigDecimal.ZERO, "click", BigDecimal.ZERO, "scroll", BigDecimal.ZERO, "build", BigDecimal.ZERO, "coating", BigDecimal.ZERO),
-            List.of(), List.of(), true, blank(grip), blank(hand), 0, 0, BigDecimal.ZERO, BigDecimal.ZERO); }
+            List.of(), List.of(), true, blank(grip), blank(hand), 0, 0, BigDecimal.ZERO, BigDecimal.ZERO, true, true); }
 
     private ReviewView view(Review review) {
         UserAccount user = users.selectById(review.getUserId());
@@ -296,10 +439,26 @@ public class ReviewService {
                 .stream().map(g -> new GripComfort(g.getGripStyle(), normalizeLegacy(g.getComfortScore()))).toList();
         int comfort = grips.isEmpty() ? normalizeLegacy(review.getComfortScore()) : grips.get(0).comfortScore();
         int coating = normalizeLegacy(coatingValue(review));
+        List<String> positions = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
+                        .eq(ReviewSupportPosition::getReviewId, review.getId()).orderByAsc(ReviewSupportPosition::getPositionCode))
+                .stream().map(ReviewSupportPosition::getPositionCode).toList();
         return new ReviewView(review.getId(), review.getMouseId(), grips.isEmpty() ? null : grips.get(0).gripStyle(), user == null ? null : user.getHandSize(), null,
                 comfort, normalizeLegacy(review.getClickScore()), normalizeLegacy(review.getScrollScore()), normalizeLegacy(review.getBuildScore()), 0,
                 coating, review.getOverallScore(), List.of(), List.of(), grips, review.getClickScore() != null,
-                user == null ? null : user.getHandLengthCm());
+                user == null ? null : user.getHandLengthCm(), positions);
+    }
+
+    private List<SupportPositionCount> supportPositionCounts(Map<String, Long> counts, int sampleCount) {
+        return SUPPORT_POSITIONS.entrySet().stream().map(entry -> {
+            long count = counts.getOrDefault(entry.getKey(), 0L);
+            int percentage = sampleCount == 0 ? 0 : (int) Math.round(count * 100.0 / sampleCount);
+            return new SupportPositionCount(entry.getKey(), entry.getValue(), count, percentage);
+        }).toList();
+    }
+
+    private boolean hasSupportPositions(UUID reviewId) {
+        return supportPositions.selectCount(new LambdaQueryWrapper<ReviewSupportPosition>()
+                .eq(ReviewSupportPosition::getReviewId, reviewId)) > 0;
     }
 
     private void validate(ReviewRequest request) {
@@ -318,6 +477,10 @@ public class ReviewService {
     private BigDecimal overall(Review review, int comfort) { return BigDecimal.valueOf((long) normalizeLegacy(comfort) + normalizeLegacy(review.getClickScore()) + normalizeLegacy(review.getScrollScore()) + normalizeLegacy(review.getBuildScore()) + normalizeLegacy(coatingValue(review))).divide(BigDecimal.valueOf(5), 1, RoundingMode.HALF_UP); }
     private BigDecimal baseOverall(Review review) { return BigDecimal.valueOf((long) normalizeLegacy(review.getClickScore()) + normalizeLegacy(review.getScrollScore()) + normalizeLegacy(review.getBuildScore()) + normalizeLegacy(coatingValue(review))).divide(BigDecimal.valueOf(4), 1, RoundingMode.HALF_UP); }
     private int roundedComfort(List<ReviewGripScore> grips) { return Math.round((float) grips.stream().mapToInt(ReviewGripScore::getComfortScore).sum() / grips.size()); }
+    private double gripWeight(UserAccount user, String gripStyle) {
+        if (user == null || user.getPreferredGripStyle() == null || user.getPreferredGripStyle().isBlank()) return 1.0;
+        return user.getPreferredGripStyle().equals(gripStyle) ? 1.0 : 0.3;
+    }
     private BigDecimal average(List<Integer> values) { return values.isEmpty() ? BigDecimal.ZERO : BigDecimal.valueOf(values.stream().mapToInt(Integer::intValue).sum()).divide(BigDecimal.valueOf(values.size()), 1, RoundingMode.HALF_UP); }
     private static String blank(String value) { return value == null || value.isBlank() ? null : value; }
     private static List<Option> options(Map<String, String> map) { return map.entrySet().stream().map(e -> new Option(e.getKey(), e.getValue())).toList(); }

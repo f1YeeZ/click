@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS users (
     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
     hand_size VARCHAR(20),
     hand_length_cm NUMERIC(4,1),
+    preferred_grip_style VARCHAR(20),
+    terms_accepted_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
@@ -99,6 +101,8 @@ ALTER TABLE mice ADD COLUMN IF NOT EXISTS purchase_channels VARCHAR(500);
 ALTER TABLE mice ADD COLUMN IF NOT EXISTS image_url VARCHAR(600);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS hand_size VARCHAR(20);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS hand_length_cm NUMERIC(4,1);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_grip_style VARCHAR(20);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMP WITH TIME ZONE;
 
 CREATE INDEX IF NOT EXISTS idx_mice_status_created ON mice(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mice_brand ON mice(brand);
@@ -161,6 +165,15 @@ CREATE TABLE IF NOT EXISTS review_grip_scores (
     CONSTRAINT uk_review_grip UNIQUE (review_id, grip_style)
 );
 CREATE INDEX IF NOT EXISTS idx_review_grip_review ON review_grip_scores(review_id);
+
+CREATE TABLE IF NOT EXISTS review_support_positions (
+    id UUID PRIMARY KEY,
+    review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+    position_code VARCHAR(30) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT uk_review_support_position UNIQUE (review_id, position_code)
+);
+CREATE INDEX IF NOT EXISTS idx_review_support_review ON review_support_positions(review_id);
 
 CREATE TABLE IF NOT EXISTS review_pro_tags (
     review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,

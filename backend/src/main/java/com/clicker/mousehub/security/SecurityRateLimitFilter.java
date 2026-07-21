@@ -23,13 +23,14 @@ import java.util.concurrent.atomic.AtomicReference;
 @Component
 public class SecurityRateLimitFilter extends OncePerRequestFilter {
     private static final List<Rule> RULES = List.of(
-            new Rule("POST", "/api/v1/auth/login", "auth-login", 10, Duration.ofMinutes(5)),
-            new Rule("POST", "/api/v1/auth/register/code", "auth-register-code", 5, Duration.ofMinutes(10)),
-            new Rule("POST", "/api/v1/auth/register", "auth-register", 10, Duration.ofMinutes(10)),
-            new Rule("POST", "/api/v1/auth/password/code", "auth-password-code", 5, Duration.ofMinutes(10)),
-            new Rule("PUT", "/api/v1/auth/password", "auth-password", 10, Duration.ofMinutes(10)),
-            new Rule("*", "/api/v1/mice/[0-9a-fA-F-]{36}/my-review(?:/base|/grips/[A-Z]+)?",
-                    "review-write", 10, Duration.ofMinutes(1))
+            new Rule("POST", "/api/v1/sessions", "auth-login", 10, Duration.ofMinutes(5)),
+            new Rule("POST", "/api/v1/registration-verification-codes", "auth-register-code", 5, Duration.ofMinutes(10)),
+            new Rule("POST", "/api/v1/users", "auth-register", 10, Duration.ofMinutes(10)),
+            new Rule("POST", "/api/v1/password-verification-codes", "auth-password-code", 5, Duration.ofMinutes(10)),
+            new Rule("PUT", "/api/v1/users/me/password", "auth-password", 10, Duration.ofMinutes(10)),
+            new Rule("*", "/api/v1/mice/[0-9a-fA-F-]{36}/reviews/mine(?:/base-score|/grip-scores/[A-Z]+|/support-positions)?",
+                    "review-write", 10, Duration.ofMinutes(1)),
+            new Rule("GET", "/api/v1/mouse-recommendations", "recommendations", 30, Duration.ofMinutes(1))
     );
 
     private final Map<String, Window> windows = new ConcurrentHashMap<>();

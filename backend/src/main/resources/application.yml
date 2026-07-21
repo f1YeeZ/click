@@ -20,9 +20,14 @@ spring:
     driver-class-name: org.postgresql.Driver
   sql:
     init:
-      mode: always
+      mode: never
       encoding: UTF-8
-      schema-locations: classpath:schema.sql
+  flyway:
+    enabled: true
+    encoding: UTF-8
+    baseline-on-migrate: true
+    baseline-version: 0
+    validate-on-migrate: true
   mail:
     host: smtp.qq.com
     port: 465
@@ -35,6 +40,10 @@ spring:
     multipart:
       max-file-size: 6MB
       max-request-size: 6MB
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=256,expireAfterWrite=30s
 
 mybatis-plus:
   type-handlers-package: com.clicker.mousehub.common
@@ -68,3 +77,17 @@ app:
     enabled: ${APP_SEED_ENABLED:true}
     admin-email: ${APP_SEED_ADMIN_EMAIL:}
     admin-password: ${APP_SEED_ADMIN_PASSWORD:}
+
+management:
+  health:
+    mail:
+      enabled: ${MAIL_ENABLED:false}
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never

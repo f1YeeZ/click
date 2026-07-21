@@ -6,21 +6,30 @@ import CompareView from '../views/CompareView.vue'
 import AuthView from '../views/AuthView.vue'
 import AdminView from '../views/AdminView.vue'
 import ProfileView from '../views/ProfileView.vue'
+import LeaderboardView from '../views/LeaderboardView.vue'
+import RecommendationView from '../views/RecommendationView.vue'
+import LegalView from '../views/LegalView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: HomeView },
     { path: '/mice', component: MiceView },
-    { path: '/mice/:slug', component: MouseDetailView },
+    { path: '/mice/:id', component: MouseDetailView },
     { path: '/compare', component: CompareView },
+    { path: '/ranking', component: LeaderboardView },
+    { path: '/recommend', component: RecommendationView },
+    { path: '/privacy', component: LegalView, props: { document: 'privacy' } },
+    { path: '/terms', component: LegalView, props: { document: 'terms' } },
+    { path: '/review-rules', component: LegalView, props: { document: 'rules' } },
     { path: '/login', component: AuthView, props: { mode: 'login' } },
     { path: '/register', component: AuthView, props: { mode: 'register' } },
     { path: '/profile', component: ProfileView, meta: { requiresAuth: true } },
     { path: '/admin/login', component: AuthView, props: { mode: 'login', admin: true } },
     { path: '/admin', component: AdminView, meta: { requiresAdmin: true } }
   ],
-  scrollBehavior: () => ({ top: 0 })
+  // Route transitions should not compete with a smooth scroll animation.
+  scrollBehavior: () => ({ top: 0, left: 0, behavior: 'instant' })
 })
 
 router.beforeEach((to) => {

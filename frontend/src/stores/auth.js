@@ -35,12 +35,12 @@ const createAuthStore = (id, storagePrefix, migrateLegacyAdmin = false) => defin
     admin: (state) => state.user?.role === 'ADMIN'
   },
   actions: {
-    async login(payload) { const { data } = await api.post('/auth/login', payload); this.persist(data) },
-    async sendRegistrationCode(email) { const { data } = await api.post('/auth/register/code', { email }); return data },
-    async register(payload) { const { data } = await api.post('/auth/register', payload); this.persist(data) },
+    async login(payload) { const { data } = await api.post('/sessions', payload); this.persist(data) },
+    async sendRegistrationCode(email) { const { data } = await api.post('/registration-verification-codes', { email }); return data },
+    async register(payload) { const { data } = await api.post('/users', payload); this.persist(data) },
     async refresh() {
       if (!this.token) return
-      try { const { data } = await api.get('/auth/me'); this.user = data; localStorage.setItem(`${storagePrefix}.user`, JSON.stringify(data)) }
+      try { const { data } = await api.get('/users/me'); this.user = data; localStorage.setItem(`${storagePrefix}.user`, JSON.stringify(data)) }
       catch { this.logout() }
     },
     persist(data) {

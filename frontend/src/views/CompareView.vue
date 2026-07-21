@@ -40,7 +40,7 @@ const load = async () => {
     return
   }
   try {
-    const { data } = await api.get('/mice/compare', { params: { ids: queryIds } })
+    const { data } = await api.get('/mouse-comparisons', { params: { mouseIds: queryIds } })
     comparison.value = data
     store.replace(data.items)
     if (data.items.length) await router.replace({ query: { ids: data.items.map((item) => item.id).join(',') } })

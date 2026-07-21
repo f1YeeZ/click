@@ -1,0 +1,38 @@
+server:
+  forward-headers-strategy: framework
+  shutdown: graceful
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  sql:
+    init:
+      mode: never
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: ${JWT_ISSUER:clicker-index}
+    audience: ${JWT_AUDIENCE:clicker-index-web}
+  mail:
+    enabled: ${MAIL_ENABLED:true}
+    from: ${QQ_MAIL_FROM}
+  images:
+    storage-path: ${IMAGE_STORAGE_PATH:/data/mouse-images}
+  seed:
+    enabled: false
+
+logging:
+  level:
+    root: INFO
+    com.clicker.mousehub: INFO

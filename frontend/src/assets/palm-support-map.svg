@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 560" role="img" aria-labelledby="title desc">
+  <title id="title">手心朝上的手掌示意图</title>
+  <desc id="desc">用于标记鼠标握持时手掌受到支撑的位置</desc>
+  <defs>
+    <linearGradient id="skin" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#263858"/>
+      <stop offset="1" stop-color="#101d34"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <path d="M112 238c-7-32-24-76-45-91-18-13-40-1-39 21 1 18 16 47 31 76 13 25 20 48 23 78 5 55 22 104 62 136 17 14 30 34 33 57l3 24h137l4-29c3-22 14-42 29-59 29-34 42-78 43-126l2-100c0-22-12-38-31-38-16 0-28 12-30 30l-4 63 1-144c0-24-13-41-34-41-20 0-33 16-34 40l-4 129 1-174c0-25-14-42-35-42-21 0-35 17-36 42l-2 169-3-143c-1-24-15-40-35-39-20 1-32 18-31 42l4 168Z" fill="url(#skin)" stroke="#6f89b8" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M118 278c40-34 78-47 122-39 44 8 76 33 95 76M126 358c48-31 142-32 204 2M182 425c43-18 86-18 128 1" fill="none" stroke="#7e95be" stroke-opacity=".28" stroke-width="2" stroke-linecap="round"/>
+  <path d="M130 124c17 7 35 7 53 0M198 86c17 7 34 7 51 0M271 101c16 7 32 7 48 0M338 195c15 6 29 6 43 0" fill="none" stroke="#a9bce0" stroke-opacity=".2" stroke-width="2" stroke-linecap="round"/>
+  <ellipse cx="236" cy="332" rx="132" ry="178" fill="none" stroke="#83a6ed" stroke-opacity=".12" stroke-width="16" filter="url(#glow)"/>
+</svg>

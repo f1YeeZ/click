@@ -4,6 +4,7 @@ import com.clicker.mousehub.dto.AuthDtos.ProfileRequest;
 import com.clicker.mousehub.dto.ReviewDtos.BaseScoreRequest;
 import com.clicker.mousehub.dto.ReviewDtos.GripScoreRequest;
 import com.clicker.mousehub.dto.ReviewDtos.ReviewRequest;
+import com.clicker.mousehub.dto.ReviewDtos.SupportPositionRequest;
 import com.clicker.mousehub.entity.MouseDevice;
 import com.clicker.mousehub.mapper.MouseMapper;
 import com.clicker.mousehub.mapper.UserMapper;
@@ -120,6 +121,84 @@ class ReviewServiceIntegrationTest {
         assertThat(restored.baseSubmitted()).isTrue();
         assertThat(restored.gripComforts()).isEmpty();
         assertThat(reviews.summary(mouse.getId()).sampleCount()).isEqualTo(1);
+    }
+
+    @Test void gripScoresCanStandAloneAndUsePreferredGripWeight() {
+        String email = "weighted-grip-reviewer@example.com";
+        createUser(email);
+        auth.updateProfile(email, new ProfileRequest(new BigDecimal("18.0"), "CLAW"));
+        MouseDevice mouse = mouse();
+        mice.insert(mouse);
+
+        reviews.saveGrip(mouse.getId(), email, "CLAW", new GripScoreRequest(10));
+        reviews.saveGrip(mouse.getId(), email, "PALM", new GripScoreRequest(2));
+
+        var mine = reviews.mine(mouse.getId(), email);
+        assertThat(mine.baseSubmitted()).isFalse();
+        assertThat(mine.gripComforts()).hasSize(2);
+        assertThat(reviews.summary(mouse.getId()).gripAverage()).isEqualByComparingTo("8.2");
+        assertThat(reviews.summary(mouse.getId()).gripLowSample()).isTrue();
+    }
+
+    @Test void supportPositionsAreMultiSelectReplaceableAndAggregatedBySelectionRate() {
+        String firstEmail = "support-one@example.com";
+        String secondEmail = "support-two@example.com";
+        createUser(firstEmail);
+        createUser(secondEmail);
+        auth.updateProfile(firstEmail, new ProfileRequest(new BigDecimal("18.0"), "CLAW"));
+        auth.updateProfile(secondEmail, new ProfileRequest(new BigDecimal("16.5"), "PALM"));
+        MouseDevice mouse = mouse();
+        mice.insert(mouse);
+
+        reviews.saveSupportPositions(mouse.getId(), firstEmail,
+                new SupportPositionRequest(List.of("PALM_CENTER", "PALM_HEEL")));
+        reviews.saveSupportPositions(mouse.getId(), secondEmail,
+                new SupportPositionRequest(List.of("PALM_CENTER")));
+
+        var summary = reviews.supportSummary(mouse.getId());
+        assertThat(summary.sampleCount()).isEqualTo(2);
+        assertThat(summary.positions()).filteredOn(position -> position.code().equals("PALM_CENTER"))
+                .singleElement().satisfies(position -> {
+                    assertThat(position.count()).isEqualTo(2);
+                    assertThat(position.percentage()).isEqualTo(100);
+                });
+        assertThat(summary.positions()).filteredOn(position -> position.code().equals("PALM_HEEL"))
+                .singleElement().satisfies(position -> {
+                    assertThat(position.count()).isEqualTo(1);
+                    assertThat(position.percentage()).isEqualTo(50);
+                });
+
+        var clawMedium = reviews.supportSummary(mouse.getId(), "CLAW", "MEDIUM");
+        assertThat(clawMedium.sampleCount()).isEqualTo(1);
+        assertThat(clawMedium.positions()).filteredOn(position -> position.code().equals("PALM_HEEL"))
+                .singleElement().extracting("count").isEqualTo(1L);
+        var palmSmall = reviews.supportSummary(mouse.getId(), "PALM", "SMALL");
+        assertThat(palmSmall.sampleCount()).isEqualTo(1);
+        assertThat(palmSmall.positions()).filteredOn(position -> position.code().equals("PALM_HEEL"))
+                .singleElement().extracting("count").isEqualTo(0L);
+
+        reviews.saveSupportPositions(mouse.getId(), firstEmail,
+                new SupportPositionRequest(List.of("THUMB_BASE")));
+        assertThat(reviews.mine(mouse.getId(), firstEmail).supportPositions()).containsExactly("THUMB_BASE");
+        assertThat(reviews.supportSummary(mouse.getId()).positions())
+                .filteredOn(position -> position.code().equals("PALM_HEEL"))
+                .singleElement().extracting("count").isEqualTo(0L);
+    }
+
+    @Test void handLengthAndPreferredGripAreImmutableAfterFirstSelection() {
+        String email = "locked-profile@example.com";
+        createUser(email);
+
+        auth.updateProfile(email, new ProfileRequest(new BigDecimal("18.0"), null));
+        auth.updateProfile(email, new ProfileRequest(new BigDecimal("18.5"), null));
+        var completed = auth.updateProfile(email, new ProfileRequest(new BigDecimal("18.0"), "CLAW"));
+        assertThat(completed.handLengthCm()).isEqualByComparingTo("18.0");
+        assertThat(completed.preferredGripStyle()).isEqualTo("CLAW");
+
+        assertThatThrownBy(() -> auth.updateProfile(email, new ProfileRequest(new BigDecimal("18.1"), "CLAW")))
+                .hasMessageContaining("个人资料已锁定，手长不可更改");
+        assertThatThrownBy(() -> auth.updateProfile(email, new ProfileRequest(new BigDecimal("18.0"), "PALM")))
+                .hasMessageContaining("个人资料已锁定，习惯握姿不可更改");
     }
 
     private MouseDevice mouse() {

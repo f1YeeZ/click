@@ -50,6 +50,7 @@ public class AuthService {
         user.setPasswordHash(encoder.encode(request.password()));
         user.setRole("USER");
         user.setStatus("ACTIVE");
+        user.setTermsAcceptedAt(now);
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
         users.insert(user);
@@ -92,8 +93,23 @@ public class AuthService {
     @Transactional
     public UserView updateProfile(String email, ProfileRequest request) {
         UserAccount user = require(email);
-        user.setHandLengthCm(request.handLengthCm());
-        user.setHandSize(handSize(request.handLengthCm()));
+        boolean profileLocked = user.getHandLengthCm() != null && user.getPreferredGripStyle() != null;
+        if (profileLocked) {
+            if (request.handLengthCm() != null && user.getHandLengthCm().compareTo(request.handLengthCm()) != 0) {
+                throw new BusinessException("PROFILE_HAND_LENGTH_LOCKED", "个人资料已锁定，手长不可更改", HttpStatus.CONFLICT);
+            }
+            if (request.preferredGripStyle() != null && !user.getPreferredGripStyle().equals(request.preferredGripStyle())) {
+                throw new BusinessException("PROFILE_GRIP_STYLE_LOCKED", "个人资料已锁定，习惯握姿不可更改", HttpStatus.CONFLICT);
+            }
+        } else {
+            if (request.handLengthCm() != null) {
+                user.setHandLengthCm(request.handLengthCm());
+                user.setHandSize(handSize(request.handLengthCm()));
+            }
+            if (request.preferredGripStyle() != null) {
+                user.setPreferredGripStyle(request.preferredGripStyle());
+            }
+        }
         user.setUpdatedAt(OffsetDateTime.now());
         users.updateById(user);
         return view(user);
@@ -114,7 +130,7 @@ public class AuthService {
     }
 
     private UserView view(UserAccount user) {
-        return new UserView(user.getId(), user.getEmail(), user.getRole(), user.getHandSize(), user.getHandLengthCm());
+        return new UserView(user.getId(), user.getEmail(), user.getRole(), user.getHandSize(), user.getHandLengthCm(), user.getPreferredGripStyle());
     }
 
     private String handSize(java.math.BigDecimal length) {

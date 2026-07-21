@@ -6,6 +6,7 @@
 - `frontend`：Vue 3、Vite、Vue Router、Pinia、Axios。
 
 完整产品规格见 [开发文档](docs/DEVELOPMENT.md)。
+生产环境部署见 [上线部署文档](docs/DEPLOYMENT.md)。
 
 ## 目录
 
@@ -24,6 +25,8 @@ clicker_demo/
 - 邮箱注册登录、JWT 鉴权和管理员权限；
 - SSE 实时刷新鼠标列表、详情、对比和评价汇总；
 - 固定维度评价、固定标签、修改、软删除和聚合；
+- 手掌支撑位置多选评价与选择率热度聚合；
+- 根据握姿与必要支撑位置进行严格证据匹配的鼠标推荐页；
 - MyBatis-Plus Mapper、分页插件和 UUID 类型处理；
 - PostgreSQL 初始化表结构和 8 款演示数据；
 - Vue 响应式首页、鼠标库、详情、对比、登录注册和管理页面；
@@ -67,7 +70,7 @@ $env:JWT_SECRET="<至少32字符的随机密钥>"
 mvn spring-boot:run
 ```
 
-后端启动时执行 `schema.sql`，在空表中写入演示鼠标。API 地址为 <http://localhost:8080/api/v1>。
+后端启动时由 Flyway 执行 `db/migration` 下的版本化迁移；开发环境在空表中写入演示鼠标。API 地址为 <http://localhost:8080/api/v1>。
 
 如只需快速联调，可使用 H2 演示配置；正式运行仍使用 PostgreSQL：
 
@@ -134,18 +137,23 @@ npm run build
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/v1/auth/register/code` | 向待注册邮箱发送验证码 |
-| POST | `/api/v1/auth/register` | 使用邮箱、密码和验证码注册并返回 JWT |
-| POST | `/api/v1/auth/login` | 登录并返回 JWT |
-| GET | `/api/v1/auth/me` | 当前用户 |
-| POST | `/api/v1/auth/password/code` | 向当前登录邮箱发送修改密码验证码 |
-| PUT | `/api/v1/auth/password` | 使用邮箱验证码修改当前账号密码 |
+| POST | `/api/v1/registration-verification-codes` | 向待注册邮箱发送验证码 |
+| POST | `/api/v1/users` | 使用邮箱、密码和验证码创建用户并返回 JWT |
+| POST | `/api/v1/sessions` | 创建登录会话并返回 JWT |
+| GET/PATCH | `/api/v1/users/me` | 获取或更新当前用户资料 |
+| POST | `/api/v1/password-verification-codes` | 向当前登录邮箱发送修改密码验证码 |
+| PUT | `/api/v1/users/me/password` | 使用邮箱验证码替换当前账号密码 |
 | GET | `/api/v1/events` | 公开的低敏 SSE 资源变更事件流 |
 | GET | `/api/v1/mice` | 搜索、筛选和分页 |
-| GET | `/api/v1/mice/{slug}` | 鼠标详情和评价汇总 |
-| GET | `/api/v1/mice/compare?ids=...` | 参数对比 |
-| GET/PUT/DELETE | `/api/v1/mice/{id}/my-review` | 当前用户评价 |
+| GET | `/api/v1/mice/{id}` | 按 UUID 获取鼠标详情和评价汇总 |
+| GET | `/api/v1/mouse-comparisons?mouseIds=...` | 参数对比，最多 4 个 UUID |
+| GET | `/api/v1/mouse-rankings?dimension=...` | 按评分维度获取排行榜 |
+| GET | `/api/v1/mouse-recommendations` | 按握姿和支撑位置推荐鼠标 |
+| GET/PUT/DELETE | `/api/v1/mice/{id}/reviews/mine` | 当前用户对该鼠标的评价 |
+| PUT | `/api/v1/mice/{id}/reviews/mine/support-positions` | 保存当前用户的手掌支撑位置（可多选） |
+| GET | `/api/v1/mice/{id}/support-summary` | 获取各支撑位置的选择人数与选择率 |
 | POST | `/api/v1/admin/mice` | 管理员新增鼠标 |
+| PUT/PATCH | `/api/v1/admin/mice/{id}` | 完整更新鼠标或局部更新状态 |
 
 ## 实时更新与安全配置
 
@@ -153,9 +161,8 @@ SSE 事件只包含事件类型、鼠标 ID 和发生时间；浏览器收到事
 
 JWT 默认有效期为 24 小时，并校验 `issuer`、`audience` 和唯一 `jti`；生产环境必须设置独立的强随机 `JWT_SECRET`。CORS 只接受 `CORS_ALLOWED_ORIGINS` 中的明确来源，不允许 `*`。登录、注册验证码、注册和改密接口已按 IP 限流；单机部署使用内存窗口，多实例部署时应将限流状态迁移到 Redis 或网关。
 
-## 初始版暂未实现
+## 当前暂未实现
 
 - CSV 两阶段导入；
-- 管理后台编辑、下架及评价治理；
 - 忘记密码；
-- 评分排行、图片、轮廓和 3D 模型。
+- 鼠标轮廓和 3D 模型。

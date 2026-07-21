@@ -21,8 +21,7 @@ public class SeedDataConfig {
                            @Value("${app.seed.admin-email:}") String adminEmail,
                            @Value("${app.seed.admin-password:}") String adminPassword) {
         return args -> {
-            if (!enabled) return;
-            if (mice.selectCount(null) == 0) samples().forEach(mice::insert);
+            if (enabled && mice.selectCount(null) == 0) samples().forEach(mice::insert);
             if (StringUtils.hasText(adminEmail) && StringUtils.hasText(adminPassword)) {
                 String email = UserAccount.normalizeEmail(adminEmail);
                 if (users.selectCount(Wrappers.<UserAccount>lambdaQuery().eq(UserAccount::getEmail, email)) == 0) {

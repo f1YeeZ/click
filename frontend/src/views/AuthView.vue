@@ -7,7 +7,7 @@ import { errorMessage } from '../api/client'
 const props = defineProps({ mode: { type: String, required: true }, admin: { type: Boolean, default: false } })
 const router = useRouter()
 const auth = props.admin ? useAdminAuthStore() : useAuthStore()
-const form = reactive({ email: '', password: '', verificationCode: '' })
+const form = reactive({ email: '', password: '', verificationCode: '', acceptedTerms: false })
 const error = ref('')
 const loading = ref(false)
 const codeLoading = ref(false)
@@ -38,7 +38,7 @@ const submit = async () => {
   loading.value = true; error.value = ''
   try {
     const payload = register.value
-      ? { email: form.email, password: form.password, verificationCode: form.verificationCode }
+      ? { email: form.email, password: form.password, verificationCode: form.verificationCode, acceptedTerms: form.acceptedTerms }
       : { email: form.email, password: form.password }
     register.value ? await auth.register(payload) : await auth.login(payload)
     router.push(props.admin ? '/admin' : '/mice')
@@ -58,6 +58,7 @@ onBeforeUnmount(() => clearInterval(countdownTimer))
           <span class="verification-input"><input v-model.trim="form.verificationCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="\d{6}" maxlength="6" required placeholder="6 位验证码"><button type="button" :disabled="codeLoading || resendSeconds > 0" @click="sendCode">{{ codeLoading ? '发送中…' : (resendSeconds > 0 ? `${resendSeconds}s 后重发` : (codeSent ? '重新发送' : '获取验证码')) }}</button></span>
         </label>
         <label>密码<input v-model="form.password" type="password" :autocomplete="register ? 'new-password' : 'current-password'" minlength="8" maxlength="72" required placeholder="8～72 位"></label>
+        <label v-if="register" class="legal-consent"><input v-model="form.acceptedTerms" type="checkbox" required><span>我已阅读并同意 <RouterLink to="/terms" target="_blank">用户协议</RouterLink> 和 <RouterLink to="/privacy" target="_blank">隐私政策</RouterLink></span></label>
         <button class="button full" :disabled="loading">{{ loading ? '处理中…' : (register ? '验证并创建账号 →' : '登录 →') }}</button>
       </form>
       <p class="auth-switch" v-if="!admin">{{ register ? '已经注册？' : '还没有账号？' }} <RouterLink :to="register ? '/login' : '/register'">{{ register ? '返回登录' : '立即创建' }}</RouterLink></p>

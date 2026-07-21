@@ -3,6 +3,7 @@ package com.clicker.mousehub.controller;
 import com.clicker.mousehub.dto.MouseDtos.*;
 import com.clicker.mousehub.dto.PageResponse;
 import com.clicker.mousehub.dto.ReviewDtos.ReviewSummary;
+import com.clicker.mousehub.dto.ReviewDtos.SupportPositionSummary;
 import com.clicker.mousehub.entity.MouseDevice;
 import com.clicker.mousehub.service.*;
 import org.springframework.web.bind.annotation.*;
@@ -15,10 +16,9 @@ import java.util.*;
 public class MouseController {
     private final MouseService mice;
     private final ReviewService reviews;
-    private final ComparisonService comparison;
 
-    public MouseController(MouseService mice, ReviewService reviews, ComparisonService comparison) {
-        this.mice = mice; this.reviews = reviews; this.comparison = comparison;
+    public MouseController(MouseService mice, ReviewService reviews) {
+        this.mice = mice; this.reviews = reviews;
     }
 
     @GetMapping
@@ -78,18 +78,11 @@ public class MouseController {
 
     @GetMapping("/brands") public List<String> brands() { return mice.brands(); }
 
-    @GetMapping("/compare")
-    public CompareResponse compare(@RequestParam String ids) {
-        List<UUID> parsed = Arrays.stream(ids.split(",")).map(String::trim).filter(s -> !s.isBlank())
-                .map(UUID::fromString).distinct().limit(4).toList();
-        return comparison.compare(parsed);
-    }
-
-    @GetMapping("/{slug}")
-    public MouseDetail detail(@PathVariable String slug,
+    @GetMapping("/{id}")
+    public MouseDetail detail(@PathVariable UUID id,
                                @RequestParam(required = false) String gripStyle,
                                @RequestParam(required = false) String handSize) {
-        MouseDevice mouse = mice.requirePublishedBySlug(slug);
+        MouseDevice mouse = mice.requirePublished(id);
         return new MouseDetail(MouseView.from(mouse), reviews.summary(mouse.getId(), gripStyle, handSize));
     }
 
@@ -99,6 +92,14 @@ public class MouseController {
                                  @RequestParam(required = false) String handSize) {
         mice.requirePublished(id);
         return reviews.summary(id, gripStyle, handSize);
+    }
+
+    @GetMapping("/{id}/support-summary")
+    public SupportPositionSummary supportSummary(@PathVariable UUID id,
+                                                  @RequestParam(required = false) String gripStyle,
+                                                  @RequestParam(required = false) String handSize) {
+        mice.requirePublished(id);
+        return reviews.supportSummary(id, gripStyle, handSize);
     }
 
     public record MouseDetail(MouseView mouse, ReviewSummary reviewSummary) {}

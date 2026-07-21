@@ -2,6 +2,9 @@ package com.clicker.mousehub.service;
 
 import com.clicker.mousehub.common.BusinessException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -23,11 +26,21 @@ public class RealtimeEventService {
     private final AtomicLong eventIds = new AtomicLong();
     private final int maxConnections;
     private final int maxConnectionsPerAddress;
+    private final CacheManager cacheManager;
 
+    @Autowired
     public RealtimeEventService(@Value("${app.realtime.max-connections:200}") int maxConnections,
-                                @Value("${app.realtime.max-connections-per-address:5}") int maxConnectionsPerAddress) {
+                                @Value("${app.realtime.max-connections-per-address:5}") int maxConnectionsPerAddress,
+                                CacheManager cacheManager) {
         this.maxConnections = Math.max(1, maxConnections);
         this.maxConnectionsPerAddress = Math.max(1, maxConnectionsPerAddress);
+        this.cacheManager = cacheManager;
+    }
+
+    public RealtimeEventService(int maxConnections, int maxConnectionsPerAddress) {
+        this.maxConnections = Math.max(1, maxConnections);
+        this.maxConnectionsPerAddress = Math.max(1, maxConnectionsPerAddress);
+        this.cacheManager = null;
     }
 
     public synchronized SseEmitter connect(String remoteAddress) {
@@ -68,6 +81,10 @@ public class RealtimeEventService {
     int connectionCount() { return clients.size(); }
 
     private void publish(String type, UUID mouseId) {
+        if (("review.changed".equals(type) || "mouse.changed".equals(type)) && cacheManager != null) {
+            Cache cache = cacheManager.getCache("recommendations");
+            if (cache != null) cache.clear();
+        }
         RealtimeEvent data = new RealtimeEvent(type, mouseId, OffsetDateTime.now());
         String id = nextId();
         clients.forEach((clientId, client) -> send(clientId, client.emitter(),

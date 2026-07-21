@@ -1,0 +1,680 @@
+/* Contrast palette: keep the dark hardware aesthetic, make information roles explicit. */
+:root {
+  --ink: #f5f7fb;
+  --muted: #b5c4d9;
+  --soft-muted: #8294ad;
+  --black: #07111f;
+  --panel: #0e1b2d;
+  --panel2: #142743;
+  --line: #314a6b;
+  --acid: #67a3ff;
+  --accent-strong: #236bdb;
+  --orange: #ffc857;
+  --danger: #ff7474;
+  --green: #58d49c;
+  --focus-ring: rgba(103, 163, 255, 0.42);
+}
+
+html {
+  background: var(--black);
+  color-scheme: dark;
+}
+
+body {
+  background: var(--black);
+  color: var(--ink);
+}
+
+body::before {
+  opacity: 0.018;
+}
+
+/* Text hierarchy: white is important, blue is interactive, cool gray is supporting. */
+h1,
+h2,
+h3,
+h4,
+strong,
+th,
+dd,
+.card-metrics strong,
+.comparison-table td strong,
+.admin-table td strong {
+  color: var(--ink);
+}
+
+p,
+.hero-lead,
+.auth-note,
+.detail-variant,
+.variant,
+.profile-tip,
+.password-card-intro p:last-child,
+.system-card p,
+.selected-sidebar-note,
+.search-hint {
+  color: var(--muted);
+}
+
+.eyebrow,
+.page-kicker,
+.panel-kicker,
+.channel-label,
+.card-topline,
+.system-icon,
+.breadcrumb a,
+.inline-link,
+.source-card a,
+.auth-switch a,
+.profile-measure small,
+.selected-index,
+.selected-sidebar-head h2 b,
+.result-action.selected {
+  color: var(--acid);
+}
+
+.card-topline span:last-child,
+.card-metrics span,
+.spec-group dt,
+.hero-statline span,
+.account-id,
+.profile-id,
+.filter-head-actions,
+.filter-head-actions button,
+.selected-brand,
+.selected-row-copy small,
+.selected-dimensions dt,
+.comparison-table tbody th span,
+.comparison-table tbody th small,
+.admin-table td small,
+.admin-table .mono,
+.review-filters label,
+.score-summary-card p,
+.review-hint {
+  color: var(--soft-muted);
+}
+
+a:hover,
+.text-button:hover,
+.inline-link:hover,
+.auth-switch a:hover,
+.source-card a:hover {
+  color: #a8c9ff;
+}
+
+/* Surfaces and borders */
+.site-header,
+.auth-form-card,
+.profile-card,
+.password-card,
+.mouse-card,
+.system-card,
+.filter-studio,
+.filter-panel,
+.hero-statline,
+.spec-sheet,
+.review-panel,
+.review-entry-card,
+.score-summary-card,
+.selected-sidebar,
+.selected-mouse-row,
+.compare-search-panel,
+.compare-workbench .comparison-wrap,
+.compare-workbench .compare-empty,
+.admin-panel,
+.editor-drawer,
+.metric-grid article,
+.image-picker,
+.image-library {
+  border-color: var(--line);
+  background-color: var(--panel);
+}
+
+.site-header {
+  background: rgba(7, 17, 31, 0.94);
+  border-bottom-color: var(--line);
+}
+
+.main-nav a {
+  color: var(--muted);
+}
+
+.main-nav a:hover,
+.main-nav a.router-link-active {
+  color: var(--ink);
+  background: rgba(103, 163, 255, 0.1);
+}
+
+.brand-mark,
+.brand-mark span,
+.footer-brand {
+  color: var(--ink);
+}
+
+.brand-mark b {
+  color: var(--acid);
+}
+
+.site-footer {
+  border-top-color: var(--line);
+  background: var(--black);
+}
+
+.footer-shell,
+.footer-shell nav a {
+  color: var(--muted);
+}
+
+.button,
+.hero-search button,
+.grip-score-list button,
+.sign-in-button {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+  color: #ffffff;
+}
+
+.button:hover,
+.hero-search button:hover,
+.grip-score-list button:hover:not(:disabled),
+.sign-in-button:hover {
+  border-color: #67a3ff;
+  background: #67a3ff;
+  color: #07111f;
+}
+
+.button-ghost {
+  border-color: var(--acid);
+  background: transparent;
+  color: var(--acid);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--acid);
+  outline-offset: 2px;
+}
+
+input,
+select,
+textarea,
+.hero-search,
+.compare-search-box,
+.verification-input,
+.unit-input,
+.password-card .verification-input {
+  border-color: var(--line);
+  background-color: #0a1729;
+  color: var(--ink);
+}
+
+input:hover,
+select:hover,
+textarea:hover,
+.hero-search:focus-within,
+.compare-search-box:focus-within,
+.verification-input:focus-within,
+.unit-input:focus-within,
+.password-card .verification-input:focus-within {
+  border-color: var(--acid);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--acid);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+input::placeholder,
+textarea::placeholder,
+.hero-search input::placeholder,
+.compare-search-box input::placeholder {
+  color: var(--soft-muted);
+  opacity: 1;
+}
+
+/* Home and cards */
+.home-hero,
+.trending-section,
+.systems-section,
+.detail-hero,
+.database-page,
+.compare-page,
+.profile-page,
+.auth-shell {
+  background: transparent;
+}
+
+.home-hero h1,
+.database-heading h1,
+.detail-title h1,
+.auth-aside h1,
+.profile-heading h1,
+.compare-intro-copy h1 {
+  color: var(--ink);
+}
+
+.hero-search {
+  border-color: var(--line);
+}
+
+.hero-search input,
+.hero-search input:hover,
+.hero-search input:focus,
+.hero-search input:focus-visible {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.hero-search svg,
+.search-prefix,
+.compare-search-box svg {
+  stroke: var(--acid);
+  color: var(--acid);
+}
+
+.quick-filters button,
+.compare-add,
+.pagination button,
+.selected-sidebar-empty,
+.row-actions button,
+.admin-refresh,
+.text-button {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.quick-filters button:hover,
+.compare-add:hover,
+.pagination button:hover:not(:disabled),
+.selected-sidebar-empty:hover,
+.row-actions button:hover,
+.admin-refresh:hover {
+  border-color: var(--acid);
+  background: rgba(103, 163, 255, 0.14);
+  color: var(--ink);
+}
+
+.card-visual,
+.card-visual.image-empty,
+.selected-row-thumb,
+.slot-visual,
+.image-picker-preview,
+.image-library-item {
+  background: #0a1729;
+}
+
+.card-body,
+.card-metrics div,
+.system-card,
+.mouse-card:hover {
+  background-color: var(--panel);
+}
+
+.mouse-card:hover {
+  border-color: var(--acid);
+}
+
+.card-image-placeholder strong,
+.system-card h3,
+.mouse-card h3 a,
+.system-card .system-copy {
+  color: var(--ink);
+}
+
+.card-image-placeholder small,
+.card-image-placeholder em {
+  color: var(--soft-muted);
+}
+
+.comparison-preview,
+.review-preview,
+.matrix-toolbar,
+.selected-sidebar-head,
+.filter-primary,
+.filter-submitbar,
+.password-card-intro,
+.profile-measure {
+  background: var(--panel2);
+}
+
+.comparison-preview,
+.comparison-preview > div,
+.review-preview,
+.card-metrics div,
+.selected-sidebar-head,
+.selected-sidebar-note,
+.selected-dimensions,
+.hero-statline div,
+.spec-group dl div,
+.admin-table td,
+.admin-table th {
+  border-color: var(--line);
+}
+
+/* Catalog and filters */
+.filter-studio,
+.database-page .advanced-filters,
+.advanced-filters,
+.filter-accordion-section,
+.filter-accordion-toggle,
+.filter-accordion-section fieldset {
+  background-color: var(--panel);
+}
+
+.filter-accordion-toggle {
+  color: var(--muted);
+}
+
+.filter-accordion-toggle:hover,
+.filter-accordion-toggle[aria-expanded="true"] {
+  background: rgba(103, 163, 255, 0.12);
+  color: var(--ink);
+}
+
+.filter-accordion-toggle b,
+.filter-accordion-toggle i {
+  color: var(--acid);
+}
+
+.filter-accordion-toggle small,
+.filter-check-option,
+.range-slider {
+  color: var(--soft-muted);
+}
+
+.filter-check-option:hover {
+  background: rgba(103, 163, 255, 0.1);
+  color: var(--ink);
+}
+
+.filter-check-option input,
+.difference-toggle input,
+.grip-score-list input {
+  accent-color: var(--acid);
+}
+
+.active-filter-strip {
+  border-color: var(--line);
+  background: var(--panel);
+}
+
+.active-filter-title,
+.active-filter-clear {
+  color: var(--acid);
+}
+
+.active-filter-chip {
+  border-color: var(--line);
+  background: rgba(103, 163, 255, 0.12);
+  color: var(--ink);
+}
+
+.active-filter-chip:hover {
+  border-color: var(--acid);
+  background: rgba(103, 163, 255, 0.22);
+}
+
+.empty-state,
+.compare-empty,
+.loading-state {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--muted);
+}
+
+/* Detail, scores and comparison */
+.hero-statline strong,
+.spec-group dd,
+.selected-dimensions dd,
+.comparison-table td strong,
+.locked-score-grid strong,
+.grip-score-head strong,
+.score-summary-card .score-dial strong {
+  color: var(--ink);
+}
+
+.spec-group h3,
+.comparison-table thead th,
+.compare-workbench .comparison-table thead th {
+  background: var(--panel2);
+  color: var(--ink);
+}
+
+.spec-group dl div:hover,
+.comparison-table tbody tr:hover td,
+.comparison-table tbody tr:hover th {
+  background: rgba(103, 163, 255, 0.07);
+}
+
+.score-summary-card,
+.score-summary-card.grip-summary,
+.review-entry-card,
+.locked-score-grid > div,
+.grip-score-list article,
+.grip-score-list article.completed,
+.login-callout,
+.profile-required,
+.source-card {
+  border-color: var(--line);
+  background: var(--panel2);
+}
+
+.score-summary-card .score-dial,
+.score-summary-card.grip-summary .score-dial {
+  border-color: var(--acid);
+  background: #0a1729;
+}
+
+.score-summary-card .score-dial strong,
+.score-summary-card.grip-summary .score-dial strong,
+.score-summary-card.grip-summary small {
+  color: var(--acid);
+}
+
+.dimension-bars i {
+  background: #29415f;
+}
+
+.dimension-bars i b {
+  background: var(--accent-strong);
+}
+
+.grip-complete-mark {
+  color: var(--green);
+}
+
+.item-delete-button {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.item-delete-button:hover {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #07111f;
+}
+
+.comparison-table th,
+.comparison-table td,
+.compare-workbench .comparison-table th,
+.compare-workbench .comparison-table td {
+  border-color: var(--line);
+  background: var(--panel);
+}
+
+.comparison-table td em,
+.comparison-table td em.positive {
+  background: rgba(103, 163, 255, 0.14);
+  color: var(--acid);
+}
+
+.compare-tray {
+  border-color: var(--acid);
+  background: #0e1b2d;
+  color: var(--ink);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+}
+
+.tray-chip {
+  border-color: var(--line);
+  background: var(--panel2);
+  color: var(--ink);
+}
+
+/* Auth/profile/admin states */
+.auth-form-card input,
+.profile-card input,
+.profile-card select,
+.password-card input,
+.admin-form input,
+.admin-form select,
+.saas-form input,
+.saas-form select,
+.saas-form textarea {
+  border-color: var(--line);
+  background: #0a1729;
+  color: var(--ink);
+}
+
+.auth-form-card {
+  animation: none;
+}
+
+.auth-form-card input:focus,
+.profile-card input:focus,
+.profile-card select:focus,
+.password-card input:focus,
+.admin-form input:focus,
+.admin-form select:focus,
+.saas-form input:focus,
+.saas-form select:focus,
+.saas-form textarea:focus {
+  border-color: var(--acid);
+}
+
+.profile-measure strong,
+.password-card-intro h2,
+.password-card-intro strong,
+.auth-form-card h2 {
+  color: var(--ink);
+}
+
+.flash.error {
+  border-color: var(--danger);
+  background: rgba(255, 116, 116, 0.12);
+  color: #ff9a9a;
+}
+
+.flash.success {
+  border-color: var(--green);
+  background: rgba(88, 212, 156, 0.12);
+  color: #8be6bd;
+}
+
+.admin-saas,
+.admin-shell,
+.admin-content {
+  background: var(--black);
+  color: var(--ink);
+}
+
+.admin-header,
+.admin-saas .admin-header {
+  border-color: var(--line);
+  background: #0a1729;
+}
+
+.admin-brand,
+.admin-saas .admin-brand,
+.admin-content-head h2,
+.admin-sidebar h1,
+.panel-heading h3,
+.toolbar h3,
+.editor-heading h3 {
+  color: var(--ink);
+}
+
+.admin-sidebar,
+.metric-grid article,
+.admin-panel,
+.signal-panel,
+.editor-drawer,
+.editor-modal {
+  border-color: var(--line);
+  background: var(--panel);
+}
+
+.admin-sidebar nav button {
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.admin-sidebar nav button:hover,
+.admin-sidebar nav button.active {
+  background: rgba(103, 163, 255, 0.12);
+  color: var(--ink);
+}
+
+.admin-sidebar nav button.active {
+  border-color: var(--acid);
+}
+
+.metric-grid article strong,
+.metric-grid .metric-accent strong {
+  color: var(--ink);
+}
+
+.admin-table th {
+  background: var(--panel2);
+  color: var(--muted);
+}
+
+.admin-table td {
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.admin-table tbody tr:hover td {
+  background: rgba(103, 163, 255, 0.08);
+}
+
+.admin-table .status-published,
+.admin-table .status-active {
+  border-color: var(--green);
+  background: rgba(88, 212, 156, 0.13);
+  color: #8be6bd;
+}
+
+.admin-table .status-draft,
+.admin-table .status-pending {
+  border-color: var(--orange);
+  background: rgba(255, 200, 87, 0.13);
+  color: #ffd982;
+}
+
+.admin-table .status-archived,
+.admin-table .status-disabled {
+  border-color: var(--danger);
+  background: rgba(255, 116, 116, 0.13);
+  color: #ff9a9a;
+}
+
+.live-dot {
+  background: var(--green);
+  box-shadow: 0 0 0 3px rgba(88, 212, 156, 0.15);
+}
+
+@media (max-width: 700px) {
+  .main-nav a:hover,
+  .main-nav a.router-link-active {
+    background: rgba(103, 163, 255, 0.12);
+  }
+}

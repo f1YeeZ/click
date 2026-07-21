@@ -48,7 +48,7 @@ MVP 明确不包含：
 
 | 首版必须交付 | 首版明确不交付 | 上线后候选 |
 | --- | --- | --- |
-| 鼠标库、详情、筛选、2～4 款对比、固定评价、邮箱登录、基础管理后台、CSV 导入 | 轮廓/3D、自由文本、商品价格、推荐、其他外设品类、逐条公开评价、产品图片 | 忘记密码、第三方登录、热门模块、收藏、轮廓和推荐 |
+| 鼠标库、详情、筛选、2～4 款对比、固定评价、评分排行、推荐、产品图片、邮箱登录、基础管理后台 | 轮廓/3D、自由文本、商品价格、其他外设品类、逐条公开评价、CSV 导入 | 忘记密码、第三方登录、热门模块、收藏和轮廓 |
 
 下架鼠标的公开详情页统一返回 `404`，且不进入搜索、对比和评价汇总。隐私政策、用户协议和评价规则属于上线必备静态页面，不需要独立业务 API。
 
@@ -157,7 +157,7 @@ MVP 明确不包含：
 - 页码、总条数和当前筛选条件始终可见；
 - 排序字段必须有稳定的二级排序，例如 `created_at DESC, id DESC`。
 
-### 5.3 鼠标详情 `/mice/[slug]`
+### 5.3 鼠标详情 `/mice/[id]`
 
 页面分为四个区域：
 
@@ -259,7 +259,7 @@ MVP 可不做复杂权限系统，先使用 `user.role = admin` 控制后台访�
 | `brand` | string | 是 | 品牌规范名称 |
 | `model` | string | 是 | 型号 |
 | `variant` | string | 否 | 尺寸、代次或版本 |
-| `slug` | string | 是 | URL 唯一标识 |
+| `slug` | string | 是 | 稳定可读别名；详情寻址仍使用 UUID |
 | `aliases` | string[] | 否 | 搜索别名 |
 | `release_date` | date | 否 | 发布日期 |
 | `status` | enum | 是 | draft/published/archived |
@@ -596,7 +596,7 @@ API 使用 `/api/v1` 版本前缀，统一返回 JSON。错误响应格式：
 }
 ```
 
-资源标识约定：公开详情 URL 使用稳定可读的 slug；写操作、对比和关联关系使用 UUID。API 时间为 UTC ISO 8601，Decimal 为 JSON number。分页响应统一为：
+资源标识约定：鼠标、用户和评价资源统一使用 UUID；slug 仅作为展示字段，不参与资源寻址。API 时间为 UTC ISO 8601，Decimal 为 JSON number。分页响应统一为：
 
 ```json
 {
@@ -611,12 +611,13 @@ API 使用 `/api/v1` 版本前缀，统一返回 JSON。错误响应格式：
 
 | 方法 | 路径 | 请求/响应要点 |
 | --- | --- | --- |
-| POST | `/api/v1/auth/register/code` | `{email}`；发送注册验证码 |
-| POST | `/api/v1/auth/register` | `{email,password,verificationCode}`；成功返回 JWT 和用户摘要 |
-| POST | `/api/v1/auth/login` | `{email,password}`；成功返回 JWT 和用户摘要 |
-| GET | `/api/v1/auth/me` | Bearer Token 有效时返回 `{id,email,role}` |
-| POST | `/api/v1/auth/password/code` | Bearer Token 有效时向当前邮箱发送修改密码验证码 |
-| PUT | `/api/v1/auth/password` | `{verificationCode,newPassword}`；验证后修改当前账号密码 |
+| POST | `/api/v1/registration-verification-codes` | `{email}`；创建注册验证码，返回 `201` |
+| POST | `/api/v1/users` | `{email,password,verificationCode}`；创建用户，返回 `201`、JWT 和用户摘要 |
+| POST | `/api/v1/sessions` | `{email,password}`；创建登录会话，返回 `201`、JWT 和用户摘要 |
+| GET | `/api/v1/users/me` | Bearer Token 有效时返回当前用户 |
+| PATCH | `/api/v1/users/me` | 局部更新当前用户资料 |
+| POST | `/api/v1/password-verification-codes` | 向当前用户邮箱发送修改密码验证码，返回 `201` |
+| PUT | `/api/v1/users/me/password` | `{verificationCode,newPassword}`；替换当前账号密码 |
 
 邮箱在比较前执行 trim 和 Unicode/ASCII 小写规范化；注册重复邮箱返回通用 `409 ACCOUNT_UNAVAILABLE`，登录失败统一返回 `401 INVALID_CREDENTIALS`。
 
@@ -625,9 +626,12 @@ API 使用 `/api/v1` 版本前缀，统一返回 JSON。错误响应格式：
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/v1/mice` | 搜索、筛选、排序和分页 |
-| GET | `/api/v1/mice/:slug` | 鼠标详情和评价汇总 |
-| GET | `/api/v1/mice/compare?ids=...` | 批量返回对比数据，最多 4 个 ID |
+| GET | `/api/v1/mice/:id` | 按 UUID 获取鼠标详情和评价汇总 |
+| GET | `/api/v1/mouse-comparisons?mouseIds=...` | 批量返回对比数据，最多 4 个 UUID |
+| GET | `/api/v1/mouse-rankings?dimension=...&gripStyle=...` | 获取可信度加权排行榜；握持舒适榜可按握姿分类 |
+| GET | `/api/v1/mouse-recommendations?gripStyle=...&supportPositions=...` | 按握姿与必要支撑位置获取推荐结果 |
 | GET | `/api/v1/mice/:id/review-summary` | 获取评价汇总 |
+| GET | `/api/v1/mice/:id/support-summary` | 获取手掌支撑位置汇总 |
 | GET | `/api/v1/review-options` | 获取固定评价选项和启用标签 |
 
 `GET /mice` 主要查询参数：
@@ -640,15 +644,18 @@ sort, page, pageSize
 
 `sort` 只允许 `newest/brand_asc/weight_asc/weight_desc/rating_desc/review_count_desc`；`pageSize` 允许 12、24、48，默认 24。服务端必须使用白名单解析排序字段，不能直接将客户端字段拼接到 SQL。
 
-`GET /mice/compare` 的 `ids` 为逗号分隔 UUID，去重后最多 4 个。响应为 `{items:[...]}`，items 严格按 ids 顺序，未发布或不存在的项被省略。
+`GET /mouse-comparisons` 的 `mouseIds` 为逗号分隔 UUID，去重后最多 4 个。响应中的 `items` 严格按 `mouseIds` 顺序，未发布或不存在的项被省略。
 
 ### 10.3 用户接口
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/v1/mice/:id/my-review` | 获取当前用户评价 |
-| PUT | `/api/v1/mice/:id/my-review` | 新增或完整更新评价，要求登录 |
-| DELETE | `/api/v1/mice/:id/my-review` | 软删除自己的评价 |
+| GET | `/api/v1/mice/:id/reviews/mine` | 获取当前用户评价；尚未评价返回 `404` |
+| PUT | `/api/v1/mice/:id/reviews/mine` | 新增或完整替换当前用户评价 |
+| DELETE | `/api/v1/mice/:id/reviews/mine` | 删除当前用户评价，成功返回 `204` |
+| PUT/DELETE | `/api/v1/mice/:id/reviews/mine/base-score` | 保存或删除基础评分 |
+| PUT/DELETE | `/api/v1/mice/:id/reviews/mine/grip-scores/:gripStyle` | 保存或删除指定握姿评分 |
+| PUT | `/api/v1/mice/:id/reviews/mine/support-positions` | 替换手掌支撑位置集合 |
 
 `PUT` 请求示例：
 
@@ -657,40 +664,33 @@ sort, page, pageSize
   "gripStyle": "claw",
   "handSize": "medium",
   "usageDuration": "one_to_six_months",
-  "scores": {
-    "comfort": 5,
-    "click": 4,
-    "scroll": 4,
-    "build": 5,
-    "value": 4
-  },
-  "proTagCodes": ["lightweight", "comfortable"],
-  "conTagCodes": ["price_high"]
+  "comfortScore": 9,
+  "clickScore": 8,
+  "scrollScore": 8,
+  "buildScore": 9,
+  "valueScore": 8,
+  "coatingScore": 8,
+  "proTags": ["lightweight", "comfortable"],
+  "conTags": ["price_high"]
 }
 ```
 
-后端根据评分计算 `overallScore = 4.4`，在同一事务中更新评价和标签关联。
+后端根据评分计算 `overallScore`，在同一事务中更新评价和标签关联。
 
 ### 10.4 管理接口
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/v1/admin/mice` | 创建鼠标 |
-| PATCH | `/api/v1/admin/mice/:id` | 更新鼠标 |
-| POST | `/api/v1/admin/mice/:id/publish` | 发布 |
-| POST | `/api/v1/admin/mice/:id/archive` | 下架 |
-| POST | `/api/v1/admin/mice/import/preview` | 上传 UTF-8 CSV 并预检，返回短期 `previewToken`、摘要和逐行错误 |
-| POST | `/api/v1/admin/mice/import/commit` | 提交 `{previewToken,idempotencyKey}`，按预检快照写入 |
-| GET | `/api/v1/admin/mice/import/:jobId` | 查询导入任务结果 |
+| GET/POST | `/api/v1/admin/mice` | 查询或创建鼠标；创建返回 `201` 和 `Location` |
+| PUT | `/api/v1/admin/mice/:id` | 完整更新鼠标资料 |
+| PATCH | `/api/v1/admin/mice/:id` | 使用 `{status}` 局部更新鼠标状态 |
+| GET | `/api/v1/admin/users` | 查询用户 |
+| PATCH | `/api/v1/admin/users/:id` | 使用 `{status}` 局部更新用户状态 |
 | GET | `/api/v1/admin/reviews` | 查询评价 |
-| POST | `/api/v1/admin/reviews/:id/disable` | 停用评价 |
-| POST | `/api/v1/admin/reviews/:id/restore` | 恢复评价 |
-| POST | `/api/v1/admin/review-tags` | 创建标签；仅允许尚未发布过的新 code |
-| PATCH | `/api/v1/admin/review-tags/:id` | 只允许修改 label、sortOrder、enabled |
+| PATCH | `/api/v1/admin/reviews/:id` | 使用 `{status}` 局部更新评价状态 |
+| GET/POST | `/api/v1/admin/images` | 查询或上传图片；上传返回 `201` 和 `Location` |
 
-所有管理写操作记录 `audit_logs`。
-
-预检快照有效期默认 30 分钟，并绑定管理员、文件哈希和解析结果；commit 不重新解释已变化的原文件。若预检含错误行，MVP 默认拒绝整批提交，管理员修正后重新预检。鼠标创建/更新 DTO 可以嵌套提交 `sources[]`，服务端在同一事务中同步来源记录。
+状态字段允许值由对应服务校验，不能通过路径中的动作词表达发布、下架、停用或恢复操作。
 
 ### 10.5 状态码与幂等性
 
