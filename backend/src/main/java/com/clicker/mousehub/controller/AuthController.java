@@ -26,6 +26,14 @@ public class AuthController {
     @PostMapping("/sessions") public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.created(URI.create("/api/v1/sessions/current")).body(auth.login(request));
     }
+    @PostMapping("/password-reset-verification-codes") public ResponseEntity<VerificationCodeResponse> sendPasswordResetCode(
+            @Valid @RequestBody EmailRequest request) {
+        return ResponseEntity.created(URI.create("/api/v1/password-reset-verification-codes/current"))
+                .body(auth.sendPasswordResetCode(request));
+    }
+    @PutMapping("/password-reset") public MessageResponse resetPassword(@Valid @RequestBody PasswordResetRequest request) {
+        return auth.resetPassword(request);
+    }
     @PostMapping("/password-verification-codes") public ResponseEntity<VerificationCodeResponse> sendPasswordCode(Authentication authentication) {
         return ResponseEntity.created(URI.create("/api/v1/password-verification-codes/current"))
                 .body(auth.sendPasswordCode(authentication.getName()));

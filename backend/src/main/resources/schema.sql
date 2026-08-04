@@ -103,6 +103,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS hand_size VARCHAR(20);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS hand_length_cm NUMERIC(4,1);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_grip_style VARCHAR(20);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status_reason VARCHAR(500);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status_changed_by VARCHAR(320);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMP WITH TIME ZONE;
 
 CREATE INDEX IF NOT EXISTS idx_mice_status_created ON mice(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mice_brand ON mice(brand);
@@ -185,4 +188,34 @@ CREATE TABLE IF NOT EXISTS review_con_tags (
     review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
     tag_code VARCHAR(40) NOT NULL,
     PRIMARY KEY (review_id, tag_code)
+);
+
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS moderation_reason VARCHAR(500);
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS moderated_by VARCHAR(180);
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS moderated_at TIMESTAMP WITH TIME ZONE;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id UUID PRIMARY KEY,
+    actor_email VARCHAR(180) NOT NULL,
+    action VARCHAR(60) NOT NULL,
+    entity_type VARCHAR(40) NOT NULL,
+    entity_id VARCHAR(180),
+    summary VARCHAR(500) NOT NULL,
+    before_state TEXT,
+    after_state TEXT,
+    reason VARCHAR(500),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_email, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS mouse_import_jobs (
+    checksum VARCHAR(64) PRIMARY KEY,
+    filename VARCHAR(255) NOT NULL,
+    actor_email VARCHAR(180) NOT NULL,
+    created_count INTEGER NOT NULL,
+    updated_count INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL
 );

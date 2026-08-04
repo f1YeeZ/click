@@ -42,7 +42,8 @@ public class MailService {
             throw new BusinessException("MAIL_UNAVAILABLE", "邮件服务尚未配置，请联系管理员", HttpStatus.SERVICE_UNAVAILABLE);
         }
         try {
-            String action = EmailVerificationService.REGISTER.equals(purpose) ? "注册账号" : "修改密码";
+            String action = EmailVerificationService.REGISTER.equals(purpose) ? "注册账号"
+                    : EmailVerificationService.RESET_PASSWORD.equals(purpose) ? "重置密码" : "修改密码";
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(from);
             message.setTo(recipient);

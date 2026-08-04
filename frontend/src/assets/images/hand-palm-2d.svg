@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 1200" role="img" aria-label="右手手心涂抹底图">
+  <defs>
+    <linearGradient id="skin" x1="0.18" y1="0.06" x2="0.82" y2="0.96">
+      <stop offset="0" stop-color="#e1ded8"/>
+      <stop offset="0.52" stop-color="#c8c4bd"/>
+      <stop offset="1" stop-color="#aaa69f"/>
+    </linearGradient>
+    <radialGradient id="palmLight" cx="48%" cy="42%" r="58%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.24"/>
+      <stop offset="0.7" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#77736d" stop-opacity="0.12"/>
+    </radialGradient>
+    <filter id="softShadow" x="-15%" y="-15%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#1b2433" flood-opacity="0.16"/>
+    </filter>
+    <clipPath id="handClip">
+      <path d="M330 1140C315 1060 285 960 260 875C235 790 218 720 205 655L165 430C157 377 180 338 218 334C256 330 282 362 288 415L310 603C313 625 326 637 340 632C355 628 362 615 360 594L335 277C331 221 358 185 399 183C440 181 469 216 470 270L480 568C481 589 493 600 508 598C523 596 532 583 532 562L530 176C530 119 560 82 603 85C645 88 672 128 668 183L640 580C638 599 650 611 665 611C682 611 691 600 693 581L718 255C722 204 753 175 793 182C834 190 857 230 847 280L785 641C782 659 793 674 809 676C826 678 837 667 844 651L878 575C897 530 929 507 961 519C994 531 1008 574 986 619L887 819C861 873 822 917 779 946L740 1140Z"/>
+    </clipPath>
+  </defs>
+
+  <g filter="url(#softShadow)">
+    <path
+      d="M330 1140C315 1060 285 960 260 875C235 790 218 720 205 655L165 430C157 377 180 338 218 334C256 330 282 362 288 415L310 603C313 625 326 637 340 632C355 628 362 615 360 594L335 277C331 221 358 185 399 183C440 181 469 216 470 270L480 568C481 589 493 600 508 598C523 596 532 583 532 562L530 176C530 119 560 82 603 85C645 88 672 128 668 183L640 580C638 599 650 611 665 611C682 611 691 600 693 581L718 255C722 204 753 175 793 182C834 190 857 230 847 280L785 641C782 659 793 674 809 676C826 678 837 667 844 651L878 575C897 530 929 507 961 519C994 531 1008 574 986 619L887 819C861 873 822 917 779 946L740 1140Z"
+      fill="url(#skin)"
+      stroke="#706d68"
+      stroke-width="6"
+      stroke-linejoin="round"
+    />
+    <rect x="150" y="60" width="860" height="1090" fill="url(#palmLight)" clip-path="url(#handClip)"/>
+
+    <g fill="none" stroke="#77736d" stroke-linecap="round" opacity="0.28">
+      <path d="M310 823C405 760 535 747 674 790C726 806 767 831 801 864" stroke-width="10"/>
+      <path d="M338 711C423 658 535 652 636 682C683 696 719 716 748 742" stroke-width="9"/>
+      <path d="M405 912C465 862 522 842 584 848C645 854 691 884 721 930" stroke-width="8"/>
+      <path d="M355 846C326 786 320 728 338 669" stroke-width="8"/>
+      <path d="M821 721C850 696 875 665 893 627" stroke-width="7"/>
+      <path d="M553 1080C548 1019 551 965 565 915" stroke-width="7"/>
+    </g>
+
+    <g fill="none" stroke="#ffffff" stroke-linecap="round" opacity="0.22">
+      <path d="M385 1040C368 930 348 857 315 790" stroke-width="12"/>
+      <path d="M600 644C605 522 610 403 610 287" stroke-width="8"/>
+      <path d="M772 630C793 507 808 389 816 286" stroke-width="7"/>
+      <path d="M926 579C911 628 889 674 860 716" stroke-width="9"/>
+    </g>
+  </g>
+</svg>

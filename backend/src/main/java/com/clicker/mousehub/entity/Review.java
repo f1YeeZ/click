@@ -25,6 +25,9 @@ public class Review {
     private Integer coatingScore;
     private BigDecimal overallScore;
     private String status;
+    private String moderationReason;
+    private String moderatedBy;
+    private OffsetDateTime moderatedAt;
     private OffsetDateTime deletedAt;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
@@ -58,6 +61,12 @@ public class Review {
     public void setOverallScore(BigDecimal overallScore) { this.overallScore = overallScore; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getModerationReason() { return moderationReason; }
+    public void setModerationReason(String moderationReason) { this.moderationReason = moderationReason; }
+    public String getModeratedBy() { return moderatedBy; }
+    public void setModeratedBy(String moderatedBy) { this.moderatedBy = moderatedBy; }
+    public OffsetDateTime getModeratedAt() { return moderatedAt; }
+    public void setModeratedAt(OffsetDateTime moderatedAt) { this.moderatedAt = moderatedAt; }
     public OffsetDateTime getDeletedAt() { return deletedAt; }
     public void setDeletedAt(OffsetDateTime deletedAt) { this.deletedAt = deletedAt; }
     public OffsetDateTime getCreatedAt() { return createdAt; }

@@ -20,6 +20,9 @@ public class UserAccount {
     private String handSize;
     private BigDecimal handLengthCm;
     private String preferredGripStyle;
+    private String statusReason;
+    private String statusChangedBy;
+    private OffsetDateTime statusChangedAt;
     private OffsetDateTime termsAcceptedAt;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
@@ -44,6 +47,12 @@ public class UserAccount {
     public void setHandLengthCm(BigDecimal handLengthCm) { this.handLengthCm = handLengthCm; }
     public String getPreferredGripStyle() { return preferredGripStyle; }
     public void setPreferredGripStyle(String preferredGripStyle) { this.preferredGripStyle = preferredGripStyle; }
+    public String getStatusReason() { return statusReason; }
+    public void setStatusReason(String statusReason) { this.statusReason = statusReason; }
+    public String getStatusChangedBy() { return statusChangedBy; }
+    public void setStatusChangedBy(String statusChangedBy) { this.statusChangedBy = statusChangedBy; }
+    public OffsetDateTime getStatusChangedAt() { return statusChangedAt; }
+    public void setStatusChangedAt(OffsetDateTime statusChangedAt) { this.statusChangedAt = statusChangedAt; }
     public OffsetDateTime getTermsAcceptedAt() { return termsAcceptedAt; }
     public void setTermsAcceptedAt(OffsetDateTime termsAcceptedAt) { this.termsAcceptedAt = termsAcceptedAt; }
     public OffsetDateTime getCreatedAt() { return createdAt; }

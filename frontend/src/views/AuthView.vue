@@ -50,7 +50,7 @@ onBeforeUnmount(() => clearInterval(countdownTimer))
 
 <template>
   <main :class="['auth-shell', { 'admin-login-shell': admin }]">
-    <section class="auth-aside"><p class="eyebrow">{{ admin ? 'PRIVATE ADMIN CONSOLE' : (register ? 'CREATE PROFILE' : 'MEMBER ACCESS') }}</p><h1 v-if="admin">管理你的<br>数据资产。</h1><h1 v-else-if="register">基础手感，<br>握姿分开记录。</h1><h1 v-else>把体验变成<br>可比较的数据。</h1><p class="auth-note">{{ admin ? '管理员登录使用独立会话，不会影响用户前台登录状态。' : '四项基础评分只提交一次，握持舒适度按不同握姿分别记录。' }}</p></section>
+    <section class="auth-aside"><p class="eyebrow">{{ admin ? 'PRIVATE ADMIN CONSOLE' : (register ? 'CREATE PROFILE' : 'MEMBER ACCESS') }}</p><h1 class="visually-hidden">{{ admin ? '管理员登录' : (register ? '创建账号' : '账户登录') }}</h1><p class="auth-note">{{ admin ? '管理员登录使用独立会话，不会影响用户前台登录状态。' : '四项基础评分只提交一次，握持舒适度按不同握姿分别记录。' }}</p></section>
     <section class="auth-form-card"><div><p class="eyebrow">{{ admin ? 'ADMIN SIGN IN' : (register ? 'REGISTER' : 'SIGN IN') }}</p><h2>{{ admin ? '登录管理后台' : (register ? '创建账号' : '登录 Clicker Index') }}</h2><p>{{ admin ? '进入独立的数据管理控制台。' : (register ? '注册后即可提交、修改和删除评价。' : '继续管理你的评价与对比清单。') }}</p></div><div class="flash error" v-if="error">{{ error }}</div>
       <form @submit.prevent="submit">
         <label>邮箱<input v-model.trim="form.email" type="email" autocomplete="email" required placeholder="you@example.com"></label>
@@ -61,6 +61,7 @@ onBeforeUnmount(() => clearInterval(countdownTimer))
         <label v-if="register" class="legal-consent"><input v-model="form.acceptedTerms" type="checkbox" required><span>我已阅读并同意 <RouterLink to="/terms" target="_blank">用户协议</RouterLink> 和 <RouterLink to="/privacy" target="_blank">隐私政策</RouterLink></span></label>
         <button class="button full" :disabled="loading">{{ loading ? '处理中…' : (register ? '验证并创建账号 →' : '登录 →') }}</button>
       </form>
+      <p class="auth-help-row" v-if="!admin && !register"><RouterLink to="/forgot-password">忘记密码？</RouterLink></p>
       <p class="auth-switch" v-if="!admin">{{ register ? '已经注册？' : '还没有账号？' }} <RouterLink :to="register ? '/login' : '/register'">{{ register ? '返回登录' : '立即创建' }}</RouterLink></p>
       <p class="auth-switch" v-else><RouterLink to="/">返回前台首页</RouterLink></p>
     </section>

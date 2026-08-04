@@ -6,7 +6,10 @@ import com.clicker.mousehub.common.BusinessException;
 import com.clicker.mousehub.dto.MouseDtos.*;
 import com.clicker.mousehub.dto.PageResponse;
 import com.clicker.mousehub.entity.MouseDevice;
+import com.clicker.mousehub.entity.Review;
 import com.clicker.mousehub.mapper.MouseMapper;
+import com.clicker.mousehub.mapper.ReviewMapper;
+import com.clicker.mousehub.util.MouseDataQuality;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,11 +25,15 @@ public class MouseService {
     private static final Set<String> SHAPES = Set.of("SYMMETRICAL", "ERGONOMIC", "HYBRID");
     private static final Set<String> CONNECTIONS = Set.of("wired", "wireless_2_4g", "bluetooth");
     private final MouseMapper mice;
+    private final ReviewMapper reviews;
     private final RealtimeEventService events;
+    private final AuditLogService audit;
 
-    public MouseService(MouseMapper mice, RealtimeEventService events) {
+    public MouseService(MouseMapper mice, ReviewMapper reviews, RealtimeEventService events, AuditLogService audit) {
         this.mice = mice;
+        this.reviews = reviews;
         this.events = events;
+        this.audit = audit;
     }
 
     public PageResponse<MouseView> search(String q, String brand, String size, String shape, String connection,
@@ -45,10 +52,8 @@ public class MouseService {
         LambdaQueryWrapper<MouseDevice> query = new LambdaQueryWrapper<MouseDevice>()
                 .eq(MouseDevice::getStatus, "PUBLISHED");
         if (StringUtils.hasText(q)) {
-            String term = q.trim();
-            query.and(w -> w.like(MouseDevice::getBrand, term).or().like(MouseDevice::getModel, term)
-                    .or().like(MouseDevice::getVariant, term).or().like(MouseDevice::getAliases, term)
-                    .or().like(MouseDevice::getSensorName, term));
+            String pattern = caseInsensitivePattern(q);
+            query.apply("LOWER(model) LIKE {0}", pattern);
         }
         query.in(StringUtils.hasText(brand), MouseDevice::getBrand, csv(brand))
                 .in(StringUtils.hasText(size), MouseDevice::getSizeCategory, csv(size))
@@ -60,14 +65,14 @@ public class MouseService {
                 .in(StringUtils.hasText(thumbRest), MouseDevice::getThumbRest, booleanCsv(thumbRest))
                 .in(StringUtils.hasText(ringFingerRest), MouseDevice::getRingFingerRest, booleanCsv(ringFingerRest))
                 .in(StringUtils.hasText(sensorType), MouseDevice::getSensorType, csv(sensorType))
-                .like(StringUtils.hasText(sensorName), MouseDevice::getSensorName, sensorName)
+                .apply(StringUtils.hasText(sensorName), "LOWER(sensor_name) LIKE {0}", caseInsensitivePattern(sensorName))
                 .in(StringUtils.hasText(adjustableSensorPosition), MouseDevice::getAdjustableSensorPosition, booleanCsv(adjustableSensorPosition))
-                .like(StringUtils.hasText(material), MouseDevice::getMaterial, material)
+                .apply(StringUtils.hasText(material), "LOWER(material) LIKE {0}", caseInsensitivePattern(material))
                 .in(StringUtils.hasText(switchType), MouseDevice::getSwitchType, csv(switchType))
-                .like(StringUtils.hasText(switchName), MouseDevice::getSwitchName, switchName)
+                .apply(StringUtils.hasText(switchName), "LOWER(switch_name) LIKE {0}", caseInsensitivePattern(switchName))
                 .in(StringUtils.hasText(encoderType), MouseDevice::getEncoderType, csv(encoderType))
-                .like(StringUtils.hasText(encoderName), MouseDevice::getEncoderName, encoderName)
-                .like(StringUtils.hasText(purchaseChannel), MouseDevice::getPurchaseChannels, purchaseChannel)
+                .apply(StringUtils.hasText(encoderName), "LOWER(encoder_name) LIKE {0}", caseInsensitivePattern(encoderName))
+                .apply(StringUtils.hasText(purchaseChannel), "LOWER(purchase_channels) LIKE {0}", caseInsensitivePattern(purchaseChannel))
                 .in(StringUtils.hasText(hotSwap), MouseDevice::getHotSwappableSwitches, booleanCsv(hotSwap))
                 .and(StringUtils.hasText(connection), wrapper -> {
                     List<String> values = csv(connection);
@@ -100,10 +105,24 @@ public class MouseService {
             case "brand_asc" -> query.orderByAsc(MouseDevice::getBrand, MouseDevice::getModel);
             case "weight_asc" -> query.orderByAsc(MouseDevice::getWeightG, MouseDevice::getId);
             case "weight_desc" -> query.orderByDesc(MouseDevice::getWeightG).orderByAsc(MouseDevice::getId);
+            case "rating_desc" -> query.last("""
+                    ORDER BY CASE WHEN (SELECT COUNT(*) FROM reviews r
+                        WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL) >= 5 THEN 0 ELSE 1 END,
+                        (SELECT AVG(r.overall_score) FROM reviews r
+                         WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL) DESC,
+                        (SELECT COUNT(*) FROM reviews r
+                         WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL) DESC,
+                        mice.id ASC
+                    """);
+            case "review_count_desc" -> query.last("""
+                    ORDER BY (SELECT COUNT(*) FROM reviews r
+                        WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL) DESC,
+                        mice.id ASC
+                    """);
             default -> query.orderByDesc(MouseDevice::getCreatedAt, MouseDevice::getId);
         }
         Page<MouseDevice> result = mice.selectPage(new Page<>(Math.max(page, 1), safeSize), query);
-        return new PageResponse<>(result.getRecords().stream().map(MouseView::from).toList(),
+        return new PageResponse<>(viewsWithRatingStats(result.getRecords()),
                 new PageResponse.PageMeta(result.getCurrent(), result.getSize(), result.getTotal(), result.getPages()));
     }
 
@@ -111,13 +130,17 @@ public class MouseService {
         long safeSize = List.of(12L, 24L, 48L).contains(pageSize) ? pageSize : 12;
         LambdaQueryWrapper<MouseDevice> query = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(q)) {
-            String term = q.trim();
-            query.and(w -> w.like(MouseDevice::getBrand, term).or().like(MouseDevice::getModel, term)
-                    .or().like(MouseDevice::getVariant, term).or().like(MouseDevice::getSensorName, term));
+            String pattern = caseInsensitivePattern(q);
+            query.and(w -> w.apply("LOWER(brand) LIKE {0}", pattern)
+                    .or().apply("LOWER(model) LIKE {0}", pattern)
+                    .or().apply("LOWER(variant) LIKE {0}", pattern)
+                    .or().apply("LOWER(slug) LIKE {0}", pattern)
+                    .or().apply("LOWER(aliases) LIKE {0}", pattern)
+                    .or().apply("LOWER(sensor_name) LIKE {0}", pattern));
         }
         query.eq(StringUtils.hasText(status), MouseDevice::getStatus, status).orderByDesc(MouseDevice::getUpdatedAt);
         Page<MouseDevice> result = mice.selectPage(new Page<>(Math.max(1, page), safeSize), query);
-        return new PageResponse<>(result.getRecords().stream().map(MouseView::from).toList(),
+        return new PageResponse<>(viewsWithRatingStats(result.getRecords()),
                 new PageResponse.PageMeta(result.getCurrent(), result.getSize(), result.getTotal(), result.getPages()));
     }
 
@@ -129,27 +152,42 @@ public class MouseService {
 
     @Transactional
     public MouseView update(UUID id, MouseCreateRequest request) {
-        validateCode(request.sizeCategory(), SIZES, "尺寸分类");
-        validateCode(request.shapeType(), SHAPES, "外形类型");
-        if (request.connectionModes().stream().anyMatch(mode -> !CONNECTIONS.contains(mode))) throw new BusinessException("INVALID_CONNECTION", "连接模式不符合要求", HttpStatus.BAD_REQUEST);
         MouseDevice mouse = mice.selectById(id); if (mouse == null) throw new BusinessException("MOUSE_NOT_FOUND", "未找到这款鼠标", HttpStatus.NOT_FOUND);
-        applyRequest(mouse, request); mouse.setUpdatedAt(OffsetDateTime.now()); mice.updateById(mouse);
+        MouseView before = MouseView.from(mouse);
+        validateOptions(request);
+        applyRequest(mouse, request);
+        if (StringUtils.hasText(request.status())) mouse.setStatus(request.status());
+        validateForStatus(mouse, mouse.getStatus());
+        if ("PUBLISHED".equals(mouse.getStatus())) mouse.setVerifiedAt(OffsetDateTime.now());
+        mouse.setUpdatedAt(OffsetDateTime.now()); mice.updateById(mouse);
         events.publishAfterCommit("mouse.changed", mouse.getId());
-        return MouseView.from(mouse);
+        MouseView after = MouseView.from(mouse);
+        audit.record("MOUSE_UPDATE", "MOUSE", mouse.getId(), "更新鼠标资料：" + mouse.displayName(), before, after, null);
+        return after;
     }
 
     @Transactional
     public MouseView updateStatus(UUID id, String status) {
+        return updateStatus(id, status, null);
+    }
+
+    @Transactional
+    public MouseView updateStatus(UUID id, String status, String reason) {
         if (!Set.of("PUBLISHED", "DRAFT", "ARCHIVED").contains(status)) {
             throw new BusinessException("INVALID_STATUS", "状态值不符合要求", HttpStatus.BAD_REQUEST);
         }
         MouseDevice mouse = mice.selectById(id);
         if (mouse == null) throw new BusinessException("MOUSE_NOT_FOUND", "未找到这款鼠标", HttpStatus.NOT_FOUND);
+        MouseView before = MouseView.from(mouse);
+        validateForStatus(mouse, status);
         mouse.setStatus(status);
+        if ("PUBLISHED".equals(status)) mouse.setVerifiedAt(OffsetDateTime.now());
         mouse.setUpdatedAt(OffsetDateTime.now());
         mice.updateById(mouse);
         events.publishAfterCommit("mouse.changed", mouse.getId());
-        return MouseView.from(mouse);
+        MouseView after = MouseView.from(mouse);
+        audit.record("MOUSE_STATUS_CHANGE", "MOUSE", mouse.getId(), "鼠标状态变更为 " + status + "：" + mouse.displayName(), before, after, reason);
+        return after;
     }
 
     public List<MouseDevice> publishedInOrder(List<UUID> ids) {
@@ -171,20 +209,26 @@ public class MouseService {
         return csv(value).stream().map(Boolean::valueOf).toList();
     }
 
+    private static String caseInsensitivePattern(String value) {
+        return "%" + (value == null ? "" : value.trim().toLowerCase(Locale.ROOT)) + "%";
+    }
+
     @Transactional
     public MouseView create(MouseCreateRequest request) {
-        validateCode(request.sizeCategory(), SIZES, "尺寸分类");
-        validateCode(request.shapeType(), SHAPES, "外形类型");
-        if (request.connectionModes().stream().anyMatch(mode -> !CONNECTIONS.contains(mode))) {
-            throw new BusinessException("INVALID_CONNECTION", "连接模式不符合要求", HttpStatus.BAD_REQUEST);
-        }
+        validateOptions(request);
         OffsetDateTime now = OffsetDateTime.now();
         MouseDevice mouse = new MouseDevice();
-        mouse.setId(UUID.randomUUID()); mouse.setStatus("PUBLISHED"); mouse.setCreatedAt(now); mouse.setVerifiedAt(now);
-        applyRequest(mouse, request); mouse.setUpdatedAt(now);
+        mouse.setId(UUID.randomUUID()); mouse.setStatus(StringUtils.hasText(request.status()) ? request.status() : "PUBLISHED");
+        mouse.setCreatedAt(now);
+        applyRequest(mouse, request);
+        validateForStatus(mouse, mouse.getStatus());
+        if ("PUBLISHED".equals(mouse.getStatus())) mouse.setVerifiedAt(now);
+        mouse.setUpdatedAt(now);
         mice.insert(mouse);
         events.publishAfterCommit("mouse.changed", mouse.getId());
-        return MouseView.from(mouse);
+        MouseView created = MouseView.from(mouse);
+        audit.record("MOUSE_CREATE", "MOUSE", mouse.getId(), "创建鼠标：" + mouse.displayName(), null, created, null);
+        return created;
     }
 
     private void applyRequest(MouseDevice mouse, MouseCreateRequest request) {
@@ -197,7 +241,7 @@ public class MouseService {
         mouse.setMaxPollingRateHz(request.maxPollingRateHz()); mouse.setTrackingSpeedIps(request.trackingSpeedIps());
         mouse.setAccelerationG(request.accelerationG()); mouse.setButtonCount(request.buttonCount()); mouse.setSideButtonCount(request.sideButtonCount());
         mouse.setSwitchName(request.switchName()); mouse.setEncoderName(request.encoderName());
-        mouse.setConnectionModes(String.join(",", new LinkedHashSet<>(request.connectionModes()))); mouse.setMaterial(request.material());
+        mouse.setConnectionModes(request.connectionModes() == null ? "" : String.join(",", new LinkedHashSet<>(request.connectionModes()))); mouse.setMaterial(request.material());
         mouse.setMaterialGeneral(request.materialGeneral()); mouse.setMaterialSpecific(request.materialSpecific());
         mouse.setHumpPlacement(request.humpPlacement()); mouse.setFrontFlare(request.frontFlare()); mouse.setSideCurvature(request.sideCurvature());
         mouse.setThumbRest(request.thumbRest()); mouse.setRingFingerRest(request.ringFingerRest()); mouse.setSensorType(request.sensorType());
@@ -214,5 +258,44 @@ public class MouseService {
 
     private void validateCode(String value, Set<String> allowed, String label) {
         if (!allowed.contains(value)) throw new BusinessException("INVALID_OPTION", label + "不符合要求", HttpStatus.BAD_REQUEST);
+    }
+
+    private void validateOptions(MouseCreateRequest request) {
+        if (StringUtils.hasText(request.sizeCategory())) validateCode(request.sizeCategory(), SIZES, "尺寸分类");
+        if (StringUtils.hasText(request.shapeType())) validateCode(request.shapeType(), SHAPES, "外形类型");
+        if (request.connectionModes() != null && request.connectionModes().stream().anyMatch(mode -> !CONNECTIONS.contains(mode))) {
+            throw new BusinessException("INVALID_CONNECTION", "连接模式不符合要求", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private void validateForStatus(MouseDevice mouse, String status) {
+        if (!"PUBLISHED".equals(status)) return;
+        List<String> missing = MouseDataQuality.missingPublicationFields(mouse);
+        if (missing.isEmpty()) return;
+        Map<String, String> labels = Map.ofEntries(
+                Map.entry("brand", "品牌"), Map.entry("model", "型号"), Map.entry("slug", "Slug"),
+                Map.entry("sizeCategory", "尺寸分类"), Map.entry("lengthMm", "长度"), Map.entry("widthMm", "宽度"),
+                Map.entry("heightMm", "高度"), Map.entry("weightG", "重量"), Map.entry("shapeType", "外形类型"),
+                Map.entry("sensorName", "传感器型号"), Map.entry("maxDpi", "最大 DPI"),
+                Map.entry("maxPollingRateHz", "最大回报率"), Map.entry("connectionModes", "连接模式"),
+                Map.entry("primarySourceUrl", "有效的数据来源 URL"));
+        String fields = missing.stream().map(code -> labels.getOrDefault(code, code)).reduce((a, b) -> a + "、" + b).orElse("");
+        throw new BusinessException("MOUSE_PUBLICATION_INCOMPLETE", "发布前请补全：" + fields, HttpStatus.BAD_REQUEST);
+    }
+
+    private List<MouseView> viewsWithRatingStats(List<MouseDevice> records) {
+        if (records.isEmpty()) return List.of();
+        List<UUID> ids = records.stream().map(MouseDevice::getId).toList();
+        Map<UUID, List<Review>> byMouse = reviews.selectList(new LambdaQueryWrapper<Review>()
+                        .in(Review::getMouseId, ids).eq(Review::getStatus, "ACTIVE")
+                        .isNull(Review::getDeletedAt).isNotNull(Review::getOverallScore))
+                .stream().collect(java.util.stream.Collectors.groupingBy(Review::getMouseId));
+        return records.stream().map(mouse -> {
+            List<Review> mouseReviews = byMouse.getOrDefault(mouse.getId(), List.of());
+            BigDecimal average = mouseReviews.isEmpty() ? BigDecimal.ZERO : mouseReviews.stream()
+                    .map(Review::getOverallScore).reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .divide(BigDecimal.valueOf(mouseReviews.size()), 1, java.math.RoundingMode.HALF_UP);
+            return MouseView.from(mouse, average, mouseReviews.size());
+        }).toList();
     }
 }

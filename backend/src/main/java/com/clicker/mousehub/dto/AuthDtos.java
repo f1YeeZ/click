@@ -23,6 +23,9 @@ public final class AuthDtos {
     public record EmailRequest(@NotBlank @Email String email) {}
     public record ChangePasswordRequest(@NotBlank @Pattern(regexp = "\\d{6}") String verificationCode,
                                         @NotBlank @Size(min = 8, max = 72) String newPassword) {}
+    public record PasswordResetRequest(@NotBlank @Email String email,
+                                       @NotBlank @Pattern(regexp = "\\d{6}") String verificationCode,
+                                       @NotBlank @Size(min = 8, max = 72) String newPassword) {}
     public record MessageResponse(String message) {}
     public record VerificationCodeResponse(String message, long expiresInSeconds, long resendAfterSeconds) {}
     public record UserView(UUID id, String email, String role, String handSize, BigDecimal handLengthCm,

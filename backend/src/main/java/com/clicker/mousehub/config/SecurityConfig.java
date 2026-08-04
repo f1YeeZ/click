@@ -80,12 +80,15 @@ public class SecurityConfig {
                 })
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/sessions", "/api/v1/users", "/api/v1/registration-verification-codes").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/sessions", "/api/v1/users", "/api/v1/registration-verification-codes",
+                                "/api/v1/password-reset-verification-codes").permitAll()
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/password-reset").permitAll()
                         .requestMatchers("/api/v1/review-options").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/images/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/mice/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/mouse-rankings", "/api/v1/mouse-recommendations", "/api/v1/mouse-comparisons").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/mouse-recommendations").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors

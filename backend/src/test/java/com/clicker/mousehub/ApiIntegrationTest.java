@@ -3,8 +3,10 @@ package com.clicker.mousehub;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.clicker.mousehub.entity.UserAccount;
 import com.clicker.mousehub.entity.MouseDevice;
+import com.clicker.mousehub.entity.Review;
 import com.clicker.mousehub.mapper.MouseMapper;
 import com.clicker.mousehub.mapper.UserMapper;
+import com.clicker.mousehub.mapper.ReviewMapper;
 import com.clicker.mousehub.service.EmailVerificationService;
 import com.clicker.mousehub.service.MailService;
 import org.junit.jupiter.api.Test;
@@ -18,8 +20,10 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.OffsetDateTime;
 import java.math.BigDecimal;
@@ -39,6 +43,8 @@ class ApiIntegrationTest {
     @Autowired RecordingMailService mail;
     @Autowired UserMapper users;
     @Autowired MouseMapper mice;
+    @Autowired ReviewMapper reviews;
+    @Autowired PasswordEncoder passwordEncoder;
 
     @Test void publicCatalogAndOptionsAreAvailable() throws Exception {
         mvc.perform(get("/actuator/health"))
@@ -65,6 +71,14 @@ class ApiIntegrationTest {
                         .param("gripStyle", "CLAW").param("supportPositions", "PALM_CENTER"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items", hasSize(0)));
+        mvc.perform(post("/api/v1/mouse-recommendations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"gripStyle":"CLAW",
+                                 "dabs":[{"x":500,"y":620,"radius":55,"mode":"PAINT"}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(0)));
         mvc.perform(get("/api/v1/mouse-comparisons")
                         .param("mouseIds", UUID.randomUUID().toString()))
                 .andExpect(status().isOk())
@@ -78,6 +92,47 @@ class ApiIntegrationTest {
         mvc.perform(get("/api/v1/mice/logitech-g-pro-x-superlight-2"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code", is("INVALID_ARGUMENT")));
+    }
+
+    @Test
+    @Transactional
+    void publicCatalogTextFiltersIgnoreLetterCase() throws Exception {
+        MouseDevice mouse = publishedMouse();
+        mouse.setMaterial("ABS Plastic");
+        mouse.setSwitchName("Omron Optical");
+        mouse.setEncoderName("TTC Gold");
+        mouse.setPurchaseChannels("JD Official");
+        mice.insert(mouse);
+
+        mvc.perform(get("/api/v1/mice")
+                        .param("q", "READ MOUSE")
+                        .param("sensorName", "test sensor")
+                        .param("material", "abs plastic")
+                        .param("switchName", "OMRON OPTICAL")
+                        .param("encoderName", "ttc gold")
+                        .param("purchaseChannel", "jd official"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].id", is(mouse.getId().toString())));
+    }
+
+    @Test
+    @Transactional
+    void publicCatalogKeywordSearchMatchesOnlyMouseModel() throws Exception {
+        MouseDevice mouse = publishedMouse();
+        mouse.setBrand("QueryScope Brand");
+        mouse.setModel("Velocity V");
+        mouse.setSensorName("QueryScope Sensor");
+        mice.insert(mouse);
+
+        mvc.perform(get("/api/v1/mice").param("q", "velocity"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].id", is(mouse.getId().toString())));
+
+        mvc.perform(get("/api/v1/mice").param("q", "queryscope"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(0)));
     }
 
     @Test
@@ -122,6 +177,175 @@ class ApiIntegrationTest {
         mvc.perform(delete("/api/v1/admin/mice/" + id))
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(jsonPath("$.error.code", is("METHOD_NOT_ALLOWED")));
+    }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "admin@example.com", roles = "ADMIN")
+    void incompleteDraftCanBeSavedButCannotBePublished() throws Exception {
+        String response = mvc.perform(post("/api/v1/admin/mice")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"brand":"Draft Brand","model":"Draft Model","variant":"",
+                                 "slug":"draft-model","status":"DRAFT"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status", is("DRAFT")))
+                .andExpect(jsonPath("$.publicationReady", is(false)))
+                .andExpect(jsonPath("$.dataQualityPercent", lessThan(100)))
+                .andExpect(jsonPath("$.missingPublicationFields", hasItem("primarySourceUrl")))
+                .andReturn().getResponse().getContentAsString();
+        String id = json.readTree(response).get("id").asText();
+
+        mvc.perform(patch("/api/v1/admin/mice/" + id)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"PUBLISHED\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("MOUSE_PUBLICATION_INCOMPLETE")))
+                .andExpect(jsonPath("$.error.message", containsString("发布前请补全")));
+        mvc.perform(get("/api/v1/admin/dashboard"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.miceIncomplete", is(1)))
+                .andExpect(jsonPath("$.dataQualityPercent", lessThan(100)));
+    }
+
+    @Test
+    @Transactional
+    void catalogRatingSortPlacesReliableSamplesFirstAndExposesDistribution() throws Exception {
+        MouseDevice reliableHigh = publishedMouse(); reliableHigh.setModel("Reliable High"); reliableHigh.setSlug("reliable-high");
+        MouseDevice reliableLow = publishedMouse(); reliableLow.setModel("Reliable Low"); reliableLow.setSlug("reliable-low");
+        MouseDevice tinyPerfect = publishedMouse(); tinyPerfect.setModel("Tiny Perfect"); tinyPerfect.setSlug("tiny-perfect");
+        mice.insert(reliableHigh); mice.insert(reliableLow); mice.insert(tinyPerfect);
+        for (int i = 0; i < 5; i++) addReview(reliableHigh, "high-" + i + "@example.com", 8);
+        for (int i = 0; i < 5; i++) addReview(reliableLow, "low-" + i + "@example.com", 7);
+        addReview(tinyPerfect, "perfect@example.com", 10);
+
+        mvc.perform(get("/api/v1/mice").param("sort", "rating_desc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].id", is(reliableHigh.getId().toString())))
+                .andExpect(jsonPath("$.items[0].averageScore", is(8.0)))
+                .andExpect(jsonPath("$.items[0].reviewCount", is(5)))
+                .andExpect(jsonPath("$.items[2].id", is(tinyPerfect.getId().toString())))
+                .andExpect(jsonPath("$.items[2].lowReviewSample", is(true)));
+
+        mvc.perform(get("/api/v1/mice/" + reliableHigh.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reviewSummary.baseSampleCount", is(5)))
+                .andExpect(jsonPath("$.reviewSummary.baseScoreDistribution.8", is(5)))
+                .andExpect(jsonPath("$.reviewSummary.lastUpdatedAt", not(emptyOrNullString())));
+    }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "operator@example.com", roles = "ADMIN")
+    void csvImportRequiresPreviewAndIsIdempotent() throws Exception {
+        String csv = "brand,model,variant,slug,status,sizeCategory,lengthMm,widthMm,heightMm,weightG,shapeType,sensorName,maxDpi,maxPollingRateHz,connectionModes,primarySourceUrl\n"
+                + "运营品牌,批量型号,,operations-import-mouse,DRAFT,MEDIUM,120,62,39,58,SYMMETRICAL,PAW3395,26000,1000,wired,https://example.com/operations-import-mouse\n";
+        MockMultipartFile previewFile = new MockMultipartFile("file", "mice.csv", "text/csv", csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String previewJson = mvc.perform(multipart("/api/v1/admin/mice/imports/preview").file(previewFile))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ready", is(true)))
+                .andExpect(jsonPath("$.createRows", is(1)))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        String checksum = json.readTree(previewJson).get("checksum").asText();
+
+        MockMultipartFile commitFile = new MockMultipartFile("file", "mice.csv", "text/csv", csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        mvc.perform(multipart("/api/v1/admin/mice/imports").file(commitFile).param("checksum", checksum))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.createdCount", is(1)))
+                .andExpect(jsonPath("$.alreadyImported", is(false)));
+
+        MockMultipartFile retryFile = new MockMultipartFile("file", "mice.csv", "text/csv", csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        mvc.perform(multipart("/api/v1/admin/mice/imports").file(retryFile).param("checksum", checksum))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.alreadyImported", is(true)));
+        mvc.perform(get("/api/v1/admin/mice").param("q", "operations-import-mouse"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].status", is("DRAFT")));
+        mvc.perform(get("/api/v1/admin/audit-logs").param("entityType", "MOUSE_IMPORT"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].action", is("MOUSE_CSV_IMPORT")));
+    }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "operator@example.com", roles = "ADMIN")
+    void userRolesBansAndReviewModerationAreProtectedAndAudited() throws Exception {
+        UserAccount operator = user("operator@example.com", "ADMIN");
+        users.insert(operator);
+        UserAccount user = user("managed-user@example.com", "USER");
+        users.insert(user);
+        MouseDevice mouse = publishedMouse();
+        mice.insert(mouse);
+        Review review = new Review();
+        OffsetDateTime now = OffsetDateTime.now();
+        review.setId(UUID.randomUUID()); review.setUserId(user.getId()); review.setMouseId(mouse.getId());
+        review.setOverallScore(new BigDecimal("8.0")); review.setStatus("ACTIVE"); review.setVersion(0L);
+        review.setCreatedAt(now); review.setUpdatedAt(now); reviews.insert(review);
+
+        mvc.perform(patch("/api/v1/admin/users/" + user.getId() + "/role").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"ADMIN\"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(patch("/api/v1/admin/users/" + user.getId() + "/role").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"ADMIN\",\"reason\":\"负责数据维护\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.role", is("ADMIN")));
+        mvc.perform(get("/api/v1/admin/users").param("q", "managed-user").param("role", "ADMIN"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].id", is(user.getId().toString())));
+        mvc.perform(patch("/api/v1/admin/users/" + user.getId()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"DISABLED\",\"reason\":\"权限异常\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code", is("ADMIN_STATUS_PROTECTED")));
+        mvc.perform(patch("/api/v1/admin/users/" + user.getId() + "/role").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"USER\",\"reason\":\"结束数据维护\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.role", is("USER")));
+        mvc.perform(patch("/api/v1/admin/users/" + operator.getId() + "/role").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"USER\",\"reason\":\"误操作测试\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code", is("SELF_ROLE_CHANGE_FORBIDDEN")));
+
+        mvc.perform(patch("/api/v1/admin/users/" + user.getId()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"DISABLED\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code", is("STATUS_REASON_REQUIRED")));
+        mvc.perform(patch("/api/v1/admin/users/" + user.getId()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"DISABLED\",\"reason\":\"异常登录复核\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status", is("DISABLED")))
+                .andExpect(jsonPath("$.statusReason", is("异常登录复核")))
+                .andExpect(jsonPath("$.statusChangedBy", is("operator@example.com")))
+                .andExpect(jsonPath("$.statusChangedAt", not(emptyOrNullString())));
+        mvc.perform(patch("/api/v1/admin/users/" + user.getId() + "/role").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"ADMIN\",\"reason\":\"错误提权测试\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code", is("ADMIN_ROLE_REQUIRES_ACTIVE_USER")));
+        mvc.perform(patch("/api/v1/admin/users/" + user.getId()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"ACTIVE\",\"reason\":\"复核后解除封禁\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status", is("ACTIVE")))
+                .andExpect(jsonPath("$.statusReason", is("复核后解除封禁")));
+
+        mvc.perform(patch("/api/v1/admin/reviews/" + review.getId()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"DISABLED\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code", is("MODERATION_REASON_REQUIRED")));
+        mvc.perform(patch("/api/v1/admin/reviews/" + review.getId()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"DISABLED\",\"reason\":\"异常评分模式\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.moderationReason", is("异常评分模式")))
+                .andExpect(jsonPath("$.moderatedBy", is("operator@example.com")));
+        mvc.perform(get("/api/v1/admin/audit-logs").param("q", "异常评分模式"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].entityType", is("REVIEW")));
+        mvc.perform(get("/api/v1/admin/audit-logs").param("q", "负责数据维护"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].action", is("USER_ROLE_CHANGE")));
+    }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "external-root@example.com", roles = "ADMIN")
+    void lastActiveAdministratorCannotBeDemoted() throws Exception {
+        users.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<UserAccount>()
+                        .eq(UserAccount::getRole, "ADMIN"))
+                .forEach(existing -> { existing.setRole("USER"); users.updateById(existing); });
+        UserAccount lastAdmin = user("last-admin@example.com", "ADMIN");
+        users.insert(lastAdmin);
+        mvc.perform(patch("/api/v1/admin/users/" + lastAdmin.getId() + "/role")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"USER\",\"reason\":\"降级测试\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("LAST_ADMIN_PROTECTED")));
     }
 
     @Test void realtimeStreamIsPublicAndProtectedFromProxyBuffering() throws Exception {
@@ -190,6 +414,52 @@ class ApiIntegrationTest {
                 .andExpect(jsonPath("$.error.code", is("INVALID_VERIFICATION_CODE")));
     }
 
+    @Test
+    @Transactional
+    void forgottenPasswordCanBeResetWithoutAnActiveSession() throws Exception {
+        UserAccount account = user("forgot-password@example.com", "USER");
+        account.setPasswordHash(passwordEncoder.encode("old-password123"));
+        users.insert(account);
+
+        String knownResponse = mvc.perform(post("/api/v1/password-reset-verification-codes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"forgot-password@example.com\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Location", "/api/v1/password-reset-verification-codes/current"))
+                .andExpect(jsonPath("$.message", is("如果该邮箱已注册，重置验证码将发送至邮箱")))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        String resetCode = mail.codeFor(EmailVerificationService.RESET_PASSWORD);
+
+        String unknownResponse = mvc.perform(post("/api/v1/password-reset-verification-codes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"missing@example.com\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.message", is("如果该邮箱已注册，重置验证码将发送至邮箱")))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        org.assertj.core.api.Assertions.assertThat(json.readTree(unknownResponse))
+                .isEqualTo(json.readTree(knownResponse));
+
+        mvc.perform(put("/api/v1/password-reset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"forgot-password@example.com\",\"verificationCode\":\""
+                                + resetCode + "\",\"newPassword\":\"new-password123\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message", is("密码重置成功，请使用新密码登录")));
+
+        mvc.perform(post("/api/v1/sessions").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"forgot-password@example.com\",\"password\":\"old-password123\"}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/sessions").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"forgot-password@example.com\",\"password\":\"new-password123\"}"))
+                .andExpect(status().isCreated());
+        mvc.perform(put("/api/v1/password-reset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"forgot-password@example.com\",\"verificationCode\":\""
+                                + resetCode + "\",\"newPassword\":\"another-password123\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code", is("INVALID_VERIFICATION_CODE")));
+    }
+
     @TestConfiguration
     static class MailTestConfig {
         @Bean
@@ -233,6 +503,17 @@ class ApiIntegrationTest {
         mouse.setCreatedAt(now);
         mouse.setUpdatedAt(now);
         return mouse;
+    }
+
+    private void addReview(MouseDevice mouse, String email, int score) {
+        UserAccount user = user(email, "USER");
+        users.insert(user);
+        OffsetDateTime now = OffsetDateTime.now();
+        Review review = new Review();
+        review.setId(UUID.randomUUID()); review.setUserId(user.getId()); review.setMouseId(mouse.getId());
+        review.setClickScore(score); review.setScrollScore(score); review.setBuildScore(score); review.setCoatingScore(score);
+        review.setOverallScore(BigDecimal.valueOf(score)); review.setStatus("ACTIVE"); review.setVersion(0L);
+        review.setCreatedAt(now); review.setUpdatedAt(now); reviews.insert(review);
     }
 
     static class RecordingMailService extends MailService {

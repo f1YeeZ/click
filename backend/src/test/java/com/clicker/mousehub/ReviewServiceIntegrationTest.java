@@ -5,6 +5,8 @@ import com.clicker.mousehub.dto.ReviewDtos.BaseScoreRequest;
 import com.clicker.mousehub.dto.ReviewDtos.GripScoreRequest;
 import com.clicker.mousehub.dto.ReviewDtos.ReviewRequest;
 import com.clicker.mousehub.dto.ReviewDtos.SupportPositionRequest;
+import com.clicker.mousehub.dto.ReviewDtos.SupportCell;
+import com.clicker.mousehub.dto.ReviewDtos.SupportDab;
 import com.clicker.mousehub.entity.MouseDevice;
 import com.clicker.mousehub.mapper.MouseMapper;
 import com.clicker.mousehub.mapper.UserMapper;
@@ -183,6 +185,71 @@ class ReviewServiceIntegrationTest {
         assertThat(reviews.supportSummary(mouse.getId()).positions())
                 .filteredOn(position -> position.code().equals("PALM_HEEL"))
                 .singleElement().extracting("count").isEqualTo(0L);
+    }
+
+    @Test void paintedSupportCellsAreDeduplicatedAndAggregatedAsHeatCounts() {
+        String firstEmail = "paint-one@example.com";
+        String secondEmail = "paint-two@example.com";
+        createUser(firstEmail);
+        createUser(secondEmail);
+        auth.updateProfile(firstEmail, new ProfileRequest(new BigDecimal("18.0"), "CLAW"));
+        auth.updateProfile(secondEmail, new ProfileRequest(new BigDecimal("18.5"), "CLAW"));
+        MouseDevice mouse = mouse();
+        mice.insert(mouse);
+
+        reviews.saveSupportPositions(mouse.getId(), firstEmail,
+                new SupportPositionRequest(List.of(), List.of(new SupportCell(10, 18), new SupportCell(10, 18), new SupportCell(11, 18))));
+        reviews.saveSupportPositions(mouse.getId(), secondEmail,
+                new SupportPositionRequest(List.of(), List.of(new SupportCell(10, 18))));
+
+        var summary = reviews.supportSummary(mouse.getId(), "CLAW", "MEDIUM");
+        assertThat(summary.sampleCount()).isEqualTo(2);
+        assertThat(summary.maxCount()).isEqualTo(2);
+        assertThat(summary.gridColumns()).isEqualTo(64);
+        assertThat(summary.gridRows()).isEqualTo(96);
+        assertThat(summary.cells()).filteredOn(cell -> cell.x() == 27 && cell.y() == 54)
+                .singleElement().satisfies(cell -> {
+                    assertThat(cell.count()).isEqualTo(2);
+                    assertThat(cell.percentage()).isEqualTo(100);
+                });
+        assertThat(summary.cells()).filteredOn(cell -> cell.x() == 29 && cell.y() == 54)
+                .singleElement().extracting("count").isEqualTo(1L);
+        assertThat(reviews.mine(mouse.getId(), firstEmail).supportCells())
+                .containsExactly(new SupportCell(10, 18), new SupportCell(11, 18));
+        assertThat(reviews.mine(mouse.getId(), firstEmail).supportPositions()).contains("PALM_CENTER");
+    }
+
+    @Test void orderedBrushDabsPaintEraseAndAggregateOncePerUser() {
+        String firstEmail = "brush-one@example.com";
+        String secondEmail = "brush-two@example.com";
+        createUser(firstEmail);
+        createUser(secondEmail);
+        auth.updateProfile(firstEmail, new ProfileRequest(new BigDecimal("18.0"), "CLAW"));
+        auth.updateProfile(secondEmail, new ProfileRequest(new BigDecimal("18.5"), "CLAW"));
+        MouseDevice mouse = mouse();
+        mice.insert(mouse);
+
+        List<SupportDab> firstStroke = List.of(
+                new SupportDab(500, 500, 100, "PAINT"),
+                new SupportDab(530, 500, 100, "PAINT"),
+                new SupportDab(500, 500, 30, "ERASE"));
+        reviews.saveSupportPositions(mouse.getId(), firstEmail,
+                new SupportPositionRequest(List.of(), List.of(), firstStroke));
+        reviews.saveSupportPositions(mouse.getId(), secondEmail,
+                new SupportPositionRequest(List.of(), List.of(),
+                        List.of(new SupportDab(500, 500, 55, "PAINT"))));
+
+        var mine = reviews.mine(mouse.getId(), firstEmail);
+        assertThat(mine.supportDabs()).containsExactlyElementsOf(firstStroke);
+
+        var summary = reviews.supportSummary(mouse.getId(), "CLAW", "MEDIUM");
+        assertThat(summary.sampleCount()).isEqualTo(2);
+        assertThat(summary.cells()).filteredOn(cell -> cell.x() == 32 && cell.y() == 48)
+                .singleElement().extracting("count").isEqualTo(1L);
+        assertThat(summary.cells()).filteredOn(cell -> cell.x() == 34 && cell.y() == 48)
+                .singleElement().extracting("count").isEqualTo(2L);
+        assertThat(summary.cells()).filteredOn(cell -> cell.x() == 38 && cell.y() == 48)
+                .singleElement().extracting("count").isEqualTo(1L);
     }
 
     @Test void handLengthAndPreferredGripAreImmutableAfterFirstSelection() {

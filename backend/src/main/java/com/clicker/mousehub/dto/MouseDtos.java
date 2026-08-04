@@ -1,6 +1,7 @@
 package com.clicker.mousehub.dto;
 
 import com.clicker.mousehub.entity.MouseDevice;
+import com.clicker.mousehub.util.MouseDataQuality;
 import jakarta.validation.constraints.*;
 
 import java.math.BigDecimal;
@@ -22,10 +23,18 @@ public final class MouseDtos {
             String humpPlacement, String frontFlare, String sideCurvature, Boolean thumbRest, Boolean ringFingerRest,
             String sensorType, Boolean adjustableSensorPosition, BigDecimal sensorPositionX, BigDecimal sensorPositionY,
             BigDecimal sensorPositionX2, BigDecimal sensorPositionY2, Boolean hotSwappableSwitches, String switchType,
-            Integer switchLifeSpanM, String encoderType, Integer encoderSteps, String purchaseChannels, String imageUrl) {
+            Integer switchLifeSpanM, String encoderType, Integer encoderSteps, String purchaseChannels, String imageUrl,
+            BigDecimal averageScore, long reviewCount, boolean lowReviewSample,
+            int dataQualityPercent, boolean publicationReady, List<String> missingPublicationFields,
+            String verificationStatus) {
         public static MouseView from(MouseDevice mouse) {
+            return from(mouse, BigDecimal.ZERO, 0);
+        }
+
+        public static MouseView from(MouseDevice mouse, BigDecimal averageScore, long reviewCount) {
             List<String> modes = mouse.getConnectionModes() == null || mouse.getConnectionModes().isBlank()
                     ? List.of() : List.of(mouse.getConnectionModes().split(","));
+            List<String> missing = MouseDataQuality.missingPublicationFields(mouse);
             return new MouseView(mouse.getId(), mouse.getBrand(), mouse.getModel(), mouse.getVariant(), mouse.getSlug(),
                     mouse.displayName(), mouse.getStatus(), mouse.getSizeCategory(), mouse.getLengthMm(), mouse.getWidthMm(),
                     mouse.getHeightMm(), mouse.getWeightG(), mouse.getShapeType(), mouse.getHandCompatibility(),
@@ -36,7 +45,10 @@ public final class MouseDtos {
                     mouse.getFrontFlare(), mouse.getSideCurvature(), mouse.getThumbRest(), mouse.getRingFingerRest(),
                     mouse.getSensorType(), mouse.getAdjustableSensorPosition(), mouse.getSensorPositionX(), mouse.getSensorPositionY(),
                     mouse.getSensorPositionX2(), mouse.getSensorPositionY2(), mouse.getHotSwappableSwitches(), mouse.getSwitchType(),
-                    mouse.getSwitchLifeSpanM(), mouse.getEncoderType(), mouse.getEncoderSteps(), mouse.getPurchaseChannels(), mouse.getImageUrl());
+                    mouse.getSwitchLifeSpanM(), mouse.getEncoderType(), mouse.getEncoderSteps(), mouse.getPurchaseChannels(), mouse.getImageUrl(),
+                    averageScore == null ? BigDecimal.ZERO : averageScore, reviewCount, reviewCount < 5,
+                    MouseDataQuality.qualityPercent(mouse), missing.isEmpty(), missing,
+                    MouseDataQuality.verificationStatus(mouse));
         }
     }
 
@@ -45,31 +57,32 @@ public final class MouseDtos {
             @NotBlank @Size(max = 120) String model,
             @Size(max = 100) String variant,
             @NotBlank @Pattern(regexp = "[a-z0-9]+(?:-[a-z0-9]+)*", message = "slug 只能包含小写字母、数字和连字符") String slug,
-            @NotBlank String sizeCategory,
-            @NotNull @Positive BigDecimal lengthMm,
-            @NotNull @Positive BigDecimal widthMm,
-            @NotNull @Positive BigDecimal heightMm,
-            @NotNull @Positive BigDecimal weightG,
-            @NotBlank String shapeType,
+            String sizeCategory,
+            @Positive BigDecimal lengthMm,
+            @Positive BigDecimal widthMm,
+            @Positive BigDecimal heightMm,
+            @Positive BigDecimal weightG,
+            String shapeType,
             String handCompatibility,
-            @NotBlank String sensorName,
-            @NotNull @Positive Integer maxDpi,
-            @NotNull @Positive Integer maxPollingRateHz,
+            String sensorName,
+            @Positive Integer maxDpi,
+            @Positive Integer maxPollingRateHz,
             Integer trackingSpeedIps,
             BigDecimal accelerationG,
             Integer buttonCount,
             Integer sideButtonCount,
             String switchName,
             String encoderName,
-            @NotEmpty List<String> connectionModes,
+            List<String> connectionModes,
             String material,
-            @NotBlank String primarySourceUrl,
+            String primarySourceUrl,
             String sourceNotes,
             String materialGeneral, String materialSpecific, String humpPlacement, String frontFlare, String sideCurvature,
             Boolean thumbRest, Boolean ringFingerRest, String sensorType, Boolean adjustableSensorPosition,
             BigDecimal sensorPositionX, BigDecimal sensorPositionY, BigDecimal sensorPositionX2, BigDecimal sensorPositionY2,
             Boolean hotSwappableSwitches, String switchType, Integer switchLifeSpanM, String encoderType, Integer encoderSteps,
-            String purchaseChannels, String imageUrl) {}
+            String purchaseChannels, String imageUrl,
+            @Pattern(regexp = "PUBLISHED|DRAFT|ARCHIVED") String status) {}
 
     public record CompareResponse(List<MouseView> items, List<CompareRow> rows) {}
     public record CompareRow(String group, String label, String unit, List<CompareCell> cells, boolean different) {}

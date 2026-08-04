@@ -1,18 +1,18 @@
 /* Contrast palette: keep the dark hardware aesthetic, make information roles explicit. */
 :root {
-  --ink: #f5f7fb;
-  --muted: #b5c4d9;
-  --soft-muted: #8294ad;
-  --black: #07111f;
-  --panel: #0e1b2d;
-  --panel2: #142743;
-  --line: #314a6b;
-  --acid: #67a3ff;
-  --accent-strong: #236bdb;
-  --orange: #ffc857;
-  --danger: #ff7474;
-  --green: #58d49c;
-  --focus-ring: rgba(103, 163, 255, 0.42);
+  --ink: #f5f5f5;
+  --muted: #bcbcbc;
+  --soft-muted: #909090;
+  --black: #090909;
+  --panel: #111111;
+  --panel2: #1b1b1b;
+  --line: #3a3a3a;
+  --acid: #f2f2f2;
+  --accent-strong: #dedede;
+  --orange: #bdbdbd;
+  --danger: #d6d6d6;
+  --green: #bcbcbc;
+  --focus-ring: rgba(255, 255, 255, 0.30);
 }
 
 html {
@@ -99,7 +99,7 @@ a:hover,
 .inline-link:hover,
 .auth-switch a:hover,
 .source-card a:hover {
-  color: #a8c9ff;
+  color: #ffffff;
 }
 
 /* Surfaces and borders */
@@ -131,7 +131,7 @@ a:hover,
 }
 
 .site-header {
-  background: rgba(7, 17, 31, 0.94);
+  background: rgba(9, 9, 9, 0.94);
   border-bottom-color: var(--line);
 }
 
@@ -142,7 +142,7 @@ a:hover,
 .main-nav a:hover,
 .main-nav a.router-link-active {
   color: var(--ink);
-  background: rgba(103, 163, 255, 0.1);
+  background: rgba(255, 255, 255, 0.10);
 }
 
 .brand-mark,
@@ -178,9 +178,9 @@ a:hover,
 .hero-search button:hover,
 .grip-score-list button:hover:not(:disabled),
 .sign-in-button:hover {
-  border-color: #67a3ff;
-  background: #67a3ff;
-  color: #07111f;
+  border-color: #f2f2f2;
+  background: #f2f2f2;
+  color: #090909;
 }
 
 .button-ghost {
@@ -207,7 +207,7 @@ textarea,
 .unit-input,
 .password-card .verification-input {
   border-color: var(--line);
-  background-color: #0a1729;
+  background-color: #151515;
   color: var(--ink);
 }
 
@@ -279,7 +279,6 @@ textarea::placeholder,
   color: var(--acid);
 }
 
-.quick-filters button,
 .compare-add,
 .pagination button,
 .selected-sidebar-empty,
@@ -291,14 +290,13 @@ textarea::placeholder,
   color: var(--muted);
 }
 
-.quick-filters button:hover,
 .compare-add:hover,
 .pagination button:hover:not(:disabled),
 .selected-sidebar-empty:hover,
 .row-actions button:hover,
 .admin-refresh:hover {
   border-color: var(--acid);
-  background: rgba(103, 163, 255, 0.14);
+  background: rgba(255, 255, 255, 0.14);
   color: var(--ink);
 }
 
@@ -308,7 +306,7 @@ textarea::placeholder,
 .slot-visual,
 .image-picker-preview,
 .image-library-item {
-  background: #0a1729;
+  background: #151515;
 }
 
 .card-body,
@@ -375,7 +373,7 @@ textarea::placeholder,
 
 .filter-accordion-toggle:hover,
 .filter-accordion-toggle[aria-expanded="true"] {
-  background: rgba(103, 163, 255, 0.12);
+  background: rgba(255, 255, 255, 0.12);
   color: var(--ink);
 }
 
@@ -391,7 +389,7 @@ textarea::placeholder,
 }
 
 .filter-check-option:hover {
-  background: rgba(103, 163, 255, 0.1);
+  background: rgba(255, 255, 255, 0.10);
   color: var(--ink);
 }
 
@@ -413,13 +411,13 @@ textarea::placeholder,
 
 .active-filter-chip {
   border-color: var(--line);
-  background: rgba(103, 163, 255, 0.12);
+  background: rgba(255, 255, 255, 0.12);
   color: var(--ink);
 }
 
 .active-filter-chip:hover {
   border-color: var(--acid);
-  background: rgba(103, 163, 255, 0.22);
+  background: rgba(255, 255, 255, 0.20);
 }
 
 .empty-state,
@@ -451,7 +449,7 @@ textarea::placeholder,
 .spec-group dl div:hover,
 .comparison-table tbody tr:hover td,
 .comparison-table tbody tr:hover th {
-  background: rgba(103, 163, 255, 0.07);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .score-summary-card,
@@ -470,7 +468,7 @@ textarea::placeholder,
 .score-summary-card .score-dial,
 .score-summary-card.grip-summary .score-dial {
   border-color: var(--acid);
-  background: #0a1729;
+  background: #151515;
 }
 
 .score-summary-card .score-dial strong,
@@ -480,7 +478,7 @@ textarea::placeholder,
 }
 
 .dimension-bars i {
-  background: #29415f;
+  background: #444444;
 }
 
 .dimension-bars i b {
@@ -499,7 +497,7 @@ textarea::placeholder,
 .item-delete-button:hover {
   border-color: var(--danger);
   background: var(--danger);
-  color: #07111f;
+  color: #090909;
 }
 
 .comparison-table th,
@@ -512,13 +510,13 @@ textarea::placeholder,
 
 .comparison-table td em,
 .comparison-table td em.positive {
-  background: rgba(103, 163, 255, 0.14);
+  background: rgba(255, 255, 255, 0.14);
   color: var(--acid);
 }
 
 .compare-tray {
   border-color: var(--acid);
-  background: #0e1b2d;
+  background: #111111;
   color: var(--ink);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
 }
@@ -540,7 +538,7 @@ textarea::placeholder,
 .saas-form select,
 .saas-form textarea {
   border-color: var(--line);
-  background: #0a1729;
+  background: #151515;
   color: var(--ink);
 }
 
@@ -569,14 +567,14 @@ textarea::placeholder,
 
 .flash.error {
   border-color: var(--danger);
-  background: rgba(255, 116, 116, 0.12);
-  color: #ff9a9a;
+  background: rgba(255, 255, 255, 0.10);
+  color: #dedede;
 }
 
 .flash.success {
   border-color: var(--green);
-  background: rgba(88, 212, 156, 0.12);
-  color: #8be6bd;
+  background: rgba(255, 255, 255, 0.10);
+  color: #d6d6d6;
 }
 
 .admin-saas,
@@ -589,7 +587,7 @@ textarea::placeholder,
 .admin-header,
 .admin-saas .admin-header {
   border-color: var(--line);
-  background: #0a1729;
+  background: #151515;
 }
 
 .admin-brand,
@@ -619,7 +617,7 @@ textarea::placeholder,
 
 .admin-sidebar nav button:hover,
 .admin-sidebar nav button.active {
-  background: rgba(103, 163, 255, 0.12);
+  background: rgba(255, 255, 255, 0.12);
   color: var(--ink);
 }
 
@@ -643,38 +641,38 @@ textarea::placeholder,
 }
 
 .admin-table tbody tr:hover td {
-  background: rgba(103, 163, 255, 0.08);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .admin-table .status-published,
 .admin-table .status-active {
   border-color: var(--green);
-  background: rgba(88, 212, 156, 0.13);
-  color: #8be6bd;
+  background: rgba(255, 255, 255, 0.12);
+  color: #d6d6d6;
 }
 
 .admin-table .status-draft,
 .admin-table .status-pending {
   border-color: var(--orange);
-  background: rgba(255, 200, 87, 0.13);
-  color: #ffd982;
+  background: rgba(255, 255, 255, 0.10);
+  color: #d0d0d0;
 }
 
 .admin-table .status-archived,
 .admin-table .status-disabled {
   border-color: var(--danger);
-  background: rgba(255, 116, 116, 0.13);
-  color: #ff9a9a;
+  background: rgba(255, 255, 255, 0.12);
+  color: #dedede;
 }
 
 .live-dot {
   background: var(--green);
-  box-shadow: 0 0 0 3px rgba(88, 212, 156, 0.15);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.14);
 }
 
 @media (max-width: 700px) {
   .main-nav a:hover,
   .main-nav a.router-link-active {
-    background: rgba(103, 163, 255, 0.12);
+    background: rgba(255, 255, 255, 0.12);
   }
 }

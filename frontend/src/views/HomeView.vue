@@ -1,6 +1,6 @@
 <script setup>
 defineOptions({ name: 'HomeView' })
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api/client'
 import MouseCard from '../components/MouseCard.vue'
@@ -8,25 +8,92 @@ import { onRealtime } from '../services/realtime'
 
 const router = useRouter()
 const query = ref('')
+const searchShell = ref(null)
+const suggestions = ref([])
+const suggestionTotal = ref(0)
+const suggestionState = ref('idle')
+const suggestionsOpen = ref(false)
+const activeSuggestion = ref(-1)
 const latest = ref([])
 const total = ref(0)
 const contentReady = ref(false)
-const quickFilters = [
-  { label: '无线', params: { connection: 'wireless_2_4g' } },
-  { label: '超轻量', params: { weightMax: 60 } },
-  { label: 'PAW3395', params: { q: 'PAW3395' } },
-  { label: '人体工学', params: { shape: 'ERGONOMIC' } }
-]
 const loadLatest = async () => {
   const { data } = await api.get('/mice', { params: { pageSize: 12, sort: 'newest' } })
   latest.value = data.items.slice(0, 4)
   total.value = data.page.totalItems
 }
+const resetSuggestions = () => {
+  suggestions.value = []
+  suggestionTotal.value = 0
+  suggestionState.value = 'idle'
+  suggestionsOpen.value = false
+  activeSuggestion.value = -1
+}
+const loadSuggestions = async (term, requestId) => {
+  try {
+    const { data } = await api.get('/mice', { params: { q: term, pageSize: 12, sort: 'newest' } })
+    if (requestId !== suggestionRequest || query.value.trim() !== term) return
+    suggestions.value = data.items.slice(0, 6)
+    suggestionTotal.value = data.page.totalItems
+    suggestionState.value = suggestions.value.length ? 'ready' : 'empty'
+  } catch {
+    if (requestId !== suggestionRequest) return
+    suggestions.value = []
+    suggestionTotal.value = 0
+    suggestionState.value = 'error'
+  }
+}
+const searchAll = () => {
+  const term = query.value.trim()
+  suggestionsOpen.value = false
+  const navigation = router.push({ path: '/mice', query: term ? { q: term } : {} })
+  query.value = ''
+  return navigation
+}
+const openSuggestion = (mouse) => {
+  suggestionsOpen.value = false
+  const navigation = router.push(`/mice/${mouse.id}`)
+  query.value = ''
+  return navigation
+}
+const submitSearch = () => searchAll()
+const moveSuggestion = async (direction) => {
+  if (!suggestionsOpen.value || !suggestions.value.length) return
+  activeSuggestion.value = (activeSuggestion.value + direction + suggestions.value.length) % suggestions.value.length
+  await nextTick()
+  document.getElementById(`home-search-option-${activeSuggestion.value}`)?.scrollIntoView({ block: 'nearest' })
+}
+const reopenSuggestions = () => {
+  if (query.value.trim() && suggestionState.value !== 'idle') suggestionsOpen.value = true
+}
+const closeSuggestions = () => {
+  suggestionsOpen.value = false
+  activeSuggestion.value = -1
+}
+const handleOutsidePointer = (event) => {
+  if (!searchShell.value?.contains(event.target)) closeSuggestions()
+}
 let stopRealtime = () => {}
 let realtimeTimer
 let initialLoadTimer
 let contentReadyTimer
+let suggestionTimer
+let suggestionRequest = 0
+watch(query, (value) => {
+  clearTimeout(suggestionTimer)
+  const requestId = ++suggestionRequest
+  const term = value.trim()
+  activeSuggestion.value = -1
+  if (!term) {
+    resetSuggestions()
+    return
+  }
+  suggestionsOpen.value = true
+  suggestionState.value = 'loading'
+  suggestionTimer = window.setTimeout(() => loadSuggestions(term, requestId), 220)
+})
 onMounted(() => {
+  document.addEventListener('pointerdown', handleOutsidePointer)
   contentReadyTimer = window.setTimeout(() => { contentReady.value = true }, 190)
   // Let the route fade finish before inserting the initial card grid.
   initialLoadTimer = window.setTimeout(loadLatest, 220)
@@ -36,9 +103,15 @@ onMounted(() => {
     realtimeTimer = setTimeout(loadLatest, 250)
   })
 })
-onBeforeUnmount(() => { stopRealtime(); clearTimeout(realtimeTimer); clearTimeout(initialLoadTimer); clearTimeout(contentReadyTimer) })
-const search = () => router.push({ path: '/mice', query: query.value ? { q: query.value } : {} })
-const quickSearch = (params) => router.push({ path: '/mice', query: params })
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleOutsidePointer)
+  stopRealtime()
+  clearTimeout(realtimeTimer)
+  clearTimeout(initialLoadTimer)
+  clearTimeout(contentReadyTimer)
+  clearTimeout(suggestionTimer)
+  suggestionRequest++
+})
 </script>
 
 <template>
@@ -48,13 +121,73 @@ const quickSearch = (params) => router.push({ path: '/mice', query: params })
         <p class="eyebrow">CLICKER INDEX / VERIFIED MOUSE DATA</p>
         <h1>找到你的完美点击</h1>
         <p class="hero-lead">面向高性能鼠标的技术数据库。对齐规格、分析参数，用真实数据找到适合你的硬件。</p>
-        <form class="hero-search" @submit.prevent="search">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
-          <input v-model="query" type="search" aria-label="搜索品牌、型号或传感器" placeholder="按型号、传感器或品牌搜索…">
-          <button type="submit">搜索</button>
-        </form>
-        <div class="quick-filters" aria-label="快捷筛选">
-          <button v-for="item in quickFilters" :key="item.label" type="button" @click="quickSearch(item.params)">{{ item.label }}</button>
+        <div ref="searchShell" class="home-search-shell" :class="{ open: suggestionsOpen }">
+          <form class="hero-search" role="search" @submit.prevent="submitSearch">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
+            <input
+              v-model="query"
+              type="search"
+              role="combobox"
+              aria-label="按型号搜索"
+              aria-autocomplete="list"
+              aria-controls="home-search-suggestions"
+              :aria-expanded="suggestionsOpen"
+              :aria-activedescendant="activeSuggestion >= 0 ? `home-search-option-${activeSuggestion}` : undefined"
+              placeholder="按型号搜索"
+              autocomplete="off"
+              @focus="reopenSuggestions"
+              @keydown.down.prevent="moveSuggestion(1)"
+              @keydown.up.prevent="moveSuggestion(-1)"
+              @keydown.esc.stop="closeSuggestions"
+            >
+            <button type="submit">搜索</button>
+          </form>
+          <div
+            v-if="suggestionsOpen"
+            id="home-search-suggestions"
+            class="home-search-suggestions"
+            role="listbox"
+            aria-label="鼠标搜索建议"
+          >
+            <div v-if="suggestionState === 'loading'" class="home-search-state" aria-live="polite">
+              <span></span><strong>正在查找匹配鼠标…</strong>
+            </div>
+            <div v-else-if="suggestionState === 'error'" class="home-search-state error">
+              <strong>暂时无法加载搜索建议</strong><button type="button" @click="searchAll">前往鼠标库搜索</button>
+            </div>
+            <div v-else-if="suggestionState === 'empty'" class="home-search-state empty">
+              <strong>没有找到“{{ query.trim() }}”</strong><small>请尝试输入更完整的型号</small>
+            </div>
+            <template v-else>
+              <button
+                v-for="(mouse, index) in suggestions"
+                :id="`home-search-option-${index}`"
+                :key="mouse.id"
+                type="button"
+                class="home-search-option"
+                :class="{ active: activeSuggestion === index }"
+                role="option"
+                :aria-selected="activeSuggestion === index"
+                :aria-label="`查看 ${mouse.displayName} 详情`"
+                @mouseenter="activeSuggestion = index"
+                @click="openSuggestion(mouse)"
+              >
+                <span class="home-search-thumb">
+                  <img v-if="mouse.imageUrl" :src="mouse.imageUrl" :alt="`${mouse.displayName} 产品图`">
+                  <b v-else>{{ mouse.brand.slice(0, 2).toUpperCase() }}</b>
+                </span>
+                <span class="home-search-copy">
+                  <small>{{ mouse.brand }}</small>
+                  <strong>{{ mouse.model }}</strong>
+                  <em>{{ mouse.sensorName || '传感器待补充' }} · {{ mouse.weightG ?? '—' }}g</em>
+                </span>
+                <span class="home-search-arrow" aria-hidden="true">→</span>
+              </button>
+              <button v-if="suggestionState === 'ready'" class="home-search-all" type="button" @click="searchAll">
+                <span>查看全部 {{ suggestionTotal }} 个结果</span><strong>进入鼠标库 →</strong>
+              </button>
+            </template>
+          </div>
         </div>
       </div>
     </section>

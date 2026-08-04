@@ -129,7 +129,7 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(searchTimer); clearTimeout(
     <section class="compare-intro">
       <div class="compare-intro-copy">
         <p class="eyebrow">PARAMETER COMPARISON</p>
-        <h1>把鼠标放在<br><em>同一张桌上。</em></h1>
+        <h1 class="visually-hidden">参数对比</h1>
         <p>搜索型号，点击结果即可加入对比。最多同时放入四款，先选中的鼠标会作为基准。</p>
       </div>
       <div class="compare-search-panel" :class="{ open: searchOpen }">

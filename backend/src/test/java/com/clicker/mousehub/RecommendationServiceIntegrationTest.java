@@ -2,6 +2,7 @@ package com.clicker.mousehub;
 
 import com.clicker.mousehub.dto.AuthDtos.ProfileRequest;
 import com.clicker.mousehub.dto.ReviewDtos.GripScoreRequest;
+import com.clicker.mousehub.dto.ReviewDtos.SupportDab;
 import com.clicker.mousehub.dto.ReviewDtos.SupportPositionRequest;
 import com.clicker.mousehub.entity.MouseDevice;
 import com.clicker.mousehub.entity.UserAccount;
@@ -35,7 +36,7 @@ class RecommendationServiceIntegrationTest {
     @Autowired UserMapper users;
     @Autowired PasswordEncoder encoder;
 
-    @Test void recommendsOnlyMiceWithOneReviewCoveringEveryRequestedPosition() {
+    @Test void ranksExactBeforeNearMatchesAndExplainsTheDifference() {
         String exactUser = createUser("recommend-exact@example.com", "CLAW");
         String partialOne = createUser("recommend-partial-one@example.com", "CLAW");
         String partialTwo = createUser("recommend-partial-two@example.com", "CLAW");
@@ -53,12 +54,46 @@ class RecommendationServiceIntegrationTest {
                 new SupportPositionRequest(List.of("PALM_HEEL")));
 
         var result = recommendations.recommend("CLAW", List.of("PALM_CENTER", "PALM_HEEL"));
-        assertThat(result.items()).hasSize(1);
+        assertThat(result.items()).hasSize(2);
         assertThat(result.items().get(0).mouse().id()).isEqualTo(exactMouse.getId());
+        assertThat(result.items().get(0).matchType()).isEqualTo("EXACT");
         assertThat(result.items().get(0).exactMatchCount()).isEqualTo(1);
         assertThat(result.items().get(0).gripComfortAverage()).isEqualByComparingTo("9.0");
+        assertThat(result.items().get(0).supportCoveragePercent()).isEqualTo(100);
+        assertThat(result.items().get(0).explanation()).contains("完整覆盖 2 个期望支撑位置");
         assertThat(result.items().get(0).positionEvidence())
                 .containsEntry("PALM_CENTER", 1L).containsEntry("PALM_HEEL", 1L);
+        assertThat(result.items().get(1).mouse().id()).isEqualTo(splitEvidenceMouse.getId());
+        assertThat(result.items().get(1).matchType()).isEqualTo("NEAR");
+        assertThat(result.items().get(1).exactMatchCount()).isZero();
+        assertThat(result.items().get(1).supportCoveragePercent()).isEqualTo(50);
+        assertThat(result.items().get(1).explanation()).contains("相近匹配").contains("覆盖 1/2");
+    }
+
+    @Test void shapeMatchingRejectsAMuchLargerPaintedAreaEvenWhenItContainsTheRequestedShape() {
+        String user = createUser("recommend-shape@example.com", "CLAW");
+        MouseDevice sameShapeMouse = mouse("same-painted-shape");
+        MouseDevice oversizedShapeMouse = mouse("oversized-painted-shape");
+        mice.insert(sameShapeMouse);
+        mice.insert(oversizedShapeMouse);
+
+        SupportDab requestedDab = new SupportDab(500, 620, 55, "PAINT");
+        reviews.saveSupportPositions(sameShapeMouse.getId(), user,
+                new SupportPositionRequest(List.of(), List.of(), List.of(requestedDab)));
+        reviews.saveSupportPositions(oversizedShapeMouse.getId(), user,
+                new SupportPositionRequest(List.of(), List.of(),
+                        List.of(new SupportDab(500, 620, 190, "PAINT"))));
+
+        var result = recommendations.recommendShape("CLAW", List.of(requestedDab));
+
+        assertThat(result.items()).hasSize(2);
+        assertThat(result.items().get(0).mouse().id()).isEqualTo(sameShapeMouse.getId());
+        assertThat(result.items().get(0).matchType()).isEqualTo("EXACT");
+        assertThat(result.items().get(0).shapeSimilarityPercent()).isEqualTo(100);
+        assertThat(result.items().get(1).mouse().id()).isEqualTo(oversizedShapeMouse.getId());
+        assertThat(result.items().get(1).matchType()).isEqualTo("NEAR");
+        assertThat(result.items().get(1).supportCoveragePercent()).isEqualTo(100);
+        assertThat(result.items().get(1).shapeSimilarityPercent()).isLessThan(60);
     }
 
     private String createUser(String email, String grip) {

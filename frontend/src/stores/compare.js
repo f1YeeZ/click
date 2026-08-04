@@ -1,24 +1,36 @@
 import { defineStore } from 'pinia'
+import { browserStorage, readStoredJson } from '../utils/storage'
 
-const saved = JSON.parse(localStorage.getItem('clicker.compare') || '[]')
+export const normalizeCompareItems = (items) => Array.isArray(items)
+  ? items.filter((item) => item?.id).slice(0, 4).map((item) => ({ id: item.id, displayName: item.displayName }))
+  : []
+
+export const toggleCompareItems = (items, mouse) => {
+  const normalized = normalizeCompareItems(items)
+  const index = normalized.findIndex((item) => item.id === mouse.id)
+  if (index >= 0) return normalized.filter((item) => item.id !== mouse.id)
+  if (normalized.length >= 4) throw new Error('单次最多对比 4 款鼠标')
+  return [...normalized, { id: mouse.id, displayName: mouse.displayName }]
+}
+
+export const readCompareItems = (storage = browserStorage()) => normalizeCompareItems(
+  readStoredJson(storage, 'clicker.compare', [])
+)
 
 export const useCompareStore = defineStore('compare', {
-  state: () => ({ items: Array.isArray(saved) ? saved.slice(0, 4) : [] }),
+  state: () => ({ items: readCompareItems() }),
   getters: {
     ids: (state) => state.items.map((item) => item.id),
     contains: (state) => (id) => state.items.some((item) => item.id === id)
   },
   actions: {
     toggle(mouse) {
-      const index = this.items.findIndex((item) => item.id === mouse.id)
-      if (index >= 0) this.items.splice(index, 1)
-      else if (this.items.length < 4) this.items.push({ id: mouse.id, displayName: mouse.displayName })
-      else throw new Error('单次最多对比 4 款鼠标')
+      this.items = toggleCompareItems(this.items, mouse)
       this.persist()
     },
     remove(id) { this.items = this.items.filter((item) => item.id !== id); this.persist() },
-    replace(items) { this.items = items.slice(0, 4).map((item) => ({ id: item.id, displayName: item.displayName })); this.persist() },
+    replace(items) { this.items = normalizeCompareItems(items); this.persist() },
     clear() { this.items = []; this.persist() },
-    persist() { localStorage.setItem('clicker.compare', JSON.stringify(this.items)) }
+    persist() { browserStorage()?.setItem('clicker.compare', JSON.stringify(this.items)) }
   }
 })

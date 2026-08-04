@@ -22,6 +22,7 @@ import java.util.UUID;
 public class EmailVerificationService {
     public static final String REGISTER = "REGISTER";
     public static final String CHANGE_PASSWORD = "CHANGE_PASSWORD";
+    public static final String RESET_PASSWORD = "RESET_PASSWORD";
     private static final int MAX_ATTEMPTS = 5;
 
     private final EmailVerificationCodeMapper codes;
@@ -87,6 +88,10 @@ public class EmailVerificationService {
         }
         code.setConsumedAt(now);
         codes.updateById(code);
+    }
+
+    public VerificationCodeResponse response(String message) {
+        return new VerificationCodeResponse(message, validFor.toSeconds(), resendAfter.toSeconds());
     }
 
     private EmailVerificationCode latest(String email, String purpose) {

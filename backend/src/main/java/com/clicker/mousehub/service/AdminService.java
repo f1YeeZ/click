@@ -8,6 +8,7 @@ import com.clicker.mousehub.dto.MouseDtos.MouseView;
 import com.clicker.mousehub.dto.PageResponse;
 import com.clicker.mousehub.entity.*;
 import com.clicker.mousehub.mapper.*;
+import com.clicker.mousehub.util.MouseDataQuality;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,28 +21,45 @@ public class AdminService {
     private final MouseMapper mice;
     private final UserMapper users;
     private final ReviewMapper reviews;
+    private final ReviewGripScoreMapper gripScores;
+    private final ReviewSupportPositionMapper supportPositions;
     private final MouseService mouseService;
     private final RealtimeEventService events;
+    private final AuditLogService audit;
 
-    public AdminService(MouseMapper mice, UserMapper users, ReviewMapper reviews, MouseService mouseService,
-                        RealtimeEventService events) {
-        this.mice = mice; this.users = users; this.reviews = reviews; this.mouseService = mouseService; this.events = events;
+    public AdminService(MouseMapper mice, UserMapper users, ReviewMapper reviews,
+                        ReviewGripScoreMapper gripScores, ReviewSupportPositionMapper supportPositions,
+                        MouseService mouseService, RealtimeEventService events, AuditLogService audit) {
+        this.mice = mice; this.users = users; this.reviews = reviews; this.gripScores = gripScores;
+        this.supportPositions = supportPositions; this.mouseService = mouseService; this.events = events; this.audit = audit;
     }
 
     public DashboardResponse dashboard() {
         long total = mice.selectCount(null);
         long published = mice.selectCount(new LambdaQueryWrapper<MouseDevice>().eq(MouseDevice::getStatus, "PUBLISHED"));
         long draft = mice.selectCount(new LambdaQueryWrapper<MouseDevice>().eq(MouseDevice::getStatus, "DRAFT"));
+        long archived = mice.selectCount(new LambdaQueryWrapper<MouseDevice>().eq(MouseDevice::getStatus, "ARCHIVED"));
         long userTotal = users.selectCount(null);
+        long userActive = users.selectCount(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getStatus, "ACTIVE"));
+        long userAdmin = users.selectCount(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getRole, "ADMIN"));
+        long userDisabled = users.selectCount(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getStatus, "DISABLED"));
         long reviewTotal = reviews.selectCount(null);
+        long reviewActive = reviews.selectCount(new LambdaQueryWrapper<Review>().eq(Review::getStatus, "ACTIVE"));
         long pending = reviews.selectCount(new LambdaQueryWrapper<Review>().eq(Review::getStatus, "PENDING"));
+        List<MouseDevice> allMice = mice.selectList(null);
+        List<MouseDevice> operationalMice = allMice.stream().filter(mouse -> !"ARCHIVED".equals(mouse.getStatus())).toList();
+        int quality = operationalMice.isEmpty() ? 0 : (int) Math.round(operationalMice.stream()
+                .mapToInt(MouseDataQuality::qualityPercent).average().orElse(0));
+        long incomplete = operationalMice.stream().filter(mouse -> !MouseDataQuality.missingPublicationFields(mouse).isEmpty()).count();
+        long stale = operationalMice.stream().filter(mouse -> "STALE".equals(MouseDataQuality.verificationStatus(mouse))).count();
         List<AdminUserView> recentUsers = users.selectList(new LambdaQueryWrapper<UserAccount>().orderByDesc(UserAccount::getCreatedAt).last("LIMIT 5"))
                 .stream().map(AdminUserView::from).toList();
         List<Review> recentReviewEntities = reviews.selectList(new LambdaQueryWrapper<Review>().orderByDesc(Review::getCreatedAt).last("LIMIT 5"));
         List<AdminReviewView> recentReviews = recentReviewEntities.stream().map(this::reviewView).toList();
         List<MouseView> recentMice = mice.selectList(new LambdaQueryWrapper<MouseDevice>().orderByDesc(MouseDevice::getCreatedAt).last("LIMIT 5"))
                 .stream().map(MouseView::from).toList();
-        return new DashboardResponse(total, published, draft, userTotal, reviewTotal, pending, recentUsers, recentReviews, recentMice);
+        return new DashboardResponse(total, published, draft, archived, userTotal, userActive, userAdmin, userDisabled, reviewTotal, reviewActive,
+                pending, quality, incomplete, stale, recentUsers, recentReviews, recentMice);
     }
 
     public PageResponse<MouseView> mice(String q, String status, long page, long pageSize) {
@@ -52,16 +70,39 @@ public class AdminService {
         return mice.selectAllBrands();
     }
 
-    public PageResponse<AdminUserView> users(String q, String status, long page, long pageSize) {
+    public PageResponse<AdminUserView> users(String q, String status, String role, long page, long pageSize) {
+        if (hasText(status) && !Set.of("ACTIVE", "DISABLED").contains(status)) throw invalidStatus();
+        if (hasText(role) && !Set.of("USER", "ADMIN").contains(role)) {
+            throw new BusinessException("INVALID_ROLE", "用户角色不符合要求", HttpStatus.BAD_REQUEST);
+        }
         Page<UserAccount> result = users.selectPage(new Page<>(Math.max(1, page), safeSize(pageSize)), new LambdaQueryWrapper<UserAccount>()
                 .and(hasText(q), w -> w.like(UserAccount::getEmail, q.trim()))
                 .eq(hasText(status), UserAccount::getStatus, status)
+                .eq(hasText(role), UserAccount::getRole, role)
                 .orderByDesc(UserAccount::getCreatedAt));
         return new PageResponse<>(result.getRecords().stream().map(AdminUserView::from).toList(), meta(result));
     }
 
-    public PageResponse<AdminReviewView> reviews(String status, long page, long pageSize) {
+    public PageResponse<AdminReviewView> reviews(String q, String status, long page, long pageSize) {
+        String term = hasText(q) ? q.trim() : null;
+        Set<UUID> matchingUserIds = new HashSet<>();
+        Set<UUID> matchingMouseIds = new HashSet<>();
+        if (term != null) {
+            users.selectList(new LambdaQueryWrapper<UserAccount>().like(UserAccount::getEmail, term))
+                    .forEach(user -> matchingUserIds.add(user.getId()));
+            mice.selectList(new LambdaQueryWrapper<MouseDevice>().like(MouseDevice::getBrand, term).or()
+                            .like(MouseDevice::getModel, term).or().like(MouseDevice::getVariant, term))
+                    .forEach(mouse -> matchingMouseIds.add(mouse.getId()));
+        }
         Page<Review> result = reviews.selectPage(new Page<>(Math.max(1, page), safeSize(pageSize)), new LambdaQueryWrapper<Review>()
+                .and(term != null, wrapper -> {
+                    if (!matchingUserIds.isEmpty()) wrapper.in(Review::getUserId, matchingUserIds);
+                    if (!matchingMouseIds.isEmpty()) {
+                        if (!matchingUserIds.isEmpty()) wrapper.or();
+                        wrapper.in(Review::getMouseId, matchingMouseIds);
+                    }
+                    if (matchingUserIds.isEmpty() && matchingMouseIds.isEmpty()) wrapper.eq(Review::getId, new UUID(0, 0));
+                })
                 .eq(hasText(status), Review::getStatus, status).orderByDesc(Review::getCreatedAt));
         return new PageResponse<>(result.getRecords().stream().map(this::reviewView).toList(), meta(result));
     }
@@ -70,24 +111,86 @@ public class AdminService {
     public AdminUserView updateUserStatus(UUID id, StatusRequest request) {
         if (!Set.of("ACTIVE", "DISABLED").contains(request.status())) throw invalidStatus();
         UserAccount user = users.selectById(id); if (user == null) throw notFound("用户");
-        user.setStatus(request.status()); user.setUpdatedAt(OffsetDateTime.now()); users.updateById(user); return AdminUserView.from(user);
+        if (user.getEmail().equalsIgnoreCase(audit.currentActor())) {
+            throw new BusinessException("SELF_ACCOUNT_CHANGE_FORBIDDEN", "不能在后台修改当前登录账号的状态", HttpStatus.CONFLICT);
+        }
+        if ("ADMIN".equals(user.getRole())) {
+            throw new BusinessException("ADMIN_STATUS_PROTECTED", "管理员账户不能直接封禁，请先将角色调整为普通用户", HttpStatus.CONFLICT);
+        }
+        if ("DISABLED".equals(request.status()) && !hasText(request.reason())) {
+            throw new BusinessException("STATUS_REASON_REQUIRED", "停用用户时必须填写处理原因", HttpStatus.BAD_REQUEST);
+        }
+        AdminUserView before = AdminUserView.from(user);
+        OffsetDateTime now = OffsetDateTime.now();
+        user.setStatus(request.status());
+        user.setStatusReason(hasText(request.reason()) ? request.reason().trim() : null);
+        user.setStatusChangedBy(audit.currentActor());
+        user.setStatusChangedAt(now);
+        user.setUpdatedAt(now); users.updateById(user);
+        AdminUserView after = AdminUserView.from(user);
+        audit.record("USER_STATUS_CHANGE", "USER", id, "用户" + ("DISABLED".equals(request.status()) ? "已封禁：" : "已解除封禁：") + user.getEmail(), before, after, request.reason());
+        return after;
     }
 
     @Transactional
-    public AdminReviewView updateReviewStatus(UUID id, StatusRequest request) {
+    public AdminUserView updateUserRole(UUID id, RoleRequest request) {
+        UserAccount user = users.selectById(id); if (user == null) throw notFound("用户");
+        if (user.getEmail().equalsIgnoreCase(audit.currentActor())) {
+            throw new BusinessException("SELF_ROLE_CHANGE_FORBIDDEN", "不能修改当前登录账号自己的角色", HttpStatus.CONFLICT);
+        }
+        if (request.role().equals(user.getRole())) return AdminUserView.from(user);
+        if ("ADMIN".equals(request.role()) && !"ACTIVE".equals(user.getStatus())) {
+            throw new BusinessException("ADMIN_ROLE_REQUIRES_ACTIVE_USER", "请先解除用户封禁，再授予管理员角色", HttpStatus.CONFLICT);
+        }
+        if ("ADMIN".equals(user.getRole()) && "USER".equals(request.role())) {
+            List<UserAccount> activeAdmins = users.selectList(new LambdaQueryWrapper<UserAccount>()
+                    .eq(UserAccount::getRole, "ADMIN").eq(UserAccount::getStatus, "ACTIVE").last("FOR UPDATE"));
+            if (activeAdmins.size() <= 1) {
+                throw new BusinessException("LAST_ADMIN_PROTECTED", "至少需要保留一个正常状态的管理员账号", HttpStatus.CONFLICT);
+            }
+        }
+        AdminUserView before = AdminUserView.from(user);
+        user.setRole(request.role());
+        user.setUpdatedAt(OffsetDateTime.now());
+        users.updateById(user);
+        AdminUserView after = AdminUserView.from(user);
+        audit.record("USER_ROLE_CHANGE", "USER", id, "用户角色变更为 " + request.role() + "：" + user.getEmail(),
+                before, after, request.reason());
+        return after;
+    }
+
+    @Transactional
+    public AdminReviewView updateReviewStatus(UUID id, ModerationRequest request) {
         if (!Set.of("ACTIVE", "DISABLED", "PENDING").contains(request.status())) throw invalidStatus();
         Review review = reviews.selectById(id); if (review == null) throw notFound("评价");
+        if ("DISABLED".equals(request.status()) && !hasText(request.reason())) {
+            throw new BusinessException("MODERATION_REASON_REQUIRED", "停用评价时必须填写处理原因", HttpStatus.BAD_REQUEST);
+        }
+        AdminReviewView before = reviewView(review);
         review.setStatus(request.status()); review.setDeletedAt("DISABLED".equals(request.status()) ? OffsetDateTime.now() : null);
+        review.setModerationReason(hasText(request.reason()) ? request.reason().trim() : null);
+        review.setModeratedBy(audit.currentActor());
+        review.setModeratedAt(OffsetDateTime.now());
         review.setUpdatedAt(OffsetDateTime.now()); reviews.updateById(review);
         events.publishAfterCommit("review.changed", review.getMouseId());
-        return reviewView(review);
+        AdminReviewView after = reviewView(review);
+        audit.record("REVIEW_MODERATION", "REVIEW", id, "评价状态变更为 " + request.status(), before, after, request.reason());
+        return after;
     }
 
     private AdminReviewView reviewView(Review review) {
         UserAccount user = users.selectById(review.getUserId()); MouseDevice mouse = mice.selectById(review.getMouseId());
         AdminReviewView base = AdminReviewView.from(review, user == null ? "—" : user.getEmail(), mouse == null ? "—" : mouse.displayName());
+        List<GripScoreView> grips = gripScores.selectList(new LambdaQueryWrapper<ReviewGripScore>()
+                        .eq(ReviewGripScore::getReviewId, review.getId()).orderByAsc(ReviewGripScore::getGripStyle))
+                .stream().map(score -> new GripScoreView(score.getGripStyle(), score.getComfortScore())).toList();
+        List<String> positions = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
+                        .eq(ReviewSupportPosition::getReviewId, review.getId()).orderByAsc(ReviewSupportPosition::getPositionCode))
+                .stream().map(ReviewSupportPosition::getPositionCode).toList();
         return new AdminReviewView(base.id(), base.userId(), base.mouseId(), base.userEmail(), base.mouseName(), base.status(),
-                base.gripStyle(), user == null ? null : user.getHandSize(), null, base.overallScore(), base.coatingScore(), base.createdAt());
+                base.gripStyle(), user == null ? null : user.getHandSize(), base.usageDuration(), base.overallScore(),
+                base.comfortScore(), base.clickScore(), base.scrollScore(), base.buildScore(), base.valueScore(), base.coatingScore(),
+                grips, positions, base.moderationReason(), base.moderatedBy(), base.moderatedAt(), base.createdAt());
     }
     private static boolean hasText(String value) { return value != null && !value.isBlank(); }
     private static long safeSize(long size) { return Set.of(12L, 24L, 48L).contains(size) ? size : 12; }

@@ -1,7 +1,9 @@
 package com.clicker.mousehub.controller;
 
 import com.clicker.mousehub.dto.RecommendationDtos.RecommendationResponse;
+import com.clicker.mousehub.dto.RecommendationDtos.ShapeRecommendationRequest;
 import com.clicker.mousehub.service.RecommendationService;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
@@ -18,5 +20,10 @@ public class MouseRecommendationController {
                                        @RequestParam String supportPositions) {
         return recommendations.recommend(gripStyle, Arrays.stream(supportPositions.split(","))
                 .map(String::trim).filter(value -> !value.isBlank()).toList());
+    }
+
+    @PostMapping
+    public RecommendationResponse matchShape(@Valid @RequestBody ShapeRecommendationRequest request) {
+        return recommendations.recommendShape(request.gripStyle(), request.dabs());
     }
 }

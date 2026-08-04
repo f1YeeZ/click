@@ -26,6 +26,12 @@ public class ImageController {
         return ResponseEntity.created(URI.create(asset.url())).body(asset);
     }
 
+    @DeleteMapping("/api/v1/admin/images/{filename:.+}")
+    public ResponseEntity<Void> delete(@PathVariable String filename) {
+        images.delete(filename);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/api/v1/images/{filename:.+}")
     public ResponseEntity<Resource> image(@PathVariable String filename) {
         Resource resource = images.load(filename);

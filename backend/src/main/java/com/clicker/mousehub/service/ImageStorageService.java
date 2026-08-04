@@ -7,6 +7,9 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.clicker.mousehub.entity.MouseDevice;
+import com.clicker.mousehub.mapper.MouseMapper;
 
 import java.io.IOException;
 import java.nio.file.*;
@@ -26,11 +29,16 @@ public class ImageStorageService {
 
     private final Path storage;
     private final long maxSizeBytes;
+    private final MouseMapper mice;
+    private final AuditLogService audit;
 
     public ImageStorageService(@Value("${app.images.storage-path:data/mouse-images}") String storagePath,
-                               @Value("${app.images.max-size-bytes:5242880}") long maxSizeBytes) {
+                               @Value("${app.images.max-size-bytes:5242880}") long maxSizeBytes,
+                               MouseMapper mice, AuditLogService audit) {
         this.storage = resolveProjectPath(storagePath);
         this.maxSizeBytes = maxSizeBytes;
+        this.mice = mice;
+        this.audit = audit;
         try {
             Files.createDirectories(storage);
         } catch (IOException exception) {
@@ -78,6 +86,21 @@ public class ImageStorageService {
             throw notFound();
         }
         return new FileSystemResource(file);
+    }
+
+    public void delete(String filename) {
+        Resource resource = load(filename);
+        String url = PUBLIC_PREFIX + filename;
+        long references = mice.selectCount(new LambdaQueryWrapper<MouseDevice>().eq(MouseDevice::getImageUrl, url));
+        if (references > 0) {
+            throw new BusinessException("IMAGE_IN_USE", "图片仍被 " + references + " 款鼠标使用，不能删除", HttpStatus.CONFLICT);
+        }
+        try {
+            Files.delete(resource.getFile().toPath());
+            audit.record("IMAGE_DELETE", "IMAGE", filename, "删除未引用图片：" + filename, Map.of("url", url), null, null);
+        } catch (IOException exception) {
+            throw new BusinessException("IMAGE_DELETE_FAILED", "图片删除失败", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
 
     public String contentType(String filename) {

@@ -1,14 +1,17 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
-import MiceView from '../views/MiceView.vue'
-import MouseDetailView from '../views/MouseDetailView.vue'
-import CompareView from '../views/CompareView.vue'
-import AuthView from '../views/AuthView.vue'
-import AdminView from '../views/AdminView.vue'
-import ProfileView from '../views/ProfileView.vue'
-import LeaderboardView from '../views/LeaderboardView.vue'
-import RecommendationView from '../views/RecommendationView.vue'
-import LegalView from '../views/LegalView.vue'
+import { readStoredJson } from '../utils/storage'
+
+const MiceView = () => import('../views/MiceView.vue')
+const MouseDetailView = () => import('../views/MouseDetailView.vue')
+const CompareView = () => import('../views/CompareView.vue')
+const AuthView = () => import('../views/AuthView.vue')
+const PasswordResetView = () => import('../views/PasswordResetView.vue')
+const AdminView = () => import('../views/AdminView.vue')
+const ProfileView = () => import('../views/ProfileView.vue')
+const LeaderboardView = () => import('../views/LeaderboardView.vue')
+const RecommendationView = () => import('../views/RecommendationView.vue')
+const LegalView = () => import('../views/LegalView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -24,6 +27,7 @@ const router = createRouter({
     { path: '/review-rules', component: LegalView, props: { document: 'rules' } },
     { path: '/login', component: AuthView, props: { mode: 'login' } },
     { path: '/register', component: AuthView, props: { mode: 'register' } },
+    { path: '/forgot-password', component: PasswordResetView },
     { path: '/profile', component: ProfileView, meta: { requiresAuth: true } },
     { path: '/admin/login', component: AuthView, props: { mode: 'login', admin: true } },
     { path: '/admin', component: AdminView, meta: { requiresAdmin: true } }
@@ -35,7 +39,7 @@ const router = createRouter({
 router.beforeEach((to) => {
   if (to.meta.requiresAuth && !localStorage.getItem('clicker.token')) return '/login'
   if (to.meta.requiresAdmin) {
-    const user = JSON.parse(localStorage.getItem('clicker.admin.user') || 'null')
+    const user = readStoredJson(localStorage, 'clicker.admin.user')
     if (user?.role !== 'ADMIN') return '/admin/login'
   }
 })

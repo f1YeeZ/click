@@ -1,11 +1,12 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api, { errorMessage } from '../api/client'
 import MouseCard from '../components/MouseCard.vue'
 import RangeSlider from '../components/RangeSlider.vue'
 import FilterCheckGroup from '../components/FilterCheckGroup.vue'
 import { onRealtime } from '../services/realtime'
+import { clearCatalogFilterKeys, compactCatalogFilters, createCatalogFilters } from '../utils/catalogFilters'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,9 +21,7 @@ const defaults = {
   sort: 'newest', page: 1, pageSize: 12
 }
 const multiKeys = ['brand', 'size', 'shape', 'hand', 'connection', 'humpPlacement', 'frontFlare', 'sideCurvature', 'thumbRest', 'ringFingerRest', 'sensorType', 'adjustableSensorPosition', 'hotSwap', 'switchType', 'encoderType']
-const initialQuery = Object.fromEntries(Object.keys(defaults).map((key) => [key, route.query[key] ?? defaults[key]]))
-multiKeys.forEach((key) => { initialQuery[key] = initialQuery[key] ? String(initialQuery[key]).split(',').filter(Boolean) : [] })
-const filters = reactive({ ...initialQuery, page: Number(route.query.page || 1), pageSize: Number(route.query.pageSize || 12) })
+const filters = reactive(createCatalogFilters(defaults, route.query, multiKeys))
 const result = ref({ items: [], page: { number: 1, totalPages: 0, totalItems: 0 } })
 const brands = ref([])
 const brandOptions = computed(() => brands.value.map((brand) => ({ value: brand, label: brand })))
@@ -57,7 +56,7 @@ const rangeDefinitions = [
   { label: '滚轮步数', min: 'encoderStepsMin', max: 'encoderStepsMax' }
 ]
 const rangeKeys = new Set(rangeDefinitions.flatMap(({ min, max }) => [min, max]))
-const filterLabels = { q: '关键词', brand: '品牌', size: '尺寸', shape: '外形', hand: '适用手', connection: '连接', humpPlacement: '隆起位置', frontFlare: '前端外扩', sideCurvature: '侧面曲率', thumbRest: '拇指托', ringFingerRest: '无名指托', sensorType: '传感器类型', sensorName: '传感器型号', adjustableSensorPosition: '可调传感器位置', hotSwap: '热插拔微动', switchType: '微动类型', switchName: '微动型号', encoderType: '编码器类型', encoderName: '编码器型号', material: '材质', purchaseChannel: '购买渠道' }
+const filterLabels = { q: '鼠标型号', brand: '品牌', size: '尺寸', shape: '外形', hand: '适用手', connection: '连接', humpPlacement: '隆起位置', frontFlare: '前端外扩', sideCurvature: '侧面曲率', thumbRest: '拇指托', ringFingerRest: '无名指托', sensorType: '传感器类型', sensorName: '传感器型号', adjustableSensorPosition: '可调传感器位置', hotSwap: '热插拔微动', switchType: '微动类型', switchName: '微动型号', encoderType: '编码器类型', encoderName: '编码器型号', material: '材质', purchaseChannel: '购买渠道' }
 const formatFilterValue = (value) => {
   const format = (item) => ({ wired: '有线', wireless_2_4g: '2.4G 无线', bluetooth: '蓝牙', true: '是', false: '否', RIGHT: '右手', LEFT: '左手', AMBIDEXTROUS: '双手' }[item] || item)
   return Array.isArray(value) ? value.map(format).join('、') : format(value)
@@ -78,14 +77,14 @@ const filterSignature = computed(() => Object.entries(filters).filter(([key]) =>
 let filterTimer
 let realtimeTimer
 let stopRealtime = () => {}
+let syncingFromRoute = false
 
-const compact = (source) => Object.fromEntries(Object.entries(source).filter(([, value]) => (Array.isArray(value) ? value.length : value !== '' && value != null)).map(([key, value]) => [key, Array.isArray(value) ? value.join(',') : value]))
 const load = async () => {
   loading.value = true; error.value = ''
   try {
-    const { data } = await api.get('/mice', { params: compact(filters) })
+    const { data } = await api.get('/mice', { params: compactCatalogFilters(filters) })
     result.value = data
-    const query = compact(filters)
+    const query = compactCatalogFilters(filters)
     if (query.sort === 'newest') delete query.sort
     if (Number(query.page) === 1) delete query.page
     if (Number(query.pageSize) === 12) delete query.pageSize
@@ -95,15 +94,24 @@ const load = async () => {
 const reset = () => { Object.assign(filters, defaults); Object.keys(filterSections).forEach((key) => { filterSections[key] = false }); load() }
 const submit = () => { filters.page = 1; load() }
 const move = (page) => { filters.page = page; load(); window.scrollTo({ top: 0, behavior: 'smooth' }) }
-const clearChip = (chip) => { chip.keys.forEach((key) => { filters[key] = '' }) }
+const clearChip = (chip) => { clearCatalogFilterKeys(filters, chip.keys, multiKeys) }
 watch(filterSignature, () => {
+  if (syncingFromRoute) return
   filters.page = 1
   clearTimeout(filterTimer)
   filterTimer = setTimeout(load, 280)
+}, { flush: 'sync' })
+const syncFiltersFromRoute = () => {
+  syncingFromRoute = true
+  Object.assign(filters, createCatalogFilters(defaults, route.query, multiKeys))
+  syncingFromRoute = false
+}
+onActivated(() => {
+  syncFiltersFromRoute()
+  load()
 })
 onMounted(async () => {
   try { brands.value = (await api.get('/mice/brands')).data } catch (e) { error.value = errorMessage(e) }
-  load()
   stopRealtime = onRealtime((event) => {
     if (event.type !== 'mouse.changed') return
     clearTimeout(realtimeTimer)
@@ -128,7 +136,7 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(filterTimer); clearTimeout(
         <div class="filter-head-actions"><span v-if="activeFilterCount">{{ activeFilterCount }} 个条件已启用</span><button type="button" @click="reset">清空条件</button></div>
       </div>
       <div class="filter-primary">
-        <label class="filter-search">关键词<input v-model.trim="filters.q" type="search" placeholder="品牌 / 型号 / 传感器"></label>
+        <label class="filter-search">鼠标型号<input v-model.trim="filters.q" type="search" placeholder="按型号搜索"></label>
       </div>
 
       <div class="advanced-filters filter-accordion">
@@ -143,7 +151,7 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(filterTimer); clearTimeout(
         <div class="filter-accordion-section"><button class="filter-accordion-toggle" type="button" :aria-expanded="filterSections.wheel" @click="filterSections.wheel = !filterSections.wheel"><span><b>09</b> 滚轮 <small>WHEEL</small></span><i>{{ filterSections.wheel ? '−' : '+' }}</i></button><Transition name="filter-expand"><fieldset v-if="filterSections.wheel"><div class="filter-fields"><FilterCheckGroup label="编码器类型" v-model="filters.encoderType" :options="choices.encoderType" /><label>编码器型号<input v-model.trim="filters.encoderName" placeholder="型号关键词"></label><RangeSlider label="滚轮步数" :min="1" :max="100" :min-value="filters.encoderStepsMin" :max-value="filters.encoderStepsMax" @update:min-value="filters.encoderStepsMin = $event" @update:max-value="filters.encoderStepsMax = $event" /></div></fieldset></Transition></div>
         <div class="filter-accordion-section"><button class="filter-accordion-toggle" type="button" :aria-expanded="filterSections.material" @click="filterSections.material = !filterSections.material"><span><b>10</b> 材质 <small>MATERIAL</small></span><i>{{ filterSections.material ? '−' : '+' }}</i></button><Transition name="filter-expand"><fieldset v-if="filterSections.material"><div class="filter-fields"><label>材质<input v-model.trim="filters.material" placeholder="ABS / 镁合金"></label><label>购买渠道<input v-model.trim="filters.purchaseChannel" placeholder="官网 / 京东"></label></div></fieldset></Transition></div>
       </div>
-      <div class="filter-submitbar"><label>每页<select v-model.number="filters.pageSize"><option :value="12">12</option><option :value="24">24</option><option :value="48">48</option></select></label><label>排序<select v-model="filters.sort"><option value="newest">最近录入</option><option value="brand_asc">品牌 A—Z</option><option value="weight_asc">从轻到重</option><option value="weight_desc">从重到轻</option></select></label></div>
+      <div class="filter-submitbar"><label>每页<select v-model.number="filters.pageSize"><option :value="12">12</option><option :value="24">24</option><option :value="48">48</option></select></label><label>排序<select v-model="filters.sort"><option value="newest">最近录入</option><option value="brand_asc">品牌 A—Z</option><option value="weight_asc">从轻到重</option><option value="weight_desc">从重到轻</option><option value="rating_desc">评分最高</option><option value="review_count_desc">评价最多</option></select></label></div>
         </form>
       </aside>
 

@@ -9,6 +9,8 @@ frontend/dist/
 !.env.example
 data/
 *.log
+__pycache__/
+*.py[cod]
 
 # Compiled class file
 *.class

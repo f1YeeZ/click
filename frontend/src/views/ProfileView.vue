@@ -149,7 +149,7 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="profile-page section-shell">
-    <header class="profile-heading"><div><p class="eyebrow">MEMBER PROFILE</p><h1>个人资料</h1><p>手长和习惯握姿只在这里维护。提交鼠标评价时，系统会自动使用这些数据。</p></div><span class="profile-id">{{ auth.user?.email }}</span></header>
+    <header class="profile-heading"><div><p class="eyebrow">MEMBER PROFILE</p><h1 class="visually-hidden">个人资料</h1><p>手长和习惯握姿只在这里维护。提交鼠标评价时，系统会自动使用这些数据。</p></div><span class="profile-id">{{ auth.user?.email }}</span></header>
     <section class="profile-card">
       <div class="profile-measure"><span>HAND LENGTH / CM</span><strong>{{ handLengthCm || '—' }}</strong><small>{{ handRange }}</small></div>
       <form @submit.prevent="save">

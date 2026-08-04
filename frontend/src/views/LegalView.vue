@@ -51,7 +51,7 @@ const content = computed(() => documents[props.document] || documents.privacy)
 
 <template>
   <main class="legal-page section-shell">
-    <header><p class="eyebrow">{{ content.kicker }}</p><h1>{{ content.title }}</h1><p>{{ content.intro }}</p><span>最近更新：{{ updatedAt }}</span></header>
+    <header><p class="eyebrow">{{ content.kicker }}</p><h1 class="visually-hidden">{{ content.title }}</h1><p>{{ content.intro }}</p><span>最近更新：{{ updatedAt }}</span></header>
     <div class="legal-layout">
       <aside><strong>{{ operatorName }}</strong><span>生效日期：{{ updatedAt }}</span><RouterLink to="/privacy">隐私政策</RouterLink><RouterLink to="/terms">用户协议</RouterLink><RouterLink to="/review-rules">评价规则</RouterLink></aside>
       <article><section v-for="(section, index) in content.sections" :key="section[0]"><span>{{ String(index + 1).padStart(2, '0') }}</span><div><h2>{{ section[0] }}</h2><p v-for="paragraph in section[1]" :key="paragraph">{{ paragraph }}</p></div></section></article>

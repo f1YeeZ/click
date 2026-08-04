@@ -17,6 +17,7 @@ import java.util.UUID;
 
 @Service
 public class AuthService {
+    private static final String RESET_REQUEST_MESSAGE = "如果该邮箱已注册，重置验证码将发送至邮箱";
     private final UserMapper users;
     private final PasswordEncoder encoder;
     private final JwtService jwt;
@@ -61,6 +62,33 @@ public class AuthService {
     public VerificationCodeResponse sendPasswordCode(String email) {
         UserAccount user = require(email);
         return verification.send(user.getEmail(), EmailVerificationService.CHANGE_PASSWORD);
+    }
+
+    public VerificationCodeResponse sendPasswordResetCode(EmailRequest request) {
+        String email = UserAccount.normalizeEmail(request.email());
+        UserAccount user = find(email);
+        if (user == null || !"ACTIVE".equals(user.getStatus())) {
+            return verification.response(RESET_REQUEST_MESSAGE);
+        }
+        VerificationCodeResponse sent = verification.send(email, EmailVerificationService.RESET_PASSWORD);
+        return new VerificationCodeResponse(RESET_REQUEST_MESSAGE, sent.expiresInSeconds(), sent.resendAfterSeconds());
+    }
+
+    @Transactional(noRollbackFor = VerificationCodeException.class)
+    public MessageResponse resetPassword(PasswordResetRequest request) {
+        String email = UserAccount.normalizeEmail(request.email());
+        verification.verifyAndConsume(email, EmailVerificationService.RESET_PASSWORD, request.verificationCode());
+        UserAccount user = find(email);
+        if (user == null || !"ACTIVE".equals(user.getStatus())) {
+            throw new VerificationCodeException("INVALID_VERIFICATION_CODE", "验证码无效或已过期，请重新获取", HttpStatus.BAD_REQUEST);
+        }
+        if (encoder.matches(request.newPassword(), user.getPasswordHash())) {
+            throw new BusinessException("PASSWORD_UNCHANGED", "新密码不能与当前密码相同", HttpStatus.BAD_REQUEST);
+        }
+        user.setPasswordHash(encoder.encode(request.newPassword()));
+        user.setUpdatedAt(OffsetDateTime.now());
+        users.updateById(user);
+        return new MessageResponse("密码重置成功，请使用新密码登录");
     }
 
     @Transactional(noRollbackFor = VerificationCodeException.class)

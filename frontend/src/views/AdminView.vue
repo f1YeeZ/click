@@ -1,383 +1,107 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { useRouter } from "vue-router";
-import api, { errorMessage } from "../api/client";
-import { useAdminAuthStore } from "../stores/auth";
+import { useAdminConsole } from "../composables/useAdminConsole";
 
-const auth = useAdminAuthStore();
-const router = useRouter();
-const activeTab = ref("overview");
-const loading = ref(false);
-const error = ref("");
-const notice = ref("");
-let noticeTimer = null;
-let errorTimer = null;
-const dashboard = ref(null);
-const mice = ref({
-    items: [],
-    page: { number: 1, totalPages: 1, totalItems: 0 },
-});
-const mouseQuery = ref("");
-const mouseStatus = ref("");
-const mousePage = ref(1);
-const brands = ref([]);
-const brandOpen = ref(false);
-const brandQuery = ref("");
-const brandLoading = ref(false);
-const brandLoadError = ref("");
-const imageFileInput = ref(null);
-const imageAssets = ref([]);
-const imageLoading = ref(false);
-const imageUploading = ref(false);
-const imageError = ref("");
-const showImageLibrary = ref(false);
-const users = ref({
-    items: [],
-    page: { number: 1, totalPages: 1, totalItems: 0 },
-});
-const userQuery = ref("");
-const userStatus = ref("");
-const userPage = ref(1);
-const reviews = ref({
-    items: [],
-    page: { number: 1, totalPages: 1, totalItems: 0 },
-});
-const reviewStatus = ref("");
-const reviewPage = ref(1);
-const editingId = ref("");
-const showEditor = ref(false);
-const initial = {
-    brand: "",
-    model: "",
-    variant: "",
-    slug: "",
-    sizeCategory: "MEDIUM",
-    shapeType: "SYMMETRICAL",
-    lengthMm: "",
-    widthMm: "",
-    heightMm: "",
-    weightG: "",
-    handCompatibility: "RIGHT",
-    sensorName: "",
-    maxDpi: "",
-    maxPollingRateHz: "",
-    trackingSpeedIps: "",
-    accelerationG: "",
-    buttonCount: "",
-    sideButtonCount: "",
-    switchName: "",
-    encoderName: "",
-    connectionModes: ["wireless_2_4g", "wired"],
-    material: "塑料",
-    primarySourceUrl: "https://example.com/source",
-    sourceNotes: "",
-    materialGeneral: "",
-    materialSpecific: "",
-    humpPlacement: "",
-    frontFlare: "",
-    sideCurvature: "",
-    thumbRest: null,
-    ringFingerRest: null,
-    sensorType: "",
-    adjustableSensorPosition: null,
-    sensorPositionX: "",
-    sensorPositionY: "",
-    sensorPositionX2: "",
-    sensorPositionY2: "",
-    hotSwappableSwitches: null,
-    switchType: "",
-    switchLifeSpanM: "",
-    encoderType: "",
-    encoderSteps: "",
-    purchaseChannels: "",
-    imageUrl: "",
-};
-const form = reactive({
-    ...initial,
-    connectionModes: [...initial.connectionModes],
-});
-const tabs = [
-    { id: "overview", label: "总览", icon: "◈" },
-    { id: "mice", label: "鼠标资产", icon: "▦" },
-    { id: "users", label: "用户管理", icon: "◎" },
-    { id: "reviews", label: "评价治理", icon: "◇" },
-];
-const activeLabel = computed(
-    () => tabs.find((tab) => tab.id === activeTab.value)?.label,
-);
-const filteredBrands = computed(() => {
-    const keyword = brandQuery.value.trim().toLocaleLowerCase();
-    if (!keyword) return brands.value;
-    return brands.value.filter((brand) =>
-        brand.toLocaleLowerCase().includes(keyword),
-    );
-});
-const exactBrandExists = computed(() => {
-    const keyword = form.brand.trim().toLocaleLowerCase();
-    return brands.value.some((brand) => brand.toLocaleLowerCase() === keyword);
-});
-const selectedImageName = computed(() => {
-    if (!form.imageUrl) return "";
-    return (
-        imageAssets.value.find((asset) => asset.url === form.imageUrl)?.name ||
-        form.imageUrl.split("/").pop() ||
-        "当前图片"
-    );
-});
-
-const request = async (fn) => {
-    loading.value = true;
-    error.value = "";
-    try {
-        await fn();
-    } catch (e) {
-        error.value = errorMessage(e);
-    } finally {
-        loading.value = false;
-    }
-};
-const loadDashboard = () =>
-    request(async () => {
-        dashboard.value = (await api.get("/admin/dashboard")).data;
-    });
-const loadBrands = async () => {
-    brandLoading.value = true;
-    brandLoadError.value = "";
-    try {
-        brands.value = (await api.get("/admin/brands")).data;
-    } catch (e) {
-        brandLoadError.value = errorMessage(e);
-    } finally {
-        brandLoading.value = false;
-    }
-};
-const selectBrand = (brand) => {
-    form.brand = brand;
-    brandQuery.value = "";
-    brandOpen.value = false;
-};
-const openBrandMenu = () => {
-    brandQuery.value = "";
-    brandOpen.value = true;
-};
-const toggleBrandMenu = () => {
-    if (brandOpen.value) {
-        brandOpen.value = false;
-    } else {
-        openBrandMenu();
-    }
-};
-const handleBrandInput = (event) => {
-    form.brand = event.target.value;
-    brandQuery.value = event.target.value;
-    brandOpen.value = true;
-};
-const closeBrandMenu = () => {
-    window.setTimeout(() => {
-        brandOpen.value = false;
-    }, 120);
-};
-const loadImages = async () => {
-    imageLoading.value = true;
-    imageError.value = "";
-    try {
-        imageAssets.value = (await api.get("/admin/images")).data;
-    } catch (e) {
-        imageError.value = errorMessage(e);
-    } finally {
-        imageLoading.value = false;
-    }
-};
-const toggleImageLibrary = async () => {
-    showImageLibrary.value = !showImageLibrary.value;
-    if (showImageLibrary.value) await loadImages();
-};
-const uploadImage = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-        imageError.value = "图片大小不能超过 5 MB";
-        return;
-    }
-    imageUploading.value = true;
-    imageError.value = "";
-    try {
-        const data = new FormData();
-        data.append("file", file);
-        const { data: asset } = await api.post("/admin/images", data);
-        form.imageUrl = asset.url;
-        imageAssets.value = [
-            asset,
-            ...imageAssets.value.filter((item) => item.url !== asset.url),
-        ];
-        showImageLibrary.value = false;
-    } catch (e) {
-        imageError.value = errorMessage(e);
-    } finally {
-        imageUploading.value = false;
-    }
-};
-const selectImage = (asset) => {
-    form.imageUrl = asset.url;
-    showImageLibrary.value = false;
-    imageError.value = "";
-};
-const removeImage = () => {
-    form.imageUrl = "";
-    imageError.value = "";
-};
-const loadMice = (page = mousePage.value) =>
-    request(async () => {
-        mousePage.value = page;
-        mice.value = (
-            await api.get("/admin/mice", {
-                params: {
-                    q: mouseQuery.value || undefined,
-                    status: mouseStatus.value || undefined,
-                    page: page,
-                    pageSize: 12,
-                },
-            })
-        ).data;
-    });
-const loadUsers = (page = userPage.value) =>
-    request(async () => {
-        userPage.value = page;
-        users.value = (
-            await api.get("/admin/users", {
-                params: {
-                    q: userQuery.value || undefined,
-                    status: userStatus.value || undefined,
-                    page: page,
-                    pageSize: 12,
-                },
-            })
-        ).data;
-    });
-const loadReviews = (page = reviewPage.value) =>
-    request(async () => {
-        reviewPage.value = page;
-        reviews.value = (
-            await api.get("/admin/reviews", {
-                params: {
-                    status: reviewStatus.value || undefined,
-                    page: page,
-                    pageSize: 12,
-                },
-            })
-        ).data;
-    });
-const refreshTab = () =>
-    ({
-        overview: loadDashboard,
-        mice: loadMice,
-        users: loadUsers,
-        reviews: loadReviews,
-    })[activeTab.value]();
-const selectTab = (tab) => {
-    activeTab.value = tab;
-    notice.value = "";
-    refreshTab();
-};
-const logout = () => {
-    auth.logout();
-    router.push("/admin/login");
-};
-const resetForm = () => {
-    Object.assign(form, initial, {
-        connectionModes: [...initial.connectionModes],
-    });
-    editingId.value = "";
-    showEditor.value = false;
-    brandOpen.value = false;
-    brandQuery.value = "";
-    showImageLibrary.value = false;
-    imageError.value = "";
-};
-const editMouse = (mouse) => {
-    Object.assign(form, mouse, {
-        connectionModes: [...(mouse.connectionModes || [])],
-    });
-    editingId.value = mouse.id;
-    showEditor.value = true;
-    brandOpen.value = false;
-    brandQuery.value = "";
-    activeTab.value = "mice";
-};
-const saveMouse = () =>
-    request(async () => {
-        const payload = { ...form, connectionModes: form.connectionModes };
-        if (editingId.value)
-            await api.put(`/admin/mice/${editingId.value}`, payload);
-        else await api.post("/admin/mice", payload);
-        notice.value = editingId.value ? "鼠标参数已更新" : "鼠标已创建并发布";
-        resetForm();
-        await loadMice();
-        await loadBrands();
-    });
-const archiveMouse = (id) =>
-    request(async () => {
-        if (!window.confirm("确定归档这条鼠标数据吗？")) return;
-        await api.patch(`/admin/mice/${id}`, { status: 'ARCHIVED' });
-        notice.value = "鼠标已归档";
-        await loadMice();
-    });
-const changeUserStatus = (user) =>
-    request(async () => {
-        const status = user.status === "ACTIVE" ? "DISABLED" : "ACTIVE";
-        await api.patch(`/admin/users/${user.id}`, { status });
-        notice.value = `用户已${status === "ACTIVE" ? "启用" : "禁用"}`;
-        await loadUsers();
-    });
-const changeReviewStatus = (review) =>
-    request(async () => {
-        const status = review.status === "ACTIVE" ? "DISABLED" : "ACTIVE";
-        await api.patch(`/admin/reviews/${review.id}`, { status });
-        notice.value = `评价已${status === "ACTIVE" ? "恢复" : "停用"}`;
-        await loadReviews();
-    });
-const statusLabel = (status) =>
-    ({
-        PUBLISHED: "已发布",
-        DRAFT: "草稿",
-        ARCHIVED: "已归档",
-        ACTIVE: "正常",
-        DISABLED: "已停用",
-        PENDING: "待审核",
-    })[status] || status;
-const gripLabel = (grip) => ({ PALM: '趴握', CLAW: '抓握', FINGERTIP: '指握', MIXED: '混合' }[grip] || '未设置');
-const handleEscape = (event) => {
-    if (event.key !== "Escape") return;
-    if (showImageLibrary.value) showImageLibrary.value = false;
-    else if (showEditor.value) resetForm();
-};
-watch(notice, (value) => {
-    if (noticeTimer) window.clearTimeout(noticeTimer);
-    if (!value) return;
-    noticeTimer = window.setTimeout(() => {
-        if (notice.value === value) notice.value = "";
-    }, 3200);
-});
-watch(error, (value) => {
-    if (errorTimer) window.clearTimeout(errorTimer);
-    if (!value) return;
-    errorTimer = window.setTimeout(() => {
-        if (error.value === value) error.value = "";
-    }, 4200);
-});
-onMounted(() => {
-    auth.refresh();
-    loadDashboard();
-    loadBrands();
-    window.addEventListener("keydown", handleEscape);
-});
-onBeforeUnmount(() => {
-    window.removeEventListener("keydown", handleEscape);
-    if (noticeTimer) window.clearTimeout(noticeTimer);
-    if (errorTimer) window.clearTimeout(errorTimer);
-});
+const {
+    auth,
+    router,
+    activeTab,
+    loading,
+    error,
+    notice,
+    dashboard,
+    mice,
+    mouseQuery,
+    mouseStatus,
+    mousePage,
+    brands,
+    brandOpen,
+    brandQuery,
+    brandLoading,
+    brandLoadError,
+    imageFileInput,
+    imageAssets,
+    imageLoading,
+    imageUploading,
+    imageError,
+    showImageLibrary,
+    importFileInput,
+    importFile,
+    importPreview,
+    importLoading,
+    users,
+    userQuery,
+    userStatus,
+    userRole,
+    userPage,
+    managedUser,
+    userStatusReason,
+    userRoleDraft,
+    userRoleReason,
+    reviews,
+    reviewStatus,
+    reviewQuery,
+    reviewPage,
+    expandedReviewId,
+    moderationReason,
+    audits,
+    auditQuery,
+    auditEntityType,
+    auditPage,
+    editingId,
+    showEditor,
+    initial,
+    form,
+    tabs,
+    activeLabel,
+    filteredBrands,
+    exactBrandExists,
+    selectedImageName,
+    publicationChecklist,
+    missingPublicationFields,
+    formDataQualityPercent,
+    request,
+    loadDashboard,
+    loadBrands,
+    selectBrand,
+    openBrandMenu,
+    toggleBrandMenu,
+    handleBrandInput,
+    closeBrandMenu,
+    loadImages,
+    toggleImageLibrary,
+    uploadImage,
+    selectImage,
+    removeImage,
+    deleteImage,
+    downloadImportTemplate,
+    previewImport,
+    commitImport,
+    cancelImport,
+    loadMice,
+    loadUsers,
+    loadReviews,
+    loadAudits,
+    refreshTab,
+    selectTab,
+    logout,
+    resetForm,
+    editMouse,
+    saveMouse,
+    changeMouseStatus,
+    changeUserStatus,
+    changeUserRole,
+    toggleUserAction,
+    closeUserAction,
+    toggleReviewDetails,
+    moderateReview,
+    actionLabel,
+    statusLabel,
+    gripLabel,
+    supportLabel,
+    handleEscape,
+} = useAdminConsole();
 </script>
+
 
 <template>
     <div class="admin-shell admin-saas">
@@ -458,7 +182,7 @@ onBeforeUnmount(() => {
                         <article>
                             <span>注册用户</span
                             ><strong>{{ dashboard?.usersTotal ?? "—" }}</strong
-                            ><small>含管理员账户</small>
+                            ><small>{{ dashboard?.usersActive ?? 0 }} 正常 · {{ dashboard?.usersAdmin ?? 0 }} 管理员 · {{ dashboard?.usersDisabled ?? 0 }} 封禁</small>
                         </article>
                         <article>
                             <span>评价总量</span
@@ -474,8 +198,8 @@ onBeforeUnmount(() => {
                         </article>
                         <article class="metric-accent">
                             <span>数据健康度</span
-                            ><strong>{{ dashboard ? "98%" : "—" }}</strong
-                            ><small>字段完整性与来源状态</small>
+                            ><strong>{{ dashboard ? `${dashboard.dataQualityPercent}%` : "—" }}</strong
+                            ><small>关键参数与来源完整率</small>
                         </article>
                     </div>
                     <div class="admin-columns">
@@ -540,22 +264,24 @@ onBeforeUnmount(() => {
                             </table>
                         </section>
                         <section class="admin-panel signal-panel">
-                            <span class="panel-kicker">SYSTEM SIGNAL</span>
-                            <h3>数据流状态</h3>
-                            <div class="signal-bars">
-                                <i style="--bar: 92%"></i
-                                ><i style="--bar: 78%"></i
-                                ><i style="--bar: 88%"></i
-                                ><i style="--bar: 66%"></i>
-                            </div>
+                            <span class="panel-kicker">OPERATIONS</span>
+                            <h3>待处理事项</h3>
                             <dl>
                                 <div>
-                                    <dt>数据库</dt>
-                                    <dd>ONLINE</dd>
+                                    <dt>草稿鼠标</dt>
+                                    <dd>{{ dashboard?.miceDraft ?? 0 }}</dd>
                                 </div>
                                 <div>
-                                    <dt>API 延迟</dt>
-                                    <dd>24ms</dd>
+                                    <dt>资料未完整</dt>
+                                    <dd>{{ dashboard?.miceIncomplete ?? 0 }}</dd>
+                                </div>
+                                <div>
+                                    <dt>核验已过期</dt>
+                                    <dd>{{ dashboard?.miceVerificationStale ?? 0 }}</dd>
+                                </div>
+                                <div>
+                                    <dt>已归档鼠标</dt>
+                                    <dd>{{ dashboard?.miceArchived ?? 0 }}</dd>
                                 </div>
                                 <div>
                                     <dt>待处理评价</dt>
@@ -563,6 +289,7 @@ onBeforeUnmount(() => {
                                         {{ dashboard?.reviewsPending ?? 0 }}
                                     </dd>
                                 </div>
+                                <div><dt>有效评价</dt><dd>{{ dashboard?.reviewsActive ?? 0 }}</dd></div>
                             </dl>
                         </section>
                     </div>
@@ -585,7 +312,17 @@ onBeforeUnmount(() => {
                             <option value="PUBLISHED">已发布</option>
                             <option value="DRAFT">草稿</option>
                             <option value="ARCHIVED">已归档</option></select
-                        ><button
+                        ><input
+                            ref="importFileInput"
+                            class="visually-hidden"
+                            type="file"
+                            accept=".csv,text/csv"
+                            @change="previewImport"
+                        /><button class="toolbar-action" type="button" @click="downloadImportTemplate">
+                            下载 CSV 模板
+                        </button><button class="toolbar-action" type="button" :disabled="importLoading" @click="importFileInput?.click()">
+                            {{ importLoading ? "正在预检…" : "导入 CSV" }}
+                        </button><button
                             class="button"
                             @click="
                                 showEditor = true;
@@ -595,6 +332,29 @@ onBeforeUnmount(() => {
                             ＋ 新增鼠标
                         </button>
                     </div>
+                    <section v-if="importPreview" class="import-preview" aria-live="polite">
+                        <div>
+                            <strong>{{ importPreview.filename }}</strong>
+                            <span>共 {{ importPreview.totalRows }} 行，{{ importPreview.validRows }} 行通过</span>
+                        </div>
+                        <dl>
+                            <div><dt>新增</dt><dd>{{ importPreview.createRows }}</dd></div>
+                            <div><dt>更新</dt><dd>{{ importPreview.updateRows }}</dd></div>
+                            <div><dt>错误</dt><dd :class="{ danger: importPreview.errors.length }">{{ importPreview.errors.length }}</dd></div>
+                        </dl>
+                        <div v-if="importPreview.errors.length" class="import-errors">
+                            <p v-for="issue in importPreview.errors.slice(0, 20)" :key="`${issue.row}-${issue.field}-${issue.message}`">
+                                第 {{ issue.row }} 行 · {{ issue.field }}：{{ issue.message }}<span v-if="issue.value">（{{ issue.value }}）</span>
+                            </p>
+                            <small v-if="importPreview.errors.length > 20">另有 {{ importPreview.errors.length - 20 }} 条错误，请修正后重新预检。</small>
+                        </div>
+                        <div class="import-actions">
+                            <button type="button" class="toolbar-action" @click="cancelImport">取消导入</button>
+                            <button type="button" class="button" :disabled="!importPreview.ready || importLoading" @click="commitImport">
+                                {{ importLoading ? "正在写入…" : "确认写入数据库" }}
+                            </button>
+                        </div>
+                    </section>
                     <Teleport to="body">
                         <div
                             v-if="showEditor"
@@ -738,11 +498,16 @@ onBeforeUnmount(() => {
                                                     form.variant
                                                 " /></label
                                         ><label
-                                            >Slug<input
+                                             >Slug<input
                                                 v-model.trim="form.slug"
                                                 required
                                                 pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-                                        /></label>
+                                        /></label
+                                        ><label>发布状态<select v-model="form.status">
+                                            <option value="DRAFT">草稿</option>
+                                            <option value="PUBLISHED">已发布</option>
+                                            <option value="ARCHIVED">已归档</option>
+                                        </select></label>
                                     </fieldset>
                                     <fieldset>
                                         <legend>尺寸与外形</legend>
@@ -785,25 +550,25 @@ onBeforeUnmount(() => {
                                                 v-model.number="form.lengthMm"
                                                 type="number"
                                                 step=".01"
-                                                required /></label
+                                                :required="form.status === 'PUBLISHED'" /></label
                                         ><label
                                             >宽度 mm<input
                                                 v-model.number="form.widthMm"
                                                 type="number"
                                                 step=".01"
-                                                required /></label
+                                                :required="form.status === 'PUBLISHED'" /></label
                                         ><label
                                             >高度 mm<input
                                                 v-model.number="form.heightMm"
                                                 type="number"
                                                 step=".01"
-                                                required /></label
+                                                :required="form.status === 'PUBLISHED'" /></label
                                         ><label
                                             >重量 g<input
                                                 v-model.number="form.weightG"
                                                 type="number"
                                                 step=".01"
-                                                required /></label
+                                                :required="form.status === 'PUBLISHED'" /></label
                                         ><label
                                             >隆起位置<select
                                                 v-model="form.humpPlacement"
@@ -898,7 +663,7 @@ onBeforeUnmount(() => {
                                         <label
                                             >传感器<input
                                                 v-model.trim="form.sensorName"
-                                                required /></label
+                                                :required="form.status === 'PUBLISHED'" /></label
                                         ><label
                                             >传感器类型<select
                                                 v-model="form.sensorType"
@@ -915,14 +680,14 @@ onBeforeUnmount(() => {
                                             >DPI<input
                                                 v-model.number="form.maxDpi"
                                                 type="number"
-                                                required /></label
+                                                :required="form.status === 'PUBLISHED'" /></label
                                         ><label
                                             >回报率 Hz<input
                                                 v-model.number="
                                                     form.maxPollingRateHz
                                                 "
                                                 type="number"
-                                                required /></label
+                                                :required="form.status === 'PUBLISHED'" /></label
                                         ><label
                                             >追踪 IPS<input
                                                 v-model.number="
@@ -1215,36 +980,23 @@ onBeforeUnmount(() => {
                                                     v-else
                                                     class="image-library-grid"
                                                 >
-                                                    <button
+                                                    <div
                                                         v-for="asset in imageAssets"
                                                         :key="asset.url"
-                                                        type="button"
-                                                        class="image-library-item"
+                                                        class="image-library-entry"
                                                         :class="{
                                                             selected:
                                                                 form.imageUrl ===
                                                                 asset.url,
                                                         }"
-                                                        @click="
-                                                            selectImage(asset)
-                                                        "
                                                     >
-                                                        <img
-                                                            :src="asset.url"
-                                                            :alt="asset.name"
-                                                            loading="lazy"
-                                                        />
-                                                        <span>{{
-                                                            asset.name
-                                                        }}</span>
-                                                        <i
-                                                            v-if="
-                                                                form.imageUrl ===
-                                                                asset.url
-                                                            "
-                                                            >✓</i
-                                                        >
-                                                    </button>
+                                                        <button type="button" class="image-library-item" @click="selectImage(asset)">
+                                                            <img :src="asset.url" :alt="asset.name" loading="lazy" />
+                                                            <span>{{ asset.name }}</span>
+                                                            <i v-if="form.imageUrl === asset.url">✓</i>
+                                                        </button>
+                                                        <button type="button" class="image-delete" :aria-label="`删除图片 ${asset.name}`" @click="deleteImage(asset)">删除</button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div
@@ -1256,13 +1008,21 @@ onBeforeUnmount(() => {
                                             >来源 URL<input
                                                 v-model="form.primarySourceUrl"
                                                 type="url"
-                                                required /></label
+                                                :required="form.status === 'PUBLISHED'" /></label
                                         ><label class="wide"
                                             >来源说明<input
                                                 v-model="form.sourceNotes"
                                                 placeholder="数据采集与校验说明"
                                         /></label>
                                     </fieldset>
+                                    <section class="publication-checklist" :class="{ ready: !missingPublicationFields.length }">
+                                        <div class="publication-checklist-head">
+                                            <div><span>发布前检查</span><strong>{{ formDataQualityPercent }}%</strong></div>
+                                            <p v-if="missingPublicationFields.length">草稿可以继续保存；发布前还需补全 {{ missingPublicationFields.length }} 项。</p>
+                                            <p v-else>关键参数和有效来源已经齐全，可以发布。</p>
+                                        </div>
+                                        <ul><li v-for="item in publicationChecklist" :key="item.key" :class="{ complete: item.ready }"><i>{{ item.ready ? '✓' : '·' }}</i>{{ item.label }}</li></ul>
+                                    </section>
                                     <div class="form-actions">
                                         <button
                                             type="button"
@@ -1313,14 +1073,19 @@ onBeforeUnmount(() => {
                                     <em
                                         :class="`status-${mouse.status?.toLowerCase()}`"
                                         >{{ statusLabel(mouse.status) }}</em
-                                    >
+                                    ><small class="asset-quality" :class="{ ready: mouse.publicationReady }">完整度 {{ mouse.dataQualityPercent }}% · {{ mouse.verificationStatus === 'STALE' ? '待复核' : mouse.verificationStatus === 'CURRENT' ? '已核验' : '未核验' }}</small>
                                 </td>
                                 <td class="row-actions">
                                     <button @click="editMouse(mouse)">
                                         编辑</button
+                                    ><button v-if="mouse.status !== 'PUBLISHED'" @click="changeMouseStatus(mouse, 'PUBLISHED')">
+                                        发布</button
+                                    ><button v-if="mouse.status === 'PUBLISHED'" @click="changeMouseStatus(mouse, 'DRAFT')">
+                                        转草稿</button
                                     ><button
+                                        v-if="mouse.status !== 'ARCHIVED'"
                                         class="danger"
-                                        @click="archiveMouse(mouse.id)"
+                                        @click="changeMouseStatus(mouse, 'ARCHIVED')"
                                     >
                                         归档
                                     </button>
@@ -1375,7 +1140,12 @@ onBeforeUnmount(() => {
                         <select v-model="userStatus" @change="loadUsers(1)">
                             <option value="">全部状态</option>
                             <option value="ACTIVE">正常</option>
-                            <option value="DISABLED">已停用</option>
+                            <option value="DISABLED">已封禁</option>
+                        </select>
+                        <select v-model="userRole" @change="loadUsers(1)">
+                            <option value="">全部角色</option>
+                            <option value="USER">普通用户</option>
+                            <option value="ADMIN">管理员</option>
                         </select>
                     </div>
                     <table class="admin-table">
@@ -1403,7 +1173,7 @@ onBeforeUnmount(() => {
                                                 ? 'role-admin'
                                                 : ''
                                         "
-                                    >{{ user.role }}</em
+                                    >{{ user.role === 'ADMIN' ? '管理员' : '普通用户' }}</em
                                     >
                                 </td>
                                 <td>{{ user.handLengthCm != null ? `${user.handLengthCm} cm` : '未填写' }}</td>
@@ -1411,8 +1181,8 @@ onBeforeUnmount(() => {
                                 <td>
                                     <em
                                         :class="`status-${user.status?.toLowerCase()}`"
-                                        >{{ statusLabel(user.status) }}</em
-                                    >
+                                        >{{ user.status === 'DISABLED' ? '已封禁' : '正常' }}</em
+                                    ><small v-if="user.statusReason" class="user-status-reason">{{ user.statusReason }}</small>
                                 </td>
                                 <td class="mono">
                                     {{
@@ -1424,25 +1194,60 @@ onBeforeUnmount(() => {
                                     }}
                                 </td>
                                 <td class="row-actions">
-                                    <button
-                                        v-if="user.role !== 'ADMIN'"
-                                        @click="changeUserStatus(user)"
-                                    >
-                                        {{
-                                            user.status === "ACTIVE"
-                                                ? "停用"
-                                                : "启用"
-                                        }}
+                                    <button @click="toggleUserAction(user)">
+                                        管理用户
                                     </button>
                                 </td>
                             </tr>
                             <tr v-if="!users.items.length">
-                                <td colspan="6" class="table-empty">
+                                <td colspan="7" class="table-empty">
                                     暂无用户
                                 </td>
                             </tr>
                         </tbody>
                     </table>
+                    <Teleport to="body">
+                        <div
+                            v-if="managedUser"
+                            class="user-management-overlay"
+                            role="dialog"
+                            aria-modal="true"
+                            :aria-labelledby="`user-management-title-${managedUser.id}`"
+                            @click.self="closeUserAction"
+                        >
+                            <section class="user-management-editor user-management-modal">
+                                <header>
+                                    <div>
+                                        <span>ACCOUNT CONTROL</span>
+                                        <h3 :id="`user-management-title-${managedUser.id}`">管理用户</h3>
+                                        <strong>{{ managedUser.email }}</strong>
+                                    </div>
+                                    <button type="button" aria-label="关闭用户管理窗口" @click="closeUserAction">×</button>
+                                </header>
+                                <p class="user-management-summary">角色和封禁状态会在下一次接口请求时立即生效，所有操作都会写入审计日志。</p>
+                                <div class="user-management-grid">
+                                    <article class="user-role-card">
+                                        <div><span>ROLE</span><h4>角色权限</h4><p>管理员可以访问整个后台；普通用户只能使用公开功能和个人评价。</p></div>
+                                        <template v-if="auth.user?.id !== managedUser.id">
+                                            <label>目标角色<select v-model="userRoleDraft"><option value="USER">普通用户</option><option value="ADMIN">管理员</option></select></label>
+                                            <label>调整原因<textarea v-model.trim="userRoleReason" maxlength="500" placeholder="必填，说明授权或降级依据。"></textarea></label>
+                                            <button class="button button-ghost" :disabled="userRoleDraft === managedUser.role || loading" @click="changeUserRole(managedUser)">保存角色变更</button>
+                                        </template>
+                                        <p v-else class="protected-account-note">当前登录账号不能修改自己的角色，避免误操作导致后台失去管理权限。</p>
+                                    </article>
+                                    <article class="user-ban-card" :class="{ banned: managedUser.status === 'DISABLED' }">
+                                        <div><span>ACCESS</span><h4>{{ managedUser.status === "ACTIVE" ? "封禁用户" : "解除封禁" }}</h4><p>{{ managedUser.status === "ACTIVE" ? "封禁后账号立即失去登录和评价权限，历史数据仍保留。" : "解除后账号可以重新登录，历史数据不会发生变化。" }}</p></div>
+                                        <template v-if="managedUser.role !== 'ADMIN' && auth.user?.id !== managedUser.id">
+                                            <label>处理原因<textarea v-model.trim="userStatusReason" maxlength="500" :placeholder="managedUser.status === 'ACTIVE' ? '封禁时必填，说明违规或安全依据。' : '可填写复核与解封说明。'"></textarea></label>
+                                            <button class="button" :class="{ 'danger-button': managedUser.status === 'ACTIVE' }" :disabled="loading" @click="changeUserStatus(managedUser)">{{ managedUser.status === "ACTIVE" ? "确认封禁用户" : "确认解除封禁" }}</button>
+                                        </template>
+                                        <p v-else class="protected-account-note">{{ auth.user?.id === managedUser.id ? '不能封禁当前登录账号。' : '管理员账号受保护；如需封禁，请先将其角色调整为普通用户。' }}</p>
+                                        <small v-if="managedUser.statusChangedAt" class="last-account-action">最近状态变更：{{ new Date(managedUser.statusChangedAt).toLocaleString('zh-CN') }} · {{ managedUser.statusChangedBy || '系统' }}</small>
+                                    </article>
+                                </div>
+                            </section>
+                        </div>
+                    </Teleport>
                     <div
                         class="admin-pagination"
                         v-if="users.page.totalPages > 1"
@@ -1469,11 +1274,10 @@ onBeforeUnmount(() => {
                         </div>
                     </div>
                 </section>
-                <section v-else class="admin-panel full-panel">
+                <section v-else-if="activeTab === 'reviews'" class="admin-panel full-panel">
                     <div class="toolbar">
-                        <div>
-                            <span class="panel-kicker">MODERATION QUEUE</span>
-                            <h3>评价治理</h3>
+                        <div class="toolbar-search">
+                            <span>⌕</span><input v-model="reviewQuery" placeholder="搜索评价者邮箱或鼠标…" @keyup.enter="loadReviews(1)" />
                         </div>
                         <select v-model="reviewStatus" @change="loadReviews(1)">
                             <option value="">全部状态</option>
@@ -1494,46 +1298,39 @@ onBeforeUnmount(() => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr
-                                v-for="review in reviews.items"
-                                :key="review.id"
-                            >
-                                <td>
-                                    <strong>{{ review.userEmail }}</strong
-                                    ><small
-                                        >{{ review.gripStyle || '—' }} /
-                                        {{ review.handSize || '未填写手长' }}</small
-                                    >
-                                </td>
-                                <td>{{ review.mouseName }}</td>
-                                <td class="score-value">
-                                    {{ review.overallScore }} / 10
-                                </td>
-                                <td>
-                                    <em
-                                        :class="`status-${review.status?.toLowerCase()}`"
-                                        >{{ statusLabel(review.status) }}</em
-                                    >
-                                </td>
-                                <td class="mono">
-                                    {{
-                                        review.createdAt
-                                            ? new Date(
-                                                  review.createdAt,
-                                              ).toLocaleDateString("zh-CN")
-                                            : "—"
-                                    }}
-                                </td>
-                                <td class="row-actions">
-                                    <button @click="changeReviewStatus(review)">
-                                        {{
-                                            review.status === "ACTIVE"
-                                                ? "停用"
-                                                : "恢复"
-                                        }}
-                                    </button>
-                                </td>
-                            </tr>
+                            <template v-for="review in reviews.items" :key="review.id">
+                                <tr>
+                                    <td><strong>{{ review.userEmail }}</strong><small>{{ gripLabel(review.gripStyle) }} / {{ review.handSize || '未填写手长' }}</small></td>
+                                    <td>{{ review.mouseName }}</td>
+                                    <td class="score-value">{{ review.overallScore }} / 10</td>
+                                    <td><em :class="`status-${review.status?.toLowerCase()}`">{{ statusLabel(review.status) }}</em></td>
+                                    <td class="mono">{{ review.createdAt ? new Date(review.createdAt).toLocaleDateString("zh-CN") : "—" }}</td>
+                                    <td class="row-actions"><button @click="toggleReviewDetails(review)">{{ expandedReviewId === review.id ? "收起" : "查看与处理" }}</button></td>
+                                </tr>
+                                <tr v-if="expandedReviewId === review.id" class="review-detail-row">
+                                    <td colspan="6">
+                                        <section class="review-detail">
+                                            <div class="review-score-grid">
+                                                <div><span>点击</span><strong>{{ review.clickScore ?? '—' }}</strong></div>
+                                                <div><span>滚轮</span><strong>{{ review.scrollScore ?? '—' }}</strong></div>
+                                                <div><span>做工</span><strong>{{ review.buildScore ?? '—' }}</strong></div>
+                                                <div><span>涂层</span><strong>{{ review.coatingScore ?? '—' }}</strong></div>
+                                                <div><span>舒适</span><strong>{{ review.comfortScore ?? '—' }}</strong></div>
+                                            </div>
+                                            <div class="review-evidence">
+                                                <div><span>握姿评分</span><p v-if="!review.gripScores?.length">暂无</p><p v-for="score in review.gripScores" :key="score.gripStyle">{{ gripLabel(score.gripStyle) }} {{ score.comfortScore }}/10</p></div>
+                                                <div><span>支撑位置</span><p v-if="!review.supportPositions?.length">暂无</p><p v-for="position in review.supportPositions" :key="position">{{ supportLabel(position) }}</p></div>
+                                                <div><span>最近处理</span><p>{{ review.moderatedBy || '尚未处理' }}</p><p v-if="review.moderationReason">{{ review.moderationReason }}</p></div>
+                                            </div>
+                                            <label class="moderation-reason">处理原因<textarea v-model.trim="moderationReason" maxlength="500" placeholder="停用时必填，说明判断依据；恢复时可填写复核说明。"></textarea></label>
+                                            <div class="review-actions">
+                                                <button v-if="review.status !== 'ACTIVE'" class="button button-ghost" @click="moderateReview(review, 'ACTIVE')">恢复评价</button>
+                                                <button v-if="review.status !== 'DISABLED'" class="button danger-button" @click="moderateReview(review, 'DISABLED')">停用评价</button>
+                                            </div>
+                                        </section>
+                                    </td>
+                                </tr>
+                            </template>
                             <tr v-if="!reviews.items.length">
                                 <td colspan="6" class="table-empty">
                                     暂无评价记录
@@ -1566,6 +1363,31 @@ onBeforeUnmount(() => {
                                 下一页 →
                             </button>
                         </div>
+                    </div>
+                </section>
+                <section v-else class="admin-panel full-panel">
+                    <div class="toolbar">
+                        <div class="toolbar-search"><span>⌕</span><input v-model="auditQuery" placeholder="搜索管理员、对象或操作摘要…" @keyup.enter="loadAudits(1)" /></div>
+                        <select v-model="auditEntityType" @change="loadAudits(1)">
+                            <option value="">全部对象</option><option value="MOUSE">鼠标</option><option value="USER">用户</option>
+                            <option value="REVIEW">评价</option><option value="MOUSE_IMPORT">批量导入</option><option value="IMAGE">图片</option>
+                        </select>
+                    </div>
+                    <table class="admin-table audit-table">
+                        <thead><tr><th>时间</th><th>管理员</th><th>操作</th><th>摘要</th><th>原因</th></tr></thead>
+                        <tbody>
+                            <tr v-for="entry in audits.items" :key="entry.id">
+                                <td class="mono">{{ new Date(entry.createdAt).toLocaleString("zh-CN") }}</td>
+                                <td><strong>{{ entry.actorEmail }}</strong><small>{{ entry.entityType }} · {{ entry.entityId || '—' }}</small></td>
+                                <td><em>{{ actionLabel(entry.action) }}</em></td>
+                                <td>{{ entry.summary }}</td><td>{{ entry.reason || '—' }}</td>
+                            </tr>
+                            <tr v-if="!audits.items.length"><td colspan="5" class="table-empty">暂无符合条件的操作记录</td></tr>
+                        </tbody>
+                    </table>
+                    <div class="admin-pagination" v-if="audits.page.totalPages > 1">
+                        <span>第 {{ audits.page.number }} / {{ audits.page.totalPages }} 页 · 共 {{ audits.page.totalItems }} 条</span>
+                        <div><button :disabled="audits.page.number <= 1" @click="loadAudits(audits.page.number - 1)">← 上一页</button><button :disabled="audits.page.number >= audits.page.totalPages" @click="loadAudits(audits.page.number + 1)">下一页 →</button></div>
                     </div>
                 </section>
             </main>

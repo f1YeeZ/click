@@ -1,0 +1,5 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status_reason VARCHAR(500);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status_changed_by VARCHAR(320);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMP WITH TIME ZONE;
+
+CREATE INDEX IF NOT EXISTS idx_users_role_status ON users(role, status);
