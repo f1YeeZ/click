@@ -59,7 +59,7 @@ public class SecurityConfig {
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "Last-Event-ID"));
         config.setExposedHeaders(List.of("Location", "Retry-After"));
-        config.setAllowCredentials(false);
+        config.setAllowCredentials(true);
         config.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
@@ -76,14 +76,21 @@ public class SecurityConfig {
                     headers.contentTypeOptions(Customizer.withDefaults());
                     headers.referrerPolicy(referrer -> referrer.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER));
                     headers.permissionsPolicy(policy -> policy.policy("camera=(), microphone=(), geolocation=()"));
+                    headers.contentSecurityPolicy(csp -> csp.policyDirectives(
+                            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                                    + "font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; "
+                                    + "connect-src 'self' blob: ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"));
                     headers.httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000));
                 })
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/sessions", "/api/v1/users", "/api/v1/registration-verification-codes",
-                                "/api/v1/password-reset-verification-codes").permitAll()
+                                "/api/v1/password-reset-verification-codes", "/api/v1/sessions/refresh",
+                                "/api/v1/admin-sessions/verify", "/api/v1/admin-sessions/refresh").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/api/v1/password-reset").permitAll()
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/sessions/current", "/api/v1/admin-sessions/current").permitAll()
                         .requestMatchers("/api/v1/review-options").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/config").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/images/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/mice/**").permitAll()

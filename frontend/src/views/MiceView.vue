@@ -40,6 +40,8 @@ const choices = {
 }
 const loading = ref(false)
 const error = ref('')
+const mobileFiltersOpen = ref(false)
+const resultsSection = ref(null)
 const filterSections = reactive({ brand: false, size: false, shape: false, connection: false, sensor: false, performance: false, buttons: false, switch: false, wheel: false, material: false })
 const activeFilterCount = computed(() => Object.entries(filters).filter(([key, value]) => (Array.isArray(value) ? value.length : value !== '' && value != null) && !['sort', 'page', 'pageSize'].includes(key)).length)
 const rangeDefinitions = [
@@ -95,6 +97,10 @@ const reset = () => { Object.assign(filters, defaults); Object.keys(filterSectio
 const submit = () => { filters.page = 1; load() }
 const move = (page) => { filters.page = page; load(); window.scrollTo({ top: 0, behavior: 'smooth' }) }
 const clearChip = (chip) => { clearCatalogFilterKeys(filters, chip.keys, multiKeys) }
+const showMobileResults = () => {
+  mobileFiltersOpen.value = false
+  requestAnimationFrame(() => resultsSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
 watch(filterSignature, () => {
   if (syncingFromRoute) return
   filters.page = 1
@@ -128,8 +134,12 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(filterTimer); clearTimeout(
   <main class="section-shell database-page">
     <div class="page-kicker"><span>DATABASE / MICE</span><span>{{ result.page.totalItems }} MATCHES</span></div>
 
+    <button class="mobile-filter-trigger" type="button" :aria-expanded="mobileFiltersOpen" aria-controls="catalog-filter-panel" @click="mobileFiltersOpen = !mobileFiltersOpen">
+      <span><b>筛选与排序</b><small>{{ activeFilterCount ? `${activeFilterCount} 个条件已启用` : '按参数缩小范围' }}</small></span>
+      <i>{{ mobileFiltersOpen ? '收起' : '展开' }}</i>
+    </button>
     <div class="database-content-layout">
-      <aside class="database-filter-rail">
+      <aside id="catalog-filter-panel" class="database-filter-rail" :class="{ 'mobile-open': mobileFiltersOpen }">
         <form class="filter-studio" @submit.prevent="submit">
       <div class="filter-studio-head">
         <div><span class="panel-kicker">PARAMETRIC SEARCH</span><h2>参数筛选器</h2></div>
@@ -151,11 +161,11 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(filterTimer); clearTimeout(
         <div class="filter-accordion-section"><button class="filter-accordion-toggle" type="button" :aria-expanded="filterSections.wheel" @click="filterSections.wheel = !filterSections.wheel"><span><b>09</b> 滚轮 <small>WHEEL</small></span><i>{{ filterSections.wheel ? '−' : '+' }}</i></button><Transition name="filter-expand"><fieldset v-if="filterSections.wheel"><div class="filter-fields"><FilterCheckGroup label="编码器类型" v-model="filters.encoderType" :options="choices.encoderType" /><label>编码器型号<input v-model.trim="filters.encoderName" placeholder="型号关键词"></label><RangeSlider label="滚轮步数" :min="1" :max="100" :min-value="filters.encoderStepsMin" :max-value="filters.encoderStepsMax" @update:min-value="filters.encoderStepsMin = $event" @update:max-value="filters.encoderStepsMax = $event" /></div></fieldset></Transition></div>
         <div class="filter-accordion-section"><button class="filter-accordion-toggle" type="button" :aria-expanded="filterSections.material" @click="filterSections.material = !filterSections.material"><span><b>10</b> 材质 <small>MATERIAL</small></span><i>{{ filterSections.material ? '−' : '+' }}</i></button><Transition name="filter-expand"><fieldset v-if="filterSections.material"><div class="filter-fields"><label>材质<input v-model.trim="filters.material" placeholder="ABS / 镁合金"></label><label>购买渠道<input v-model.trim="filters.purchaseChannel" placeholder="官网 / 京东"></label></div></fieldset></Transition></div>
       </div>
-      <div class="filter-submitbar"><label>每页<select v-model.number="filters.pageSize"><option :value="12">12</option><option :value="24">24</option><option :value="48">48</option></select></label><label>排序<select v-model="filters.sort"><option value="newest">最近录入</option><option value="brand_asc">品牌 A—Z</option><option value="weight_asc">从轻到重</option><option value="weight_desc">从重到轻</option><option value="rating_desc">评分最高</option><option value="review_count_desc">评价最多</option></select></label></div>
+      <div class="filter-submitbar"><label>每页<select v-model.number="filters.pageSize"><option :value="12">12</option><option :value="24">24</option><option :value="48">48</option></select></label><label>排序<select v-model="filters.sort"><option value="newest">最近录入</option><option value="brand_asc">品牌 A—Z</option><option value="weight_asc">从轻到重</option><option value="weight_desc">从重到轻</option><option value="rating_desc">握姿舒适度最高</option><option value="review_count_desc">评价最多</option></select></label><button class="mobile-filter-done primary-action-button" type="button" @click="showMobileResults">查看 {{ result.page.totalItems }} 款结果</button></div>
         </form>
       </aside>
 
-      <section class="database-results">
+      <section ref="resultsSection" class="database-results">
         <div class="active-filter-strip" v-if="activeFilterChips.length"><span class="active-filter-title">当前筛选</span><button v-for="(chip, index) in activeFilterChips" :key="`${chip.label}-${index}`" type="button" class="active-filter-chip" @click="clearChip(chip)"><span>{{ chip.label }}</span><b>{{ chip.value }}</b><i>×</i></button><button class="active-filter-clear" type="button" @click="reset">清空全部</button></div>
         <div class="flash error" v-if="error">{{ error }}</div>
         <div class="loading-state" v-if="loading">QUERYING DATABASE...</div>

@@ -1,17 +1,20 @@
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import api, { errorMessage } from "../api/client";
 import { useAdminAuthStore } from "../stores/auth";
 
 export const useAdminConsole = () => {
 const auth = useAdminAuthStore();
 const router = useRouter();
-const activeTab = ref("overview");
+const route = useRoute();
+const knownTabs = ['overview', 'analytics', 'mice', 'brands', 'users', 'reviews', 'feedback', 'audit', 'operations'];
+const activeTab = ref(knownTabs.includes(String(route.query.tab)) ? String(route.query.tab) : "overview");
 const loading = ref(false);
 const error = ref("");
 const notice = ref("");
 let noticeTimer = null;
 let errorTimer = null;
+let reloadOnNextActivation = false;
 const dashboard = ref(null);
 const mice = ref({
     items: [],
@@ -19,7 +22,10 @@ const mice = ref({
 });
 const mouseQuery = ref("");
 const mouseStatus = ref("");
+const mouseQuality = ref("");
+const mouseVerification = ref("");
 const mousePage = ref(1);
+const mouseSelection = ref([]);
 const brands = ref([]);
 const brandOpen = ref(false);
 const brandQuery = ref("");
@@ -31,6 +37,7 @@ const imageLoading = ref(false);
 const imageUploading = ref(false);
 const imageError = ref("");
 const showImageLibrary = ref(false);
+const imageEditorSource = ref(null);
 const importFileInput = ref(null);
 const importFile = ref(null);
 const importPreview = ref(null);
@@ -43,6 +50,8 @@ const userQuery = ref("");
 const userStatus = ref("");
 const userRole = ref("");
 const userPage = ref(1);
+const userSelection = ref([]);
+const userDetail = ref(null);
 const expandedUserId = ref("");
 const userStatusReason = ref("");
 const userRoleDraft = ref("USER");
@@ -57,8 +66,12 @@ const reviews = ref({
 const reviewStatus = ref("");
 const reviewQuery = ref("");
 const reviewPage = ref(1);
+const reviewSelection = ref([]);
 const expandedReviewId = ref("");
 const moderationReason = ref("");
+const selectedReview = computed(() =>
+    reviews.value.items.find((review) => review.id === expandedReviewId.value),
+);
 const audits = ref({
     items: [],
     page: { number: 1, totalPages: 1, totalItems: 0 },
@@ -66,6 +79,10 @@ const audits = ref({
 const auditQuery = ref("");
 const auditEntityType = ref("");
 const auditPage = ref(1);
+const auditAction = ref("");
+const auditFrom = ref("");
+const auditTo = ref("");
+const selectedAudit = ref(null);
 const editingId = ref("");
 const showEditor = ref(false);
 const initial = {
@@ -121,10 +138,14 @@ const form = reactive({
 });
 const tabs = [
     { id: "overview", label: "总览", icon: "◈" },
+    { id: "analytics", label: "运营分析", icon: "⌁" },
     { id: "mice", label: "鼠标资产", icon: "▦" },
+    { id: "brands", label: "品牌中心", icon: "◆" },
     { id: "users", label: "用户管理", icon: "◎" },
     { id: "reviews", label: "评价治理", icon: "◇" },
+    { id: "feedback", label: "反馈工单", icon: "◉" },
     { id: "audit", label: "操作审计", icon: "◷" },
+    { id: "operations", label: "系统运营", icon: "⚙" },
 ];
 const activeLabel = computed(
     () => tabs.find((tab) => tab.id === activeTab.value)?.label,
@@ -240,15 +261,36 @@ const uploadImage = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+        imageError.value = "仅支持 PNG、JPEG 和 WebP 图片";
+        return;
+    }
     if (file.size > 5 * 1024 * 1024) {
         imageError.value = "图片大小不能超过 5 MB";
         return;
     }
+    imageError.value = "";
+    showImageLibrary.value = false;
+    imageEditorSource.value = { file, name: file.name };
+};
+const editCurrentImage = () => {
+    if (!form.imageUrl) return;
+    imageError.value = "";
+    showImageLibrary.value = false;
+    imageEditorSource.value = {
+        url: form.imageUrl,
+        name: selectedImageName.value,
+    };
+};
+const cancelImageEditor = () => {
+    if (!imageUploading.value) imageEditorSource.value = null;
+};
+const saveEditedImage = async ({ blob, filename }) => {
     imageUploading.value = true;
     imageError.value = "";
     try {
         const data = new FormData();
-        data.append("file", file);
+        data.append("file", new File([blob], filename, { type: blob.type }));
         const { data: asset } = await api.post("/admin/images", data);
         form.imageUrl = asset.url;
         imageAssets.value = [
@@ -256,6 +298,8 @@ const uploadImage = async (event) => {
             ...imageAssets.value.filter((item) => item.url !== asset.url),
         ];
         showImageLibrary.value = false;
+        imageEditorSource.value = null;
+        notice.value = "图片已截选并上传";
     } catch (e) {
         imageError.value = errorMessage(e);
     } finally {
@@ -265,6 +309,7 @@ const uploadImage = async (event) => {
 const selectImage = (asset) => {
     form.imageUrl = asset.url;
     showImageLibrary.value = false;
+    imageEditorSource.value = null;
     imageError.value = "";
 };
 const removeImage = () => {
@@ -347,11 +392,14 @@ const loadMice = (page = mousePage.value) =>
                 params: {
                     q: mouseQuery.value || undefined,
                     status: mouseStatus.value || undefined,
+                    quality: mouseQuality.value || undefined,
+                    verification: mouseVerification.value || undefined,
                     page: page,
                     pageSize: 12,
                 },
             })
         ).data;
+        mouseSelection.value = [];
     });
 const loadUsers = (page = userPage.value) =>
     request(async () => {
@@ -367,6 +415,7 @@ const loadUsers = (page = userPage.value) =>
                 },
             })
         ).data;
+        userSelection.value = [];
     });
 const loadReviews = (page = reviewPage.value) =>
     request(async () => {
@@ -381,6 +430,7 @@ const loadReviews = (page = reviewPage.value) =>
                 },
             })
         ).data;
+        reviewSelection.value = [];
     });
 const loadAudits = (page = auditPage.value) =>
     request(async () => {
@@ -390,6 +440,9 @@ const loadAudits = (page = auditPage.value) =>
                 params: {
                     q: auditQuery.value || undefined,
                     entityType: auditEntityType.value || undefined,
+                    action: auditAction.value || undefined,
+                    from: auditFrom.value ? new Date(`${auditFrom.value}T00:00:00`).toISOString() : undefined,
+                    to: auditTo.value ? new Date(`${auditTo.value}T23:59:59`).toISOString() : undefined,
                     page,
                     pageSize: 12,
                 },
@@ -397,17 +450,20 @@ const loadAudits = (page = auditPage.value) =>
         ).data;
     });
 const refreshTab = () =>
-    ({
+    (({
         overview: loadDashboard,
         mice: loadMice,
         users: loadUsers,
         reviews: loadReviews,
         audit: loadAudits,
-    })[activeTab.value]();
+    })[activeTab.value] || (() => window.dispatchEvent(new CustomEvent('admin:refresh', { detail: activeTab.value }))))();
 const selectTab = (tab) => {
     activeTab.value = tab;
+    router.replace({ query: { ...route.query, tab: tab === 'overview' ? undefined : tab } });
     notice.value = "";
     expandedUserId.value = "";
+    expandedReviewId.value = "";
+    selectedAudit.value = null;
     refreshTab();
 };
 const logout = () => {
@@ -423,6 +479,7 @@ const resetForm = () => {
     brandOpen.value = false;
     brandQuery.value = "";
     showImageLibrary.value = false;
+    imageEditorSource.value = null;
     imageError.value = "";
 };
 const editMouse = (mouse) => {
@@ -456,6 +513,27 @@ const changeMouseStatus = (mouse, status) =>
         notice.value = `鼠标已设为${label}`;
         await loadMice();
     });
+const updateVerification = (mouse, status) => request(async () => {
+    const assigneeEmail = status === 'IN_PROGRESS' ? (window.prompt('负责人邮箱（留空则由当前管理员认领）', auth.user?.email || '') || '') : auth.user?.email;
+    const note = window.prompt(status === 'DONE' ? '填写本次复核结论（可选）' : '填写复核任务说明（可选）', mouse.verificationNote || '') || '';
+    await api.patch(`/admin/mice/${mouse.id}/verification`, { status, assigneeEmail, note });
+    notice.value = status === 'DONE' ? '数据已完成复核' : '复核任务已认领'; await loadMice(); await loadDashboard();
+});
+const openMouseQueue = (type) => {
+    mouseStatus.value = ''; mouseQuality.value = type === 'INCOMPLETE' ? 'INCOMPLETE' : '';
+    mouseVerification.value = type === 'STALE' ? 'STALE' : ''; selectTab('mice');
+};
+const openReviewQueue = () => { reviewStatus.value = 'PENDING'; selectTab('reviews'); };
+const batchStatus = (kind, status) => request(async () => {
+    const selection = ({ mice: mouseSelection, users: userSelection, reviews: reviewSelection })[kind].value;
+    if (!selection.length) return;
+    const reason = window.prompt('请填写批量操作原因（发布或恢复时可留空）', '') || '';
+    if ((status === 'ARCHIVED' || status === 'DISABLED') && !reason.trim()) { error.value = '高风险批量操作必须填写原因'; return; }
+    if (!window.confirm(`确定处理选中的 ${selection.length} 条记录吗？`)) return;
+    const { data } = await api.post(`/admin/${kind}/batch-status`, { ids: selection, status, reason });
+    notice.value = `批量处理完成：成功 ${data.changed} 条${data.errors?.length ? `，失败 ${data.errors.length} 条` : ''}`;
+    if (kind === 'mice') await loadMice(); else if (kind === 'users') await loadUsers(); else await loadReviews();
+});
 const changeUserStatus = (user) =>
     request(async () => {
         const status = user.status === "ACTIVE" ? "DISABLED" : "ACTIVE";
@@ -488,20 +566,27 @@ const changeUserRole = (user) =>
         userRoleReason.value = "";
         await loadUsers();
     });
-const toggleUserAction = (user) => {
+const toggleUserAction = async (user) => {
     expandedUserId.value = expandedUserId.value === user.id ? "" : user.id;
     userStatusReason.value = "";
     userRoleDraft.value = user.role;
     userRoleReason.value = "";
+    userDetail.value = null;
+    if (expandedUserId.value) try { userDetail.value = (await api.get(`/admin/users/${user.id}/detail`)).data; } catch (e) { error.value = errorMessage(e); }
 };
 const closeUserAction = () => {
     expandedUserId.value = "";
     userStatusReason.value = "";
     userRoleReason.value = "";
+    userDetail.value = null;
 };
-const toggleReviewDetails = (review) => {
-    expandedReviewId.value = expandedReviewId.value === review.id ? "" : review.id;
+const openReviewDetails = (review) => {
+    expandedReviewId.value = review.id;
     moderationReason.value = review.moderationReason || "";
+};
+const closeReviewDetails = () => {
+    expandedReviewId.value = "";
+    moderationReason.value = "";
 };
 const moderateReview = (review, status) =>
     request(async () => {
@@ -524,7 +609,20 @@ const actionLabel = (action) => ({
     REVIEW_MODERATION: "治理评价",
     MOUSE_CSV_IMPORT: "批量导入",
     IMAGE_DELETE: "删除图片",
+    MOUSE_VERIFICATION: "复核鼠标数据",
+    REPORT_WORKFLOW_CHANGE: "处理反馈工单",
+    SESSION_REVOKE: "撤销登录会话",
+    SYSTEM_SETTING_UPDATE: "更新系统设置",
+    BRAND_CREATE: "创建品牌",
+    BRAND_UPDATE: "更新品牌",
 }[action] || action);
+const selectAudit = (entry) => { selectedAudit.value = entry; };
+const closeAudit = () => { selectedAudit.value = null; };
+const formatAuditState = (value) => {
+    if (!value) return "—";
+    try { return JSON.stringify(JSON.parse(value), null, 2); }
+    catch { return value; }
+};
 const statusLabel = (status) =>
     ({
         PUBLISHED: "已发布",
@@ -535,13 +633,13 @@ const statusLabel = (status) =>
         PENDING: "待审核",
     })[status] || status;
 const gripLabel = (grip) => ({ PALM: '趴握', CLAW: '抓握', FINGERTIP: '指握', MIXED: '混合' }[grip] || '未设置');
-const supportLabel = (code) => ({
-    THUMB_BASE: "拇指根部", INDEX_BASE: "食指根部", MIDDLE_BASE: "中指根部",
-    RING_BASE: "无名指根部", LITTLE_BASE: "小指根部", PALM_CENTER: "掌心", PALM_HEEL: "掌根",
-}[code] || code);
 const handleEscape = (event) => {
     if (event.key !== "Escape") return;
-    if (showImageLibrary.value) showImageLibrary.value = false;
+    if (imageEditorSource.value) cancelImageEditor();
+    else if (showImageLibrary.value) showImageLibrary.value = false;
+    else if (importPreview.value) cancelImport();
+    else if (expandedReviewId.value) closeReviewDetails();
+    else if (selectedAudit.value) closeAudit();
     else if (showEditor.value) resetForm();
     else if (expandedUserId.value) closeUserAction();
 };
@@ -559,11 +657,26 @@ watch(error, (value) => {
         if (error.value === value) error.value = "";
     }, 4200);
 });
+const loadAdminConsole = async () => {
+    await auth.refresh();
+    if (!auth.authenticated || !auth.admin) {
+        dashboard.value = null;
+        router.replace("/admin/login");
+        return;
+    }
+    await Promise.all([loadDashboard(), loadBrands()]);
+};
 onMounted(() => {
-    auth.refresh();
-    loadDashboard();
-    loadBrands();
     window.addEventListener("keydown", handleEscape);
+    loadAdminConsole();
+});
+onActivated(() => {
+    if (!reloadOnNextActivation) return;
+    reloadOnNextActivation = false;
+    loadAdminConsole();
+});
+onDeactivated(() => {
+    reloadOnNextActivation = true;
 });
 onBeforeUnmount(() => {
     window.removeEventListener("keydown", handleEscape);
@@ -581,7 +694,10 @@ onBeforeUnmount(() => {
         mice,
         mouseQuery,
         mouseStatus,
+        mouseQuality,
+        mouseVerification,
         mousePage,
+        mouseSelection,
         brands,
         brandOpen,
         brandQuery,
@@ -593,6 +709,7 @@ onBeforeUnmount(() => {
         imageUploading,
         imageError,
         showImageLibrary,
+        imageEditorSource,
         importFileInput,
         importFile,
         importPreview,
@@ -602,6 +719,8 @@ onBeforeUnmount(() => {
         userStatus,
         userRole,
         userPage,
+        userSelection,
+        userDetail,
         expandedUserId,
         managedUser,
         userStatusReason,
@@ -611,12 +730,17 @@ onBeforeUnmount(() => {
         reviewStatus,
         reviewQuery,
         reviewPage,
-        expandedReviewId,
+        reviewSelection,
+        selectedReview,
         moderationReason,
         audits,
         auditQuery,
         auditEntityType,
         auditPage,
+        auditAction,
+        auditFrom,
+        auditTo,
+        selectedAudit,
         editingId,
         showEditor,
         initial,
@@ -640,6 +764,9 @@ onBeforeUnmount(() => {
         loadImages,
         toggleImageLibrary,
         uploadImage,
+        editCurrentImage,
+        cancelImageEditor,
+        saveEditedImage,
         selectImage,
         removeImage,
         deleteImage,
@@ -658,16 +785,23 @@ onBeforeUnmount(() => {
         editMouse,
         saveMouse,
         changeMouseStatus,
+        updateVerification,
+        openMouseQueue,
+        openReviewQueue,
+        batchStatus,
         changeUserStatus,
         changeUserRole,
         toggleUserAction,
         closeUserAction,
-        toggleReviewDetails,
+        openReviewDetails,
+        closeReviewDetails,
         moderateReview,
         actionLabel,
+        selectAudit,
+        closeAudit,
+        formatAuditState,
         statusLabel,
         gripLabel,
-        supportLabel,
         handleEscape,
     };
 };

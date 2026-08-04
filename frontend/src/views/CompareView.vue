@@ -177,7 +177,7 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(searchTimer); clearTimeout(
           <div class="empty-cross">↔</div><p class="eyebrow">READY WHEN YOU ARE</p><h2>选择一款鼠标查看参数</h2><p>已选择的鼠标会固定在左侧，继续搜索即可添加。</p>
         </section>
         <section class="comparison-wrap" v-else>
-          <div class="matrix-toolbar"><div><p class="eyebrow">LIVE COMPARISON</p><h2>参数矩阵</h2></div><label class="difference-toggle"><input v-model="onlyDifference" type="checkbox"><span>仅显示差异</span></label></div>
+          <div class="matrix-toolbar"><div><p class="eyebrow">LIVE COMPARISON</p><h2>参数矩阵</h2><p class="mobile-scroll-hint">左右滑动查看全部参数</p></div><label class="difference-toggle"><input v-model="onlyDifference" type="checkbox"><span>仅显示差异</span></label></div>
           <table class="comparison-table"><thead><tr><th class="parameter-column">参数</th><th v-for="(item,index) in comparison.items" :key="item.id"><span class="channel-label">CH {{ String(index + 1).padStart(2,'0') }}</span><strong>{{ item.model }}</strong><small>{{ item.brand }}</small><button class="compare-remove-inline" type="button" @click="remove(item.id)">移除</button></th></tr></thead><tbody><tr v-for="row in visibleRows" :key="row.group + row.label"><th><span>{{ row.group }}</span><strong>{{ row.label }}</strong><small>{{ row.unit }}</small></th><td v-for="(cell,index) in row.cells" :key="index"><strong>{{ cell.value }}</strong><em v-if="cell.delta" :class="{ positive: cell.delta.startsWith('+') }">{{ cell.delta }}</em></td></tr></tbody></table>
         </section>
       </div>

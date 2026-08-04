@@ -1,59 +1,72 @@
 import { defineStore } from 'pinia'
-import api from '../api/client'
+import api, { clearStoredSession, getAccessToken, refreshAccessToken, setAccessToken } from '../api/client'
+
+// Access tokens are intentionally session-scoped; discard credentials left by older releases.
+if (typeof window !== 'undefined') {
+  for (const key of ['clicker.token', 'clicker.admin.token']) localStorage.removeItem(key)
+}
 
 const parseUser = (key) => {
-  try { return JSON.parse(localStorage.getItem(key) || 'null') } catch { return null }
+  try { return JSON.parse(sessionStorage.getItem(key) || 'null') } catch { return null }
 }
 
-const migrateLegacyAdminSession = () => {
-  const legacyUser = parseUser('clicker.user')
-  const legacyToken = localStorage.getItem('clicker.token')
-  if (legacyUser?.role === 'ADMIN' && legacyToken && !localStorage.getItem('clicker.admin.token')) {
-    localStorage.setItem('clicker.admin.token', legacyToken)
-    localStorage.setItem('clicker.admin.user', JSON.stringify(legacyUser))
-    localStorage.removeItem('clicker.token')
-    localStorage.removeItem('clicker.user')
-  }
-}
-migrateLegacyAdminSession()
-
-const createAuthStore = (id, storagePrefix, migrateLegacyAdmin = false) => defineStore(id, {
-  state: () => {
-    let token = localStorage.getItem(`${storagePrefix}.token`) || ''
-    let user = parseUser(`${storagePrefix}.user`)
-    if (migrateLegacyAdmin && !token && parseUser('clicker.user')?.role === 'ADMIN') {
-      token = localStorage.getItem('clicker.token') || ''
-      user = parseUser('clicker.user')
-      if (token) localStorage.setItem(`${storagePrefix}.token`, token)
-      if (user) localStorage.setItem(`${storagePrefix}.user`, JSON.stringify(user))
-      localStorage.removeItem('clicker.token'); localStorage.removeItem('clicker.user')
-    }
-    return { token, user }
-  },
+const createAuthStore = (id, storagePrefix) => defineStore(id, {
+  state: () => ({
+    token: getAccessToken(storagePrefix),
+    user: parseUser(`${storagePrefix}.user`),
+    pendingChallenge: null,
+    restoring: false
+  }),
   getters: {
     authenticated: (state) => Boolean(state.token && state.user),
     admin: (state) => state.user?.role === 'ADMIN'
   },
   actions: {
-    async login(payload) { const { data } = await api.post('/sessions', payload); this.persist(data) },
+    async login(payload) {
+      const response = await api.post('/sessions', payload)
+      if (response.status === 202 || response.data?.challengeId) {
+        this.pendingChallenge = response.data
+        return response.data
+      }
+      this.persist(response.data)
+      return response.data
+    },
+    async verifyAdminSecondFactor(payload) {
+      const { data } = await api.post('/admin-sessions/verify', payload)
+      this.pendingChallenge = null
+      this.persist(data)
+      return data
+    },
     async sendRegistrationCode(email) { const { data } = await api.post('/registration-verification-codes', { email }); return data },
-    async register(payload) { const { data } = await api.post('/users', payload); this.persist(data) },
+    async register(payload) { const { data } = await api.post('/users', payload); this.persist(data); return data },
     async refresh() {
-      if (!this.token) return
-      try { const { data } = await api.get('/users/me'); this.user = data; localStorage.setItem(`${storagePrefix}.user`, JSON.stringify(data)) }
-      catch { this.logout() }
+      this.restoring = true
+      try {
+        const data = await refreshAccessToken(storagePrefix)
+        this.persist(data)
+        return data
+      } catch {
+        this.clear()
+        return null
+      } finally { this.restoring = false }
     },
     persist(data) {
-      this.token = data.token; this.user = data.user
-      localStorage.setItem(`${storagePrefix}.token`, data.token)
-      localStorage.setItem(`${storagePrefix}.user`, JSON.stringify(data.user))
+      this.token = data?.token || ''
+      this.user = data?.user || null
+      this.pendingChallenge = null
+      setAccessToken(this.token, storagePrefix)
+      if (this.user) sessionStorage.setItem(`${storagePrefix}.user`, JSON.stringify(this.user))
     },
-    logout() {
-      this.token = ''; this.user = null
-      localStorage.removeItem(`${storagePrefix}.token`); localStorage.removeItem(`${storagePrefix}.user`)
+    clear() {
+      this.token = ''; this.user = null; this.pendingChallenge = null
+      clearStoredSession(storagePrefix)
+    },
+    async logout() {
+      try { await api.delete(storagePrefix === 'clicker.admin' ? '/admin-sessions/current' : '/sessions/current') } catch { /* session may already be expired */ }
+      this.clear()
     }
   }
 })
 
 export const useAuthStore = createAuthStore('auth', 'clicker')
-export const useAdminAuthStore = createAuthStore('adminAuth', 'clicker.admin', true)
+export const useAdminAuthStore = createAuthStore('adminAuth', 'clicker.admin')

@@ -3,9 +3,9 @@ defineOptions({ name: 'LeaderboardView' })
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import api, { errorMessage } from '../api/client'
 
-const sort = ref('overall')
+const sort = ref('comfort')
 const gripStyle = ref('')
-const displayedSort = ref('overall')
+const displayedSort = ref('comfort')
 const displayedGripStyle = ref('')
 const data = ref({ items: [], globalAverage: 7, priorSampleSize: 20, totalReviews: 0 })
 const loading = ref(false)
@@ -32,14 +32,7 @@ const playIntro = async () => {
   })
 }
 
-const sortOptions = [
-  { value: 'overall', label: '综合评分', note: '五项加权' },
-  { value: 'comfort', label: '握持舒适', note: 'Comfort' },
-  { value: 'click', label: '按键手感', note: 'Click' },
-  { value: 'scroll', label: '滚轮手感', note: 'Scroll' },
-  { value: 'build', label: '做工质量', note: 'Build' },
-  { value: 'coating', label: '涂层质感', note: 'Coating' }
-]
+const sortOptions = [{ value: 'comfort', label: '握持舒适', note: 'Comfort' }]
 const displayedOption = computed(() => sortOptions.find(option => option.value === displayedSort.value) || sortOptions[0])
 const gripOptions = [
   { value: '', label: '全部握姿', note: 'ALL GRIPS' },
@@ -58,11 +51,11 @@ const scoreText = (value) => Number(value || 0).toFixed(1)
 const load = async () => {
   const sequence = ++requestSequence
   const requestedSort = sort.value
-  const requestedGripStyle = requestedSort === 'comfort' ? gripStyle.value : ''
+  const requestedGripStyle = gripStyle.value
   loading.value = true; error.value = ''
   try {
     const params = { dimension: requestedSort }
-    if (requestedSort === 'comfort' && requestedGripStyle) params.gripStyle = requestedGripStyle
+    if (requestedGripStyle) params.gripStyle = requestedGripStyle
     const response = (await api.get('/mouse-rankings', { params })).data
     if (sequence !== requestSequence) return
     data.value = response
@@ -79,8 +72,7 @@ const load = async () => {
     }
   }
 }
-watch(sort, value => { if (value !== 'comfort') gripStyle.value = ''; load() })
-watch(gripStyle, () => { if (sort.value === 'comfort') load() })
+watch(gripStyle, load)
 onMounted(() => {
   contentReadyTimer = window.setTimeout(() => { contentReady.value = true }, 190)
   initialLoadTimer = window.setTimeout(load, 220)
@@ -96,8 +88,8 @@ onBeforeUnmount(() => { requestSequence++; clearTimeout(initialLoadTimer); clear
       <div class="leaderboard-hero-copy">
         <p class="eyebrow">TRUST-WEIGHTED INDEX / 2026</p>
         <h1 class="visually-hidden">鼠标排行榜</h1>
-        <p class="leaderboard-lead">每项评分都会按样本量进行可信度校准。评价越少，分数越接近全站基准；评价越多，排名越接近真实口碑。</p>
-        <div class="leaderboard-stats"><div><strong>{{ data.items.length }}</strong><span>已收录鼠标</span></div><div><strong>{{ data.totalReviews }}</strong><span>有效评价</span></div><div><strong>{{ data.priorSampleSize }}</strong><span>先验样本量</span></div></div>
+        <p class="leaderboard-lead">握姿舒适度会按样本量进行可信度校准。评价越少，分数越接近全站基准；评价越多，排名越接近真实口碑。</p>
+        <div class="leaderboard-stats"><div><strong>{{ data.items.length }}</strong><span>已收录鼠标</span></div><div><strong>{{ data.totalReviews }}</strong><span>有效舒适评分</span></div><div><strong>{{ data.priorSampleSize }}</strong><span>先验样本量</span></div></div>
       </div>
       <aside class="calibration-card">
         <div class="calibration-orbit"><span>μ</span><i></i><b></b></div>
@@ -110,14 +102,11 @@ onBeforeUnmount(() => { requestSequence++; clearTimeout(initialLoadTimer); clear
         <div>
           <p class="eyebrow">RANKING MODE</p>
           <Transition name="ranking-heading" mode="out-in">
-            <h2 :key="resultKey">{{ displayedOption.label }}<span v-if="displayedSort === 'comfort'"> · {{ displayedGrip.label }}</span></h2>
+            <h2 :key="resultKey">{{ displayedOption.label }} · {{ displayedGrip.label }}</h2>
           </Transition>
         </div>
-        <div class="leaderboard-tabs" role="tablist" aria-label="排行榜维度">
-          <button v-for="option in sortOptions" :key="option.value" type="button" role="tab" :aria-selected="sort === option.value" :class="{ active: sort === option.value }" @click="sort = option.value"><span>{{ option.label }}</span><small>{{ option.note }}</small></button>
-        </div>
       </div>
-      <div v-if="sort === 'comfort'" class="grip-tabs" role="tablist" aria-label="握姿分类">
+      <div class="grip-tabs" role="tablist" aria-label="握姿分类">
         <span>COMFORT BY GRIP</span>
         <button v-for="option in gripOptions" :key="option.value || 'all'" type="button" role="tab" :aria-selected="gripStyle === option.value" :class="{ active: gripStyle === option.value }" @click="gripStyle = option.value"><b>{{ option.label }}</b><small>{{ option.note }}</small></button>
       </div>
@@ -132,7 +121,7 @@ onBeforeUnmount(() => { requestSequence++; clearTimeout(initialLoadTimer); clear
               <article v-for="(item, index) in podium" :key="item.mouse.id" class="podium-card" :class="`podium-${index + 1}`" :style="{ '--ranking-delay': `${index * 38}ms` }">
             <div class="podium-rank"><span>{{ String(index + 1).padStart(2, '0') }}</span><i>{{ index === 0 ? 'TOP SIGNAL' : 'RANKED' }}</i></div>
             <div class="podium-product"><img v-if="imageUrl(item.mouse)" :src="imageUrl(item.mouse)" :alt="mouseName(item.mouse)"><div v-else class="podium-placeholder">{{ item.mouse.brand?.slice(0, 1) || 'M' }}</div></div>
-            <div class="podium-copy"><span>{{ item.mouse.brand }}</span><h3><RouterLink :to="`/mice/${item.mouse.id}`">{{ mouseName(item.mouse) }}</RouterLink></h3><div class="podium-score"><strong>{{ scoreText(item.score) }}</strong><small>/ 10.0 · {{ item.sampleCount }} 份评价</small></div></div>
+            <div class="podium-copy"><span>{{ item.mouse.brand }}</span><h3><RouterLink :to="`/mice/${item.mouse.id}`">{{ mouseName(item.mouse) }}</RouterLink></h3><div class="podium-score"><strong>{{ scoreText(item.score) }}</strong><small>/ 10.0 · {{ item.sampleCount }} 份握姿评分</small></div></div>
               </article>
             </div>
 
@@ -143,7 +132,7 @@ onBeforeUnmount(() => { requestSequence++; clearTimeout(initialLoadTimer); clear
             <div class="ranking-identity"><div class="ranking-thumb"><img v-if="imageUrl(item.mouse)" :src="imageUrl(item.mouse)" :alt="mouseName(item.mouse)"><span v-else>{{ item.mouse.brand?.slice(0, 1) || 'M' }}</span></div><div><span>{{ item.mouse.brand }}</span><h3><RouterLink :to="`/mice/${item.mouse.id}`">{{ mouseName(item.mouse) }}</RouterLink></h3></div></div>
             <div class="ranking-score"><strong>{{ scoreText(item.score) }}</strong><i><b :style="{ '--score-scale': Math.min(1, Number(item.score || 0) / 10) }"></b></i><small>原始 {{ scoreText(item.rawScore) }}</small></div>
             <div class="ranking-evidence"><strong>{{ item.sampleCount }} <small>份</small></strong><span>{{ item.lowSample ? '仍在积累' : '样本稳定' }}</span></div>
-            <div class="ranking-state" :class="{ stable: !item.lowSample }"><span>{{ item.lowSample ? '先验校准中' : '高可信度' }}</span><small>{{ item.dimensionSamples[displayedSort === 'overall' ? 'comfort' : displayedSort] || 0 }} 条当前项</small></div>
+            <div class="ranking-state" :class="{ stable: !item.lowSample }"><span>{{ item.lowSample ? '先验校准中' : '高可信度' }}</span><small>{{ item.dimensionSamples.comfort || 0 }} 条当前项</small></div>
               </article>
             </div>
             <div v-else-if="!podium.length" class="empty-state leaderboard-empty">暂时还没有已发布的鼠标。</div>
@@ -151,7 +140,7 @@ onBeforeUnmount(() => { requestSequence++; clearTimeout(initialLoadTimer); clear
         </Transition>
       </div>
       <Transition name="ranking-heading" mode="out-in">
-        <p :key="resultKey" class="leaderboard-footnote">当前排序：{{ displayedOption.label }}<span v-if="displayedSort === 'comfort'"> / {{ displayedGrip.label }}</span>。校准基准为全站各项均值 {{ scoreText(data.globalAverage) }} / 10；排名不是广告位，评价数据会实时更新。</p>
+        <p :key="resultKey" class="leaderboard-footnote">当前排序：{{ displayedOption.label }} / {{ displayedGrip.label }}。校准基准为全站握姿舒适均值 {{ scoreText(data.globalAverage) }} / 10；排名不是广告位，评价数据会实时更新。</p>
       </Transition>
     </section>
   </main>

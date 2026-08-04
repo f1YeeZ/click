@@ -26,7 +26,8 @@ public final class MouseDtos {
             Integer switchLifeSpanM, String encoderType, Integer encoderSteps, String purchaseChannels, String imageUrl,
             BigDecimal averageScore, long reviewCount, boolean lowReviewSample,
             int dataQualityPercent, boolean publicationReady, List<String> missingPublicationFields,
-            String verificationStatus) {
+            String verificationStatus, String verificationWorkflowStatus, String verificationAssignee,
+            String verificationNote, OffsetDateTime verificationDueAt) {
         public static MouseView from(MouseDevice mouse) {
             return from(mouse, BigDecimal.ZERO, 0);
         }
@@ -48,7 +49,9 @@ public final class MouseDtos {
                     mouse.getSwitchLifeSpanM(), mouse.getEncoderType(), mouse.getEncoderSteps(), mouse.getPurchaseChannels(), mouse.getImageUrl(),
                     averageScore == null ? BigDecimal.ZERO : averageScore, reviewCount, reviewCount < 5,
                     MouseDataQuality.qualityPercent(mouse), missing.isEmpty(), missing,
-                    MouseDataQuality.verificationStatus(mouse));
+                    MouseDataQuality.verificationStatus(mouse),
+                    mouse.getVerificationWorkflowStatus() == null ? "OPEN" : mouse.getVerificationWorkflowStatus(),
+                    mouse.getVerificationAssignee(), mouse.getVerificationNote(), mouse.getVerificationDueAt());
         }
     }
 

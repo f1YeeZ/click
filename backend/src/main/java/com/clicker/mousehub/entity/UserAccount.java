@@ -17,6 +17,7 @@ public class UserAccount {
     private String passwordHash;
     private String role;
     private String status;
+    private Long tokenVersion;
     private String handSize;
     private BigDecimal handLengthCm;
     private String preferredGripStyle;
@@ -41,6 +42,8 @@ public class UserAccount {
     public void setRole(String role) { this.role = role; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public Long getTokenVersion() { return tokenVersion == null ? 0L : tokenVersion; }
+    public void setTokenVersion(Long tokenVersion) { this.tokenVersion = tokenVersion; }
     public String getHandSize() { return handSize; }
     public void setHandSize(String handSize) { this.handSize = handSize; }
     public BigDecimal getHandLengthCm() { return handLengthCm; }

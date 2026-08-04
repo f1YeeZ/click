@@ -211,6 +211,8 @@
   top: 64px;
   height: calc(100vh - 64px);
   padding: 34px 20px 22px;
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid #353535;
   background: linear-gradient(180deg, #111111, #0b0b0b);
   overflow: auto;
@@ -276,10 +278,7 @@
   box-shadow: inset 3px 0 var(--acid);
 }
 .sidebar-foot {
-  position: absolute;
-  left: 20px;
-  right: 20px;
-  bottom: 24px;
+  margin-top: auto;
   padding-top: 18px;
   border-top: 1px solid #333333;
   color: #c2c2c2;
@@ -1145,4 +1144,3 @@ body:after {
     transform: none;
   }
 }
-

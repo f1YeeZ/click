@@ -59,6 +59,10 @@ public class MouseDevice {
     private String primarySourceUrl;
     private String sourceNotes;
     private OffsetDateTime verifiedAt;
+    private String verificationWorkflowStatus;
+    private String verificationAssignee;
+    private String verificationNote;
+    private OffsetDateTime verificationDueAt;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 
@@ -160,6 +164,14 @@ public class MouseDevice {
     public void setSourceNotes(String sourceNotes) { this.sourceNotes = sourceNotes; }
     public OffsetDateTime getVerifiedAt() { return verifiedAt; }
     public void setVerifiedAt(OffsetDateTime verifiedAt) { this.verifiedAt = verifiedAt; }
+    public String getVerificationWorkflowStatus() { return verificationWorkflowStatus; }
+    public void setVerificationWorkflowStatus(String value) { this.verificationWorkflowStatus = value; }
+    public String getVerificationAssignee() { return verificationAssignee; }
+    public void setVerificationAssignee(String value) { this.verificationAssignee = value; }
+    public String getVerificationNote() { return verificationNote; }
+    public void setVerificationNote(String value) { this.verificationNote = value; }
+    public OffsetDateTime getVerificationDueAt() { return verificationDueAt; }
+    public void setVerificationDueAt(OffsetDateTime value) { this.verificationDueAt = value; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }

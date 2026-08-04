@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import { readStoredJson } from '../utils/storage'
+import { refreshAccessToken, clearStoredSession } from '../api/client'
 
 const MiceView = () => import('../views/MiceView.vue')
 const MouseDetailView = () => import('../views/MouseDetailView.vue')
@@ -36,11 +37,20 @@ const router = createRouter({
   scrollBehavior: () => ({ top: 0, left: 0, behavior: 'instant' })
 })
 
-router.beforeEach((to) => {
-  if (to.meta.requiresAuth && !localStorage.getItem('clicker.token')) return '/login'
+router.beforeEach(async (to) => {
+  if (to.meta.requiresAuth && (!sessionStorage.getItem('clicker.token') || !sessionStorage.getItem('clicker.user'))) {
+    try { await refreshAccessToken('clicker') } catch { return '/login' }
+  }
   if (to.meta.requiresAdmin) {
-    const user = readStoredJson(localStorage, 'clicker.admin.user')
-    if (user?.role !== 'ADMIN') return '/admin/login'
+    let token = sessionStorage.getItem('clicker.admin.token')
+    let user = readStoredJson(sessionStorage, 'clicker.admin.user')
+    if (!token) {
+      try { const data = await refreshAccessToken('clicker.admin'); token = data.token; user = data.user } catch { /* handled below */ }
+    }
+    if (!token || user?.role !== 'ADMIN') {
+      clearStoredSession('clicker.admin')
+      return '/admin/login'
+    }
   }
 })
 

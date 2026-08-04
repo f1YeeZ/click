@@ -14,6 +14,7 @@ import org.springframework.http.HttpHeaders;
 import com.clicker.mousehub.dto.MouseImportDtos.*;
 
 import java.net.URI;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @RestController
@@ -31,8 +32,12 @@ public class AdminController {
     @GetMapping("/brands") public java.util.List<String> brands() { return admin.brands(); }
     @GetMapping("/mice") public PageResponse<MouseView> mice(@RequestParam(required = false) String q,
                                                                @RequestParam(required = false) String status,
+                                                               @RequestParam(required = false) String quality,
+                                                               @RequestParam(required = false) String verification,
+                                                               @RequestParam(required = false) String workflow,
+                                                               @RequestParam(required = false) String assignee,
                                                                @RequestParam(defaultValue = "1") long page,
-                                                               @RequestParam(defaultValue = "12") long pageSize) { return admin.mice(q, status, page, pageSize); }
+                                                               @RequestParam(defaultValue = "12") long pageSize) { return admin.mice(q, status, quality, verification, workflow, assignee, page, pageSize); }
     @PostMapping("/mice")
     public ResponseEntity<MouseView> create(@Valid @RequestBody MouseCreateRequest request) {
         MouseView mouse = mice.create(request);
@@ -65,8 +70,12 @@ public class AdminController {
     @PatchMapping("/reviews/{id}") public AdminReviewView reviewStatus(@PathVariable UUID id, @Valid @RequestBody ModerationRequest request) { return admin.updateReviewStatus(id, request); }
     @GetMapping("/audit-logs") public PageResponse<AuditLogView> auditLogs(@RequestParam(required = false) String q,
                                                                              @RequestParam(required = false) String entityType,
+                                                                             @RequestParam(required = false) String action,
+                                                                             @RequestParam(required = false) OffsetDateTime from,
+                                                                             @RequestParam(required = false) OffsetDateTime to,
                                                                              @RequestParam(defaultValue = "1") long page,
                                                                              @RequestParam(defaultValue = "12") long pageSize) {
-        return audit.search(q, entityType, page, pageSize);
+        return audit.search(q, entityType, action, from, to, page, pageSize);
     }
+    @GetMapping("/audit-logs/{id}") public AuditLogView auditLog(@PathVariable UUID id) { return audit.detail(id); }
 }

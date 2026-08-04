@@ -24,11 +24,16 @@ clicker_demo/
 - 2～4 款鼠标参数对比与差值计算；
 - 邮箱注册登录、忘记密码、JWT 鉴权和管理员权限；
 - SSE 实时刷新鼠标列表、详情、对比和评价汇总；
-- 固定维度评价、评分分布、修改、软删除和聚合；
+- 分握姿舒适度评价、评分分布、删除和聚合；
 - 手掌支撑位置多选评价与选择率热度聚合；
 - 根据握姿与必要支撑位置进行精确/相近匹配并提供解释的鼠标推荐页；
 - 鼠标草稿、发布前完整性校验、核验过期提示和数据健康度；
-- CSV 预检、幂等导入、图片管理、用户角色与封禁、评价治理和操作审计；
+- 鼠标核验任务分配/完成、批量状态处理、品牌资料维护和品牌名称同步；
+- CSV 预检、幂等导入、导入历史、错误报告下载、图片管理和 CSV 数据导出；
+- 用户详情、登录会话管理、用户角色与封禁、评价治理和操作审计；
+- 运营趋势分析、管理员通知、举报/数据纠错工单及完整处理闭环；
+- 注册、评价提交、维护公告和图片上传上限等运行时设置；
+- 逐条公开评价、评价举报和鼠标数据纠错反馈；
 - MyBatis-Plus Mapper、分页插件和 UUID 类型处理；
 - PostgreSQL 初始化表结构和 8 款演示数据；
 - Vue 响应式首页、鼠标库、详情、对比、登录注册和管理页面；
@@ -110,13 +115,15 @@ $env:MAIL_ENABLED="true"
 在首次启动空数据库前设置：
 
 ```powershell
-$env:APP_SEED_ADMIN_EMAIL="admin@example.com"
+$env:APP_SEED_ADMIN_EMAIL="2111914551@qq.com"
 $env:APP_SEED_ADMIN_PASSWORD="<强密码>"
 ```
 
 然后用该账号在 Vue 登录页登录，即可访问 `/admin`。
 
-正式运营后台支持草稿、发布和归档工作流；CSV 文件会先进行 UTF-8 编码、字段、枚举、文件内重复项和数据库身份冲突预检，确认后才在单个事务中写入。相同文件按 SHA-256 校验和记录，重复提交不会再次创建数据。封禁用户、修改用户角色或停用评价必须填写处理原因；当前管理员、管理员封禁和最后一个正常管理员均有防误操作保护。鼠标、用户、评价、导入和图片删除操作都会写入审计日志。
+本项目的主管理员邮箱为 `2111914551@qq.com`。数据库升级到 V7 时，会将原有的 `admin@example.com` 管理员账号迁移到该邮箱，并注销该账号的旧会话；密码保持不变。新环境应设置 `APP_SEED_ADMIN_EMAIL=2111914551@qq.com`。
+
+正式运营后台支持草稿、发布和归档工作流；CSV 文件会先进行 UTF-8 编码、字段、枚举、文件内重复项和数据库身份冲突预检，确认后才在单个事务中写入。相同文件按 SHA-256 校验和记录，重复提交不会再次创建数据。管理员可查看导入历史、下载失败明细、导出业务数据，处理品牌资料、核验任务、反馈工单、通知和活跃会话。封禁用户、修改用户角色或停用评价必须填写处理原因；当前管理员、管理员封禁和最后一个正常管理员均有防误操作保护。鼠标、用户、评价、导入、品牌、设置和工单操作都会写入审计日志。
 
 ## 构建与测试
 
@@ -164,22 +171,41 @@ CI 会自动启动 Vite，并执行单元测试、生产构建与浏览器冒烟
 | GET | `/api/v1/events` | 公开的低敏 SSE 资源变更事件流 |
 | GET | `/api/v1/mice` | 搜索、筛选和分页 |
 | GET | `/api/v1/mice/{id}` | 按 UUID 获取鼠标详情和评价汇总 |
+| GET | `/api/v1/mice/{id}/reviews` | 获取该鼠标的公开逐条评价 |
 | GET | `/api/v1/mouse-comparisons?mouseIds=...` | 参数对比，最多 4 个 UUID |
-| GET | `/api/v1/mouse-rankings?dimension=...` | 按评分维度获取排行榜 |
+| GET | `/api/v1/mouse-rankings?dimension=comfort&gripStyle=...` | 按握姿舒适度获取排行榜 |
 | GET | `/api/v1/mouse-recommendations` | 按握姿和支撑位置推荐鼠标 |
-| GET/PUT/DELETE | `/api/v1/mice/{id}/reviews/mine` | 当前用户对该鼠标的评价 |
+| GET/DELETE | `/api/v1/mice/{id}/reviews/mine` | 获取或删除当前用户对该鼠标的评价 |
+| PUT/DELETE | `/api/v1/mice/{id}/reviews/mine/grip-scores/{gripStyle}` | 保存或删除指定握姿的舒适度评分 |
+| PUT | `/api/v1/mice/{id}/reviews/mine/support-positions` | 保存手掌支撑位置 |
 | PUT | `/api/v1/mice/{id}/reviews/mine/support-positions` | 保存当前用户的手掌支撑位置（可多选） |
 | GET | `/api/v1/mice/{id}/support-summary` | 获取各支撑位置的选择人数与选择率 |
+| POST | `/api/v1/reports` | 登录用户提交评价举报或鼠标数据纠错 |
+| GET | `/api/v1/config` | 获取公告、注册/评价开关和上传上限等公开设置 |
 | POST | `/api/v1/admin/mice` | 管理员新增鼠标 |
 | PUT/PATCH | `/api/v1/admin/mice/{id}` | 完整更新鼠标或局部更新状态 |
 | GET | `/api/v1/admin/mice/import-template` | 下载带 UTF-8 BOM 的 CSV 模板 |
 | POST | `/api/v1/admin/mice/imports/preview` | 预检 CSV，不写入数据库 |
 | POST | `/api/v1/admin/mice/imports` | 校验预检文件后事务导入 |
+| GET | `/api/v1/admin/mice/imports` | 分页查看导入历史 |
+| GET | `/api/v1/admin/mice/imports/{checksum}/errors` | 下载导入失败明细 CSV |
+| PATCH | `/api/v1/admin/mice/{id}/verification` | 分配或完成鼠标数据核验 |
+| POST | `/api/v1/admin/mice/batch-status` | 批量更新鼠标状态 |
 | GET/PATCH | `/api/v1/admin/users`、`/api/v1/admin/users/{id}` | 按状态/角色查询用户及封禁、解封 |
+| GET | `/api/v1/admin/users/{id}/detail` | 获取用户资料、评价和会话摘要 |
 | PATCH | `/api/v1/admin/users/{id}/role` | 调整普通用户/管理员角色，原因必填 |
+| POST | `/api/v1/admin/users/batch-status` | 批量更新用户状态 |
 | GET/PATCH | `/api/v1/admin/reviews`、`/api/v1/admin/reviews/{id}` | 查询评价明细及执行治理 |
+| POST | `/api/v1/admin/reviews/batch-status` | 批量更新评价状态 |
 | GET | `/api/v1/admin/audit-logs` | 搜索管理员操作审计日志 |
 | GET/POST/DELETE | `/api/v1/admin/images`、`/api/v1/admin/images/{filename}` | 管理图片；被引用图片禁止删除 |
+| GET/POST/PUT | `/api/v1/admin/brand-profiles` | 查询、新增和更新品牌资料 |
+| GET | `/api/v1/admin/analytics` | 获取运营趋势和汇总指标 |
+| GET/PATCH | `/api/v1/admin/reports`、`/api/v1/admin/reports/{id}` | 查询并处理举报/数据纠错工单 |
+| GET/PATCH/POST | `/api/v1/admin/notifications` | 查询、单条已读和全部已读通知 |
+| GET/PUT | `/api/v1/admin/settings`、`/api/v1/admin/settings/{key}` | 查询和修改运行时设置 |
+| GET/DELETE | `/api/v1/admin/sessions`、`/api/v1/admin/sessions/{id}` | 查询并撤销活跃登录会话 |
+| GET | `/api/v1/admin/exports/{type}` | 导出鼠标、用户、评价或工单 CSV |
 
 ## 实时更新与安全配置
 
@@ -187,8 +213,8 @@ SSE 事件只包含事件类型、鼠标 ID 和发生时间；浏览器收到事
 
 JWT 默认有效期为 24 小时，并校验 `issuer`、`audience` 和唯一 `jti`；生产环境必须设置独立的强随机 `JWT_SECRET`。CORS 只接受 `CORS_ALLOWED_ORIGINS` 中的明确来源，不允许 `*`。登录、注册验证码、注册和改密接口已按 IP 限流；单机部署使用内存窗口，多实例部署时应将限流状态迁移到 Redis 或网关。
 
-## 当前暂未实现
+## 当前边界
 
-- 评价持有验证、用户举报与逐条公开评价；
-- 收藏、订阅和数据纠错反馈；
-- 鼠标轮廓、轮廓叠加和 3D 鼠标模型（当前产品范围明确排除）。
+- 按用户、资源和动作配置的精细权限暂不实现；后台目前统一使用管理员角色。
+- 收藏、订阅、评价持有凭证认证和第三方登录属于后续公共产品能力，不在本轮后台运营补全范围内。
+- 鼠标轮廓、轮廓叠加和 3D 鼠标模型仍按产品范围排除。

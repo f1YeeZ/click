@@ -31,14 +31,17 @@ public class ImageStorageService {
     private final long maxSizeBytes;
     private final MouseMapper mice;
     private final AuditLogService audit;
+    private final SystemSettingService settings;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ImageStorageService(@Value("${app.images.storage-path:data/mouse-images}") String storagePath,
                                @Value("${app.images.max-size-bytes:5242880}") long maxSizeBytes,
-                               MouseMapper mice, AuditLogService audit) {
+                               MouseMapper mice, AuditLogService audit, SystemSettingService settings) {
         this.storage = resolveProjectPath(storagePath);
         this.maxSizeBytes = maxSizeBytes;
         this.mice = mice;
         this.audit = audit;
+        this.settings = settings;
         try {
             Files.createDirectories(storage);
         } catch (IOException exception) {
@@ -46,9 +49,17 @@ public class ImageStorageService {
         }
     }
 
+    public ImageStorageService(String storagePath, long maxSizeBytes, MouseMapper mice, AuditLogService audit) {
+        this.storage = resolveProjectPath(storagePath); this.maxSizeBytes = maxSizeBytes; this.mice = mice; this.audit = audit; this.settings = null;
+        try { Files.createDirectories(storage); } catch (IOException exception) { throw new IllegalStateException("无法创建鼠标图片目录", exception); }
+    }
+
     public ImageAsset store(MultipartFile file) {
         if (file == null || file.isEmpty()) throw invalid("请选择图片文件");
-        if (file.getSize() > maxSizeBytes) throw invalid("图片大小不能超过 5 MB");
+        long configuredMb;
+        try { configuredMb = settings == null ? Math.max(1, maxSizeBytes / 1024 / 1024) : Long.parseLong(settings.value("upload.max-mb")); } catch (NumberFormatException ignored) { configuredMb = 5; }
+        long effectiveMax = Math.min(maxSizeBytes, configuredMb * 1024 * 1024);
+        if (file.getSize() > effectiveMax) throw invalid("图片大小不能超过 " + Math.max(1, effectiveMax / 1024 / 1024) + " MB");
         String extension = extension(file.getOriginalFilename());
         if (!EXTENSIONS.contains(extension)) throw invalid("仅支持 PNG、JPEG 和 WebP 图片");
         try {

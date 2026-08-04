@@ -3,6 +3,8 @@ package com.clicker.mousehub.dto;
 import com.clicker.mousehub.entity.Review;
 import com.clicker.mousehub.entity.UserAccount;
 import com.clicker.mousehub.entity.AuditLog;
+import com.clicker.mousehub.dto.ReviewDtos.SupportCell;
+import com.clicker.mousehub.dto.ReviewDtos.SupportDab;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -32,17 +34,16 @@ public final class AdminDtos {
     }
 
     public record AdminReviewView(UUID id, UUID userId, UUID mouseId, String userEmail, String mouseName,
-                                  String status, String gripStyle, String handSize, String usageDuration,
-                                  java.math.BigDecimal overallScore, Integer comfortScore, Integer clickScore,
-                                  Integer scrollScore, Integer buildScore, Integer valueScore, Integer coatingScore,
+                                  String status, String handSize, java.math.BigDecimal comfortAverage,
                                   List<GripScoreView> gripScores, List<String> supportPositions,
+                                  List<SupportCell> supportCells, List<SupportDab> supportDabs,
                                   String moderationReason, String moderatedBy, OffsetDateTime moderatedAt,
                                   OffsetDateTime createdAt) {
         public static AdminReviewView from(Review review, String userEmail, String mouseName) {
             return new AdminReviewView(review.getId(), review.getUserId(), review.getMouseId(), userEmail, mouseName,
-                    review.getStatus(), review.getGripStyle(), review.getHandSize(), review.getUsageDuration(), review.getOverallScore(),
-                    review.getComfortScore(), review.getClickScore(), review.getScrollScore(), review.getBuildScore(),
-                    review.getValueScore(), review.getCoatingScore(), List.of(), List.of(), review.getModerationReason(),
+                    review.getStatus(), review.getHandSize(), review.getComfortScore() == null ? java.math.BigDecimal.ZERO
+                            : java.math.BigDecimal.valueOf(review.getComfortScore()).setScale(1),
+                    List.of(), List.of(), List.of(), List.of(), review.getModerationReason(),
                     review.getModeratedBy(), review.getModeratedAt(), review.getCreatedAt());
         }
     }

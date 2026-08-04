@@ -48,18 +48,32 @@ public class MouseImportService {
     private final MouseService mouseService;
     private final AuditLogService audit;
     private final Validator validator;
+    private final AdminNotificationService notifications;
 
     public MouseImportService(MouseMapper mice, MouseImportJobMapper jobs, MouseService mouseService,
-                              AuditLogService audit, Validator validator) {
+                              AuditLogService audit, Validator validator, AdminNotificationService notifications) {
         this.mice = mice;
         this.jobs = jobs;
         this.mouseService = mouseService;
         this.audit = audit;
         this.validator = validator;
+        this.notifications = notifications;
     }
 
+    @Transactional
     public ImportPreview preview(MultipartFile file) {
         ParsedBatch batch = analyze(file);
+        MouseImportJob existing = jobs.selectById(batch.checksum());
+        if (existing == null || !"COMPLETED".equals(existing.getStatus())) {
+            MouseImportJob job = existing == null ? new MouseImportJob() : existing;
+            job.setChecksum(batch.checksum()); job.setFilename(batch.filename()); job.setActorEmail(audit.currentActor());
+            job.setTotalCount(batch.total()); job.setCreatedCount(0); job.setUpdatedCount(0);
+            job.setStatus(batch.errors().isEmpty() && !batch.rows().isEmpty() ? "PREVIEW_READY" : "PREVIEW_FAILED");
+            job.setErrorReport(errorReport(batch.errors())); job.setCreatedAt(existing == null ? OffsetDateTime.now() : existing.getCreatedAt());
+            if (existing == null) jobs.insert(job); else jobs.updateById(job);
+            if (!batch.errors().isEmpty()) notifications.create("IMPORT_FAILED", "CSV 预检失败",
+                    batch.filename() + " · " + batch.errors().size() + " 个问题", "MOUSE_IMPORT", batch.checksum());
+        }
         return batch.preview();
     }
 
@@ -70,7 +84,7 @@ public class MouseImportService {
             throw new BusinessException("IMPORT_FILE_CHANGED", "导入文件与预检文件不一致，请重新预检", HttpStatus.CONFLICT);
         }
         MouseImportJob existing = jobs.selectById(batch.checksum());
-        if (existing != null) {
+        if (existing != null && "COMPLETED".equals(existing.getStatus())) {
             return new ImportResult(existing.getChecksum(), existing.getCreatedCount(), existing.getUpdatedCount(), true);
         }
         if (!batch.errors().isEmpty() || batch.rows().isEmpty()) {
@@ -88,19 +102,30 @@ public class MouseImportService {
                 updated++;
             }
         }
-        MouseImportJob job = new MouseImportJob();
+        MouseImportJob job = existing == null ? new MouseImportJob() : existing;
         job.setChecksum(batch.checksum());
         job.setFilename(batch.filename());
         job.setActorEmail(audit.currentActor());
         job.setCreatedCount(created);
         job.setUpdatedCount(updated);
-        job.setCreatedAt(OffsetDateTime.now());
-        jobs.insert(job);
+        job.setTotalCount(batch.total()); job.setStatus("COMPLETED"); job.setErrorReport(null);
+        job.setCreatedAt(existing == null ? OffsetDateTime.now() : existing.getCreatedAt()); job.setCompletedAt(OffsetDateTime.now());
+        if (existing == null) jobs.insert(job); else jobs.updateById(job);
         ImportResult result = new ImportResult(batch.checksum(), created, updated, false);
         audit.record("MOUSE_CSV_IMPORT", "MOUSE_IMPORT", batch.checksum(),
                 "批量导入鼠标：新增 " + created + " 条，更新 " + updated + " 条", null, result, null);
         return result;
     }
+
+    private String errorReport(List<ImportIssue> errors) {
+        if (errors == null || errors.isEmpty()) return null;
+        StringBuilder csv = new StringBuilder("row,field,value,message\r\n");
+        for (ImportIssue issue : errors) csv.append(csvCell(issue.row())).append(',').append(csvCell(issue.field())).append(',')
+                .append(csvCell(issue.value())).append(',').append(csvCell(issue.message())).append("\r\n");
+        return csv.toString();
+    }
+
+    private static String csvCell(Object value) { return "\"" + (value == null ? "" : value.toString()).replace("\"", "\"\"") + "\""; }
 
     public byte[] template() {
         try {

@@ -23,7 +23,6 @@ const selectedGrip = ref('')
 const selectedHand = ref('')
 const reviewFiltersInitialized = ref(false)
 const mine = ref(null)
-const baseLoading = ref(false)
 const gripLoading = ref('')
 const supportLoading = ref(false)
 const reviewEditorOpen = ref(false)
@@ -33,9 +32,14 @@ const supportMessage = ref('')
 const supportError = ref('')
 const message = ref('')
 const error = ref('')
-const baseForm = reactive({ clickScore: 8, scrollScore: 8, buildScore: 8, coatingScore: 8 })
+const publicReviews = ref({ items: [], page: { number: 1, totalPages: 1, totalItems: 0 } })
+const reportTarget = ref(null)
+const reportCategory = ref('DATA_ERROR')
+const reportDescription = ref('')
+const reportNotice = ref('')
+const reportLoading = ref(false)
+const reviewSubmissionEnabled = ref(true)
 const gripScores = reactive({ PALM: 8, CLAW: 8, FINGERTIP: 8, MIXED: 8 })
-const hasBase = computed(() => Boolean(mine.value?.baseSubmitted))
 const profileReady = computed(() => Boolean(auth.user?.handLengthCm && auth.user?.preferredGripStyle))
 const submittedGrip = (code) => mine.value?.gripComforts?.find((item) => item.gripStyle === code)
 const supportCoverage = computed(() => supportCoveragePercentage(personalSupportDabs.value))
@@ -44,8 +48,8 @@ const hasSubmittedSupport = computed(() => Boolean(mine.value?.supportDabs?.leng
 const completedGripCount = computed(() => mine.value?.gripComforts?.length || 0)
 const reviewProgressLabel = computed(() => {
   if (!mine.value) return '还没有提交评价'
-  const completed = Number(hasBase.value) + Number(completedGripCount.value > 0) + Number(hasSubmittedSupport.value)
-  return `已完成 ${completed} / 3 类评价`
+  const completed = Number(completedGripCount.value > 0) + Number(hasSubmittedSupport.value)
+  return `已完成 ${completed} / 2 类评价`
 })
 const gripSummaryLabel = computed(() => selectedGrip.value
   ? `${options.value?.gripStyles?.find((item) => item.code === selectedGrip.value)?.label || '当前握姿'}总评`
@@ -53,9 +57,7 @@ const gripSummaryLabel = computed(() => selectedGrip.value
 const distributionRows = (distribution) => Object.entries(distribution || {}).map(([score, count]) => ({
   score: Number(score), count: Number(count),
 })).sort((a, b) => b.score - a.score)
-const baseDistribution = computed(() => distributionRows(summary.value?.baseScoreDistribution))
-const gripDistribution = computed(() => distributionRows(summary.value?.gripScoreDistribution))
-const baseDistributionMax = computed(() => Math.max(1, ...baseDistribution.value.map((item) => item.count)))
+const gripDistribution = computed(() => distributionRows(summary.value?.scoreDistribution))
 const gripDistributionMax = computed(() => Math.max(1, ...gripDistribution.value.map((item) => item.count)))
 const reviewUpdatedLabel = computed(() => summary.value?.lastUpdatedAt
   ? new Date(summary.value.lastUpdatedAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
@@ -87,8 +89,6 @@ const loadMine = async () => {
     const { data } = await api.get(`/mice/${mouse.value.id}/reviews/mine`)
     mine.value = data || null
     if (data) {
-      baseForm.clickScore = data.clickScore || 8; baseForm.scrollScore = data.scrollScore || 8
-      baseForm.buildScore = data.buildScore || 8; baseForm.coatingScore = data.coatingScore || 8
       personalSupportDabs.value = data.supportDabs?.length
         ? [...data.supportDabs]
         : legacyCellsToDabs(data.supportCells || [])
@@ -106,6 +106,24 @@ const loadSupportSummary = async (params = reviewFilterParams()) => {
   if (!mouse.value) return
   supportSummary.value = (await api.get(`/mice/${mouse.value.id}/support-summary?${params}`)).data
 }
+const loadPublicReviews = async (page = 1) => {
+  if (!mouse.value) return
+  publicReviews.value = (await api.get(`/mice/${mouse.value.id}/reviews`, { params: { page } })).data
+}
+const openReport = (targetType, targetId) => {
+  reportTarget.value = { targetType, targetId }
+  reportCategory.value = targetType === 'MOUSE' ? 'DATA_ERROR' : 'INAPPROPRIATE'
+  reportDescription.value = ''; reportNotice.value = ''
+}
+const submitReport = async () => {
+  if (!reportTarget.value || !reportDescription.value.trim()) return
+  reportLoading.value = true
+  try {
+    await api.post('/reports', { ...reportTarget.value, category: reportCategory.value, description: reportDescription.value.trim() })
+    reportNotice.value = '反馈已提交，管理员处理后会保留完整记录'
+    reportDescription.value = ''; reportTarget.value = null
+  } catch (e) { error.value = errorMessage(e) } finally { reportLoading.value = false }
+}
 const initializeReviewFilters = () => {
   if (reviewFiltersInitialized.value) return
   if (matchingHandOption.value) selectedHand.value = matchingHandOption.value.code
@@ -114,13 +132,14 @@ const initializeReviewFilters = () => {
 const load = async () => {
   error.value = ''
   try {
-    const [{ data }, optionResponse] = await Promise.all([api.get(`/mice/${route.params.id}`), api.get('/review-options')])
+    const [{ data }, optionResponse, configResponse] = await Promise.all([api.get(`/mice/${route.params.id}`), api.get('/review-options'), api.get('/config')])
     mouse.value = data.mouse; summary.value = data.reviewSummary; options.value = optionResponse.data
+    reviewSubmissionEnabled.value = configResponse.data.reviewSubmissionEnabled !== false
     if (auth.authenticated) await auth.refresh()
     initializeReviewFilters()
     if (selectedGrip.value || selectedHand.value) await filterSummary()
     else await loadSupportSummary()
-    await loadMine()
+    await Promise.all([loadMine(), loadPublicReviews()])
   } catch (e) { error.value = errorMessage(e) }
 }
 const filterSummary = async () => {
@@ -140,21 +159,10 @@ const showAllHandReviews = async () => {
 }
 const toggleCompare = () => { try { compare.toggle(mouse.value) } catch (e) { error.value = e.message } }
 const refreshReview = async () => { await Promise.all([loadMine(), filterSummary()]) }
-const saveBase = async () => {
-  baseLoading.value = true; message.value = ''; error.value = ''
-  try { await api.put(`/mice/${mouse.value.id}/reviews/mine/base-score`, baseForm); message.value = '四项基础评分已提交'; await refreshReview() }
-  catch (e) { error.value = errorMessage(e) } finally { baseLoading.value = false }
-}
 const saveGrip = async (code) => {
   gripLoading.value = code; message.value = ''; error.value = ''
   try { await api.put(`/mice/${mouse.value.id}/reviews/mine/grip-scores/${code}`, { comfortScore: gripScores[code] }); message.value = '握持舒适度已提交'; await refreshReview() }
   catch (e) { error.value = errorMessage(e) } finally { gripLoading.value = '' }
-}
-const deleteBase = async () => {
-  if (!window.confirm('确定只删除四项基础评分吗？已提交的握姿评分会保留。')) return
-  message.value = ''; error.value = ''
-  try { await api.delete(`/mice/${mouse.value.id}/reviews/mine/base-score`); message.value = '基础四项评分已删除'; await refreshReview() }
-  catch (e) { error.value = errorMessage(e) }
 }
 const deleteGrip = async (item) => {
   if (!window.confirm(`确定删除${item.label}的舒适度评分吗？`)) return
@@ -236,38 +244,37 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
       <div class="hero-statline"><div><span>DIMENSIONS</span><strong>{{ dimensions }}</strong></div><div><span>WEIGHT</span><strong>{{ mouse.weightG ?? '—' }} g</strong></div><div><span>SENSOR</span><strong>{{ mouse.sensorName || '—' }}</strong></div><div><span>POLLING</span><strong>{{ mouse.maxPollingRateHz ?? '—' }} Hz</strong></div></div>
     </section>
     <div class="section-shell detail-experience-grid">
-      <section class="review-panel"><div class="section-heading compact"><div><p class="eyebrow">SUBJECTIVE INDEX</p><h2>用户评价</h2></div><span class="sample-badge" :class="{ low: summary.baseLowSample || summary.gripLowSample || summary.lowSample }">基础 {{ summary.baseSampleCount }} · 握姿 {{ summary.gripSampleCount }}</span></div>
+      <section class="review-panel"><div class="section-heading compact"><div><p class="eyebrow">SUBJECTIVE INDEX</p><h2>用户评价</h2></div><span class="sample-badge" :class="{ low: summary.lowSample }">{{ summary.sampleCount }} 份握姿评价</span></div>
         <div class="review-filters"><label><span>握持方式</span><select v-model="selectedGrip" @change="filterSummary"><option value="">全部握持方式</option><option v-for="item in options?.gripStyles || []" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label><span>手长范围</span><select v-model="selectedHand" @change="filterSummary"><option value="">全部手长</option><option v-for="item in options?.handSizes || []" :key="item.code" :value="item.code">{{ item.label }}</option></select></label></div>
         <div v-if="handMatchActive" class="review-match-context">
           <span aria-hidden="true">✓</span>
-          <p><strong>已优先展示匹配手长的评价</strong><small>你的手长为 {{ auth.user.handLengthCm }} cm，对应 {{ matchingHandOption.label }}；基础四项仍采用全部评价。</small></p>
+          <p><strong>已优先展示匹配手长的评价</strong><small>你的手长为 {{ auth.user.handLengthCm }} cm，对应 {{ matchingHandOption.label }}。</small></p>
           <button type="button" @click="showAllHandReviews">查看全部</button>
         </div>
-        <div class="split-score-overview"><article class="score-summary-card base-summary"><div class="score-dial"><strong>{{ summary.baseSampleCount ? summary.baseAverage : '—' }}</strong><span>/ 10.0</span></div><div><small>BASE SCORE</small><h3>基础综合评分</h3><p>{{ summary.baseSampleCount ? `全部 ${summary.baseSampleCount} 份基础评价 · 不受筛选影响` : '暂无基础评分' }}</p></div></article><article class="score-summary-card grip-summary"><div class="score-dial"><strong>{{ summary.gripSampleCount ? summary.gripAverage : '—' }}</strong><span>/ 10.0</span></div><div><small>GRIP SCORE</small><h3>{{ gripSummaryLabel }}</h3><p>{{ summary.gripSampleCount ? `${summary.gripSampleCount} 份握姿评分` : '暂无对应握姿评分' }}</p></div></article></div>
-        <div class="dimension-bars" v-if="summary.baseSampleCount"><div class="dimension-title">基础四项明细</div><div v-for="(label, key) in { click:'按键手感', scroll:'滚轮手感', build:'做工质量', coating:'涂层质感' }" :key="key"><span>{{ label }}</span><i><b :style="{ width: (summary.dimensionAverages[key] || 0) * 10 + '%' }"></b></i><strong>{{ summary.dimensionAverages[key] }}</strong></div></div>
-        <details class="score-distribution-section" v-if="summary.baseSampleCount || summary.gripSampleCount">
+        <div class="split-score-overview single"><article class="score-summary-card grip-summary"><div class="score-dial"><strong>{{ summary.sampleCount ? summary.overallAverage : '—' }}</strong><span>/ 10.0</span></div><div><small>GRIP COMFORT</small><h3>{{ gripSummaryLabel }}</h3><p>{{ summary.sampleCount ? `${summary.sampleCount} 份握姿评分` : '暂无对应握姿评分' }}</p></div></article></div>
+        <details class="score-distribution-section" v-if="summary.sampleCount">
           <summary class="score-distribution-toggle">
             <span class="score-distribution-title"><small>SCORE DISTRIBUTION</small><h3>评分分布</h3></span>
             <span class="score-distribution-meta"><small>最后更新：{{ reviewUpdatedLabel }}</small><em><span class="collapsed-label">展开</span><span class="expanded-label">收起</span><i aria-hidden="true"></i></em></span>
           </summary>
           <div class="score-distribution-content">
-            <div class="score-distribution-grid">
-              <article v-if="summary.baseSampleCount"><h4>基础综合评分</h4><p>每位用户四项基础评分的平均值，四舍五入后归入 1—10 分区间。</p><div class="distribution-bars"><div v-for="item in baseDistribution" :key="`base-${item.score}`"><span>{{ item.score }}</span><i><b :style="{ width: `${item.count / baseDistributionMax * 100}%` }"></b></i><strong>{{ item.count }}</strong></div></div></article>
-              <article v-if="summary.gripSampleCount"><h4>{{ gripSummaryLabel }}</h4><p>按当前握姿与手长筛选统计；一位用户评价多种握姿时分别计入对应样本。</p><div class="distribution-bars"><div v-for="item in gripDistribution" :key="`grip-${item.score}`"><span>{{ item.score }}</span><i><b :style="{ width: `${item.count / gripDistributionMax * 100}%` }"></b></i><strong>{{ item.count }}</strong></div></div></article>
+            <div class="score-distribution-grid single">
+              <article><h4>{{ gripSummaryLabel }}</h4><p>按当前握姿与手长筛选统计；一位用户评价多种握姿时分别计入对应样本。</p><div class="distribution-bars"><div v-for="item in gripDistribution" :key="`grip-${item.score}`"><span>{{ item.score }}</span><i><b :style="{ width: `${item.count / gripDistributionMax * 100}%` }"></b></i><strong>{{ item.count }}</strong></div></div></article>
             </div>
-            <p class="score-method-note">口径说明：基础四项不受握姿筛选影响；握姿评分随上方筛选变化。样本少于 5 份时仅供参考，排序时会自动置于充足样本之后。</p>
+            <p class="score-method-note">口径说明：评分随上方握姿与手长筛选变化。样本少于 5 份时仅供参考，排序时会自动置于充足样本之后。</p>
           </div>
         </details>
         <div class="review-action-bar">
           <div class="review-action-copy">
             <small>MY REVIEW</small>
             <strong>{{ auth.authenticated ? reviewProgressLabel : '分享你的真实使用感受' }}</strong>
-            <p>{{ auth.authenticated ? '基础评分、握持舒适度和支撑位置可以分别提交。' : '登录后使用固定模板评价，结果会匿名计入汇总。' }}</p>
+            <p>{{ auth.authenticated ? '握持舒适度和支撑位置可以分别提交。' : '登录后使用固定模板评价，结果会匿名计入汇总。' }}</p>
           </div>
           <RouterLink v-if="!auth.authenticated" class="button primary-action-button review-write-button" to="/login">登录后写评价</RouterLink>
-          <button v-else-if="options" class="button primary-action-button review-write-button" type="button" @click="openReviewEditor">
+          <button v-else-if="options && reviewSubmissionEnabled" class="button primary-action-button review-write-button" type="button" @click="openReviewEditor">
             {{ mine ? '管理我的评价' : '写评价' }}<span aria-hidden="true">→</span>
           </button>
+          <span v-else class="sample-badge low">评价提交暂时关闭</span>
         </div>
       </section>
 
@@ -298,6 +305,30 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
       </aside>
     </div>
 
+    <section class="section-shell community-review-section">
+      <div class="section-heading compact">
+        <div><p class="eyebrow">COMMUNITY RECORDS</p><h2>逐条公开评价</h2><p>仅展示结构化评分和匿名用户标识，不公开邮箱与个人资料。</p></div>
+        <button v-if="auth.authenticated" class="button button-ghost" type="button" @click="openReport('MOUSE', mouse.id)">提交参数纠错</button>
+        <RouterLink v-else class="button button-ghost" to="/login">登录后纠错</RouterLink>
+      </div>
+      <div v-if="reportNotice" class="flash success">{{ reportNotice }}</div>
+      <form v-if="reportTarget" class="public-report-form" @submit.prevent="submitReport">
+        <div><strong>{{ reportTarget.targetType === 'MOUSE' ? '提交参数纠错' : '举报这条评价' }}</strong><small>请提供可复核的信息；恶意或重复提交可能被忽略。</small></div>
+        <label>问题分类<select v-model="reportCategory"><option v-if="reportTarget.targetType === 'MOUSE'" value="DATA_ERROR">参数错误</option><option v-if="reportTarget.targetType === 'MOUSE'" value="SOURCE_UPDATE">来源需要更新</option><option v-if="reportTarget.targetType === 'REVIEW'" value="INAPPROPRIATE">不当内容</option><option v-if="reportTarget.targetType === 'REVIEW'" value="SUSPICIOUS">疑似异常评价</option><option value="OTHER">其他</option></select></label>
+        <label class="wide">详细说明<textarea v-model.trim="reportDescription" maxlength="1000" required placeholder="说明具体问题、正确数据或判断依据…"></textarea></label>
+        <div class="report-form-actions"><button type="button" class="button button-ghost" @click="reportTarget = null">取消</button><button class="button" :disabled="reportLoading">{{ reportLoading ? '提交中…' : '提交反馈' }}</button></div>
+      </form>
+      <div class="public-review-grid">
+        <article v-for="review in publicReviews.items" :key="review.id">
+          <header><div><strong>{{ review.author }}</strong><small>{{ new Date(review.createdAt).toLocaleDateString('zh-CN') }}</small></div><span>{{ review.comfortAverage || '—' }}<small>/ 10</small></span></header>
+          <div class="public-score-strip"><span v-for="score in review.gripScores" :key="score.gripStyle">{{ valueLabel(score.gripStyle) }} <b>{{ score.comfortScore }}</b></span></div>
+          <footer><span>{{ review.gripScores?.map((score) => valueLabel(score.gripStyle)).join(' / ') || '—' }} · {{ valueLabel(review.handSize) }}</span><button v-if="auth.authenticated" type="button" @click="openReport('REVIEW', review.id)">举报</button></footer>
+        </article>
+        <p v-if="!publicReviews.items.length" class="table-empty">暂无可公开的逐条评价</p>
+      </div>
+      <div v-if="publicReviews.page.totalPages > 1" class="public-review-pagination"><button :disabled="publicReviews.page.number <= 1" @click="loadPublicReviews(publicReviews.page.number - 1)">上一页</button><span>{{ publicReviews.page.number }} / {{ publicReviews.page.totalPages }}</span><button :disabled="publicReviews.page.number >= publicReviews.page.totalPages" @click="loadPublicReviews(publicReviews.page.number + 1)">下一页</button></div>
+    </section>
+
     <Teleport to="body">
       <dialog
         v-if="auth.authenticated && options && reviewEditorOpen"
@@ -318,23 +349,15 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
           </header>
           <div class="review-dialog-status" aria-live="polite">
             <span>{{ reviewProgressLabel }}</span>
-            <i><b :style="{ width: `${(Number(hasBase) + Number(completedGripCount > 0) + Number(hasSubmittedSupport)) / 3 * 100}%` }"></b></i>
+            <i><b :style="{ width: `${(Number(completedGripCount > 0) + Number(hasSubmittedSupport)) / 2 * 100}%` }"></b></i>
           </div>
           <div class="review-dialog-body">
             <div class="flash success" v-if="message">{{ message }}</div>
             <div class="flash error" v-if="error">{{ error }}</div>
             <div class="profile-required" v-if="!profileReady"><span>PROFILE REQUIRED</span><p>评分时会自动读取个人资料中的手长和习惯握姿，请先填写后再回来提交。</p><RouterLink class="button button-ghost" to="/profile" @click="closeReviewEditor">完善个人资料 →</RouterLink></div>
             <div class="review-entry-stack">
-              <section class="review-entry-card base-entry" :class="{ locked: hasBase }">
-                <header><div><span>01 / BASE SCORE</span><h3>四项基础评分</h3></div><em>{{ hasBase ? '已提交 · 不可重复' : '每款鼠标仅一次' }}</em></header>
-                <template v-if="hasBase"><div class="locked-score-grid"><div v-for="field in [['clickScore','按键手感'],['scrollScore','滚轮手感'],['buildScore','做工质量'],['coatingScore','涂层质感']]" :key="field[0]"><span>{{ field[1] }}</span><strong>{{ mine[field[0]] }}</strong><small>/ 10</small></div></div><button class="item-delete-button" type="button" @click="deleteBase">删除基础四项</button></template>
-                <form v-else @submit.prevent="saveBase">
-                  <div class="score-inputs"><label v-for="field in [['clickScore','按键手感'],['scrollScore','滚轮手感'],['buildScore','做工质量'],['coatingScore','涂层质感']]" :key="field[0]">{{ field[1] }} <output>{{ baseForm[field[0]] }}</output><input v-model.number="baseForm[field[0]]" type="range" min="1" max="10"></label></div>
-                  <button class="button full" :disabled="!profileReady || baseLoading">{{ baseLoading ? '提交中…' : '确认提交四项评分' }}</button>
-                </form>
-              </section>
               <section class="review-entry-card grip-entry">
-                <header><div><span>02 / GRIP COMFORT</span><h3>握持舒适度</h3></div><em>{{ completedGripCount }} / 4 已评价</em></header>
+                <header><div><span>01 / GRIP COMFORT</span><h3>握持舒适度</h3></div><em>{{ completedGripCount }} / 4 已评价</em></header>
                 <p class="review-hint">四种握持方式分别记录，每种方式仅可提交一次；汇总会按用户习惯握姿加权。</p>
                 <div class="grip-score-list">
                   <article v-for="item in options.gripStyles" :key="item.code" :class="{ completed: submittedGrip(item.code) }">
@@ -346,7 +369,7 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
               </section>
               <section class="review-entry-card support-entry personal-support-editor">
                 <header>
-                  <div><span>03 / SUPPORT MAP</span><h3>我的支撑位置</h3></div>
+                  <div><span>02 / SUPPORT MAP</span><h3>我的支撑位置</h3></div>
                   <em>{{ supportHasPaint ? `已涂抹约 ${supportCoverage}%` : '尚未涂抹' }}</em>
                 </header>
                 <p class="review-hint">这张手掌图只用于编辑你的评价。保存后，笔迹才会匿名计入详情页的全部用户热力图。</p>
@@ -432,3 +455,7 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
   </main>
   <main v-else class="section-shell error-page"><div class="flash error" v-if="error">{{ error }}</div><div v-else class="loading-state">LOADING SPEC SHEET...</div></main>
 </template>
+
+<style scoped>
+.community-review-section{margin-top:32px}.community-review-section .section-heading>div>p:last-child{margin:.35rem 0 0;color:var(--muted,#647278)}.public-report-form{display:grid;grid-template-columns:1fr 220px;gap:14px;padding:18px;margin:18px 0;border-radius:18px;background:#edf6f5;border:1px solid #cfe4e1}.public-report-form>div strong,.public-report-form>div small{display:block}.public-report-form label{display:grid;gap:6px;font-size:12px;font-weight:700}.public-report-form .wide{grid-column:1/-1}.public-report-form textarea{min-height:88px}.report-form-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}.public-review-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}.public-review-grid article{padding:18px;border:1px solid #dde5e6;border-radius:18px;background:#fff}.public-review-grid article header,.public-review-grid article footer{display:flex;justify-content:space-between;align-items:center}.public-review-grid article header strong,.public-review-grid article header small{display:block}.public-review-grid article header>span{font-size:24px;font-weight:800}.public-review-grid article header>span small{font-size:11px}.public-score-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:16px 0}.public-score-strip span{padding:8px 4px;background:#f4f7f7;border-radius:9px;text-align:center;font-size:10px}.public-score-strip b{display:block;font-size:16px}.public-review-grid footer{font-size:12px;color:#66767a}.public-review-grid footer button{border:0;background:none;color:#9e3a3a}.public-review-pagination{display:flex;justify-content:center;align-items:center;gap:12px;margin-top:18px}@media(max-width:760px){.public-review-grid{grid-template-columns:1fr}.public-report-form{grid-template-columns:1fr}.public-report-form .wide{grid-column:auto}}
+</style>

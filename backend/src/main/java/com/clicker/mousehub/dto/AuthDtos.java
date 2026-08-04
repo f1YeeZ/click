@@ -40,4 +40,10 @@ public final class AuthDtos {
         public ProfileRequest(BigDecimal handLengthCm) { this(handLengthCm, null); }
     }
     public record AuthResponse(String token, UserView user) {}
+    /** `token` is the short-lived access token; refresh credentials are cookie-only. */
+    public record SessionResponse(String token, long accessTokenExpiresInSeconds, UserView user) {}
+    public record LoginChallengeResponse(boolean secondFactorRequired, UUID challengeId, long expiresInSeconds) {}
+    public record AdminLoginVerificationRequest(UUID challengeId,
+                                                @NotBlank @Email String email,
+                                                @NotBlank @Pattern(regexp = "\\d{6}") String code) {}
 }

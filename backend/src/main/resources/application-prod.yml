@@ -24,6 +24,10 @@ app:
     secret: ${JWT_SECRET}
     issuer: ${JWT_ISSUER:clicker-index}
     audience: ${JWT_AUDIENCE:clicker-index-web}
+  auth:
+    access-expires-minutes: ${ACCESS_TOKEN_EXPIRES_MINUTES:10}
+    refresh-expires-days: ${REFRESH_TOKEN_EXPIRES_DAYS:30}
+    secure-cookies: ${SECURE_AUTH_COOKIES:true}
   mail:
     enabled: ${MAIL_ENABLED:true}
     from: ${QQ_MAIL_FROM}

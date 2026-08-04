@@ -26,7 +26,7 @@ const toggle = () => { try { compare.toggle(props.mouse); error.value = '' } cat
       <div class="card-topline"><span>{{ mouse.brand }}</span><span>{{ connection }} · {{ labels[mouse.shapeType] || mouse.shapeType }}</span></div>
       <h3>{{ mouse.model }}</h3>
       <p class="variant">{{ mouse.variant || 'STANDARD EDITION' }}</p>
-      <div class="card-rating" :class="{ low: mouse.lowReviewSample }"><strong>{{ mouse.reviewCount ? mouse.averageScore : '—' }}</strong><span>{{ mouse.reviewCount ? `${mouse.reviewCount} 份评价` : '暂无评价' }}<small v-if="mouse.reviewCount && mouse.lowReviewSample">样本较少</small></span></div>
+      <div class="card-rating" :class="{ low: mouse.lowReviewSample }"><strong>{{ mouse.reviewCount ? mouse.averageScore : '—' }}</strong><span>{{ mouse.reviewCount ? `${mouse.reviewCount} 份舒适评分` : '暂无舒适评分' }}<small v-if="mouse.reviewCount && mouse.lowReviewSample">样本较少</small></span></div>
       <div class="card-metrics">
         <div><span>重量</span><strong>{{ mouse.weightG ?? '—' }}g</strong></div>
         <div><span>传感器</span><strong>{{ sensorShort }}</strong></div>

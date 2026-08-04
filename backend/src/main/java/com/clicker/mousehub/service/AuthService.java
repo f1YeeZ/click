@@ -6,7 +6,6 @@ import com.clicker.mousehub.common.VerificationCodeException;
 import com.clicker.mousehub.dto.AuthDtos.*;
 import com.clicker.mousehub.entity.UserAccount;
 import com.clicker.mousehub.mapper.UserMapper;
-import com.clicker.mousehub.security.JwtService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -20,15 +19,18 @@ public class AuthService {
     private static final String RESET_REQUEST_MESSAGE = "如果该邮箱已注册，重置验证码将发送至邮箱";
     private final UserMapper users;
     private final PasswordEncoder encoder;
-    private final JwtService jwt;
+    private final SessionService sessions;
+    private final AdminLoginChallengeService adminChallenges;
     private final MailService mail;
     private final EmailVerificationService verification;
 
-    public AuthService(UserMapper users, PasswordEncoder encoder, JwtService jwt, MailService mail,
+    public AuthService(UserMapper users, PasswordEncoder encoder, SessionService sessions,
+                       AdminLoginChallengeService adminChallenges, MailService mail,
                        EmailVerificationService verification) {
         this.users = users;
         this.encoder = encoder;
-        this.jwt = jwt;
+        this.sessions = sessions;
+        this.adminChallenges = adminChallenges;
         this.mail = mail;
         this.verification = verification;
     }
@@ -40,7 +42,7 @@ public class AuthService {
     }
 
     @Transactional(noRollbackFor = VerificationCodeException.class)
-    public AuthResponse register(RegisterRequest request) {
+    public SessionService.SessionGrant register(RegisterRequest request) {
         String email = UserAccount.normalizeEmail(request.email());
         if (find(email) != null) throw new BusinessException("ACCOUNT_UNAVAILABLE", "该邮箱暂不可注册", HttpStatus.CONFLICT);
         verification.verifyAndConsume(email, EmailVerificationService.REGISTER, request.verificationCode());
@@ -56,7 +58,7 @@ public class AuthService {
         user.setUpdatedAt(now);
         users.insert(user);
         mail.welcome(email);
-        return response(user);
+        return sessions.issue(user);
     }
 
     public VerificationCodeResponse sendPasswordCode(String email) {
@@ -87,7 +89,7 @@ public class AuthService {
         }
         user.setPasswordHash(encoder.encode(request.newPassword()));
         user.setUpdatedAt(OffsetDateTime.now());
-        users.updateById(user);
+        sessions.invalidateAll(user);
         return new MessageResponse("密码重置成功，请使用新密码登录");
     }
 
@@ -100,16 +102,22 @@ public class AuthService {
         }
         user.setPasswordHash(encoder.encode(request.newPassword()));
         user.setUpdatedAt(OffsetDateTime.now());
-        users.updateById(user);
+        sessions.invalidateAll(user);
         return new MessageResponse("密码修改成功");
     }
 
-    public AuthResponse login(LoginRequest request) {
+    public LoginOutcome login(LoginRequest request) {
         UserAccount user = find(UserAccount.normalizeEmail(request.email()));
         if (user == null || !"ACTIVE".equals(user.getStatus()) || !encoder.matches(request.password(), user.getPasswordHash())) {
             throw new BusinessException("INVALID_CREDENTIALS", "账号或密码错误", HttpStatus.UNAUTHORIZED);
         }
-        return response(user);
+        if ("ADMIN".equals(user.getRole())) return LoginOutcome.challenge(adminChallenges.begin(user));
+        return LoginOutcome.session(sessions.issue(user));
+    }
+
+    public SessionService.SessionGrant verifyAdmin(AdminLoginVerificationRequest request) {
+        UserAccount user = adminChallenges.verify(request.challengeId(), UserAccount.normalizeEmail(request.email()), request.code());
+        return sessions.issue(user);
     }
 
     public UserView me(String email) {
@@ -153,10 +161,6 @@ public class AuthService {
         return users.selectOne(Wrappers.<UserAccount>lambdaQuery().eq(UserAccount::getEmail, email));
     }
 
-    private AuthResponse response(UserAccount user) {
-        return new AuthResponse(jwt.create(user), view(user));
-    }
-
     private UserView view(UserAccount user) {
         return new UserView(user.getId(), user.getEmail(), user.getRole(), user.getHandSize(), user.getHandLengthCm(), user.getPreferredGripStyle());
     }
@@ -166,5 +170,11 @@ public class AuthService {
         if (length.compareTo(new java.math.BigDecimal("17.0")) < 0) return "SMALL";
         if (length.compareTo(new java.math.BigDecimal("19.0")) < 0) return "MEDIUM";
         return "LARGE";
+    }
+
+    public record LoginOutcome(SessionService.SessionGrant session, AdminLoginChallengeService.Challenge challenge) {
+        public static LoginOutcome session(SessionService.SessionGrant grant) { return new LoginOutcome(grant, null); }
+        public static LoginOutcome challenge(AdminLoginChallengeService.Challenge challenge) { return new LoginOutcome(null, challenge); }
+        public boolean requiresSecondFactor() { return challenge != null; }
     }
 }

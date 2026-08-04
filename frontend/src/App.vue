@@ -5,6 +5,7 @@ import AppHeader from './components/AppHeader.vue'
 import CompareTray from './components/CompareTray.vue'
 import { useAuthStore } from './stores/auth'
 import { startRealtime, stopRealtime } from './services/realtime'
+import api from './api/client'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -12,6 +13,7 @@ const router = useRouter()
 const year = new Date().getFullYear()
 const isAdminRoute = computed(() => route.path === '/admin' || route.path === '/admin/login')
 const routeMotion = ref('idle')
+const publicConfig = ref({ maintenanceNotice: '', registrationEnabled: true, reviewSubmissionEnabled: true })
 let routeMotionTimer
 
 const shouldAnimateRoute = (to, from) => Boolean(from?.matched?.length) && to.path !== from.path
@@ -30,6 +32,7 @@ const removeMotionAfterHook = router.afterEach((to, from) => {
 })
 onMounted(() => {
   startRealtime()
+  api.get('/config').then(({ data }) => { publicConfig.value = data }).catch(() => {})
   if (!isAdminRoute.value) auth.refresh()
 })
 onBeforeUnmount(() => {
@@ -42,6 +45,9 @@ onBeforeUnmount(() => {
 
 <template>
   <AppHeader v-if="!isAdminRoute" />
+  <div v-if="!isAdminRoute && publicConfig.maintenanceNotice" class="maintenance-banner" role="status">
+    <strong>运营公告</strong><span>{{ publicConfig.maintenanceNotice }}</span>
+  </div>
   <RouterView v-slot="{ Component, route: viewRoute }">
     <KeepAlive :max="8">
       <component :is="Component" :key="viewRoute.path" />
@@ -66,3 +72,7 @@ onBeforeUnmount(() => {
   <CompareTray v-if="!isAdminRoute && route.path !== '/compare'" />
   <div class="route-motion-line" :class="`is-${routeMotion}`" aria-hidden="true"></div>
 </template>
+
+<style scoped>
+.maintenance-banner{display:flex;justify-content:center;gap:12px;padding:9px 20px;background:#173f42;color:#eefafa;font-size:13px}.maintenance-banner strong{color:#8ed9d1;letter-spacing:.08em}
+</style>

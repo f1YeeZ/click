@@ -6,6 +6,8 @@ import com.clicker.mousehub.common.BusinessException;
 import com.clicker.mousehub.dto.AdminDtos.*;
 import com.clicker.mousehub.dto.MouseDtos.MouseView;
 import com.clicker.mousehub.dto.PageResponse;
+import com.clicker.mousehub.dto.ReviewDtos.SupportCell;
+import com.clicker.mousehub.dto.ReviewDtos.SupportDab;
 import com.clicker.mousehub.entity.*;
 import com.clicker.mousehub.mapper.*;
 import com.clicker.mousehub.util.MouseDataQuality;
@@ -18,6 +20,13 @@ import java.util.*;
 
 @Service
 public class AdminService {
+    private static final String SUPPORT_GRID_PREFIX = "GRID_";
+    private static final String SUPPORT_DAB_PREFIX = "DAB_";
+    private static final Map<String, SupportCell> SUPPORT_POSITION_ANCHORS = Map.of(
+            "THUMB_BASE", new SupportCell(5, 16), "INDEX_BASE", new SupportCell(8, 12),
+            "MIDDLE_BASE", new SupportCell(11, 11), "RING_BASE", new SupportCell(14, 12),
+            "LITTLE_BASE", new SupportCell(18, 14), "PALM_CENTER", new SupportCell(12, 19),
+            "PALM_HEEL", new SupportCell(12, 25));
     private final MouseMapper mice;
     private final UserMapper users;
     private final ReviewMapper reviews;
@@ -26,12 +35,15 @@ public class AdminService {
     private final MouseService mouseService;
     private final RealtimeEventService events;
     private final AuditLogService audit;
+    private final SessionService sessions;
 
     public AdminService(MouseMapper mice, UserMapper users, ReviewMapper reviews,
                         ReviewGripScoreMapper gripScores, ReviewSupportPositionMapper supportPositions,
-                        MouseService mouseService, RealtimeEventService events, AuditLogService audit) {
+                        MouseService mouseService, RealtimeEventService events, AuditLogService audit,
+                        SessionService sessions) {
         this.mice = mice; this.users = users; this.reviews = reviews; this.gripScores = gripScores;
         this.supportPositions = supportPositions; this.mouseService = mouseService; this.events = events; this.audit = audit;
+        this.sessions = sessions;
     }
 
     public DashboardResponse dashboard() {
@@ -64,6 +76,11 @@ public class AdminService {
 
     public PageResponse<MouseView> mice(String q, String status, long page, long pageSize) {
         return mouseService.adminSearch(q, status, page, pageSize);
+    }
+
+    public PageResponse<MouseView> mice(String q, String status, String quality, String verification,
+                                        String workflow, String assignee, long page, long pageSize) {
+        return mouseService.adminSearch(q, status, quality, verification, workflow, assignee, page, pageSize);
     }
 
     public List<String> brands() {
@@ -127,6 +144,7 @@ public class AdminService {
         user.setStatusChangedBy(audit.currentActor());
         user.setStatusChangedAt(now);
         user.setUpdatedAt(now); users.updateById(user);
+        sessions.invalidateAll(user);
         AdminUserView after = AdminUserView.from(user);
         audit.record("USER_STATUS_CHANGE", "USER", id, "用户" + ("DISABLED".equals(request.status()) ? "已封禁：" : "已解除封禁：") + user.getEmail(), before, after, request.reason());
         return after;
@@ -153,6 +171,7 @@ public class AdminService {
         user.setRole(request.role());
         user.setUpdatedAt(OffsetDateTime.now());
         users.updateById(user);
+        sessions.invalidateAll(user);
         AdminUserView after = AdminUserView.from(user);
         audit.record("USER_ROLE_CHANGE", "USER", id, "用户角色变更为 " + request.role() + "：" + user.getEmail(),
                 before, after, request.reason());
@@ -184,13 +203,42 @@ public class AdminService {
         List<GripScoreView> grips = gripScores.selectList(new LambdaQueryWrapper<ReviewGripScore>()
                         .eq(ReviewGripScore::getReviewId, review.getId()).orderByAsc(ReviewGripScore::getGripStyle))
                 .stream().map(score -> new GripScoreView(score.getGripStyle(), score.getComfortScore())).toList();
-        List<String> positions = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
+        java.math.BigDecimal comfortAverage = grips.isEmpty() ? base.comfortAverage() : java.math.BigDecimal.valueOf(
+                grips.stream().mapToInt(score -> score.comfortScore() == null ? 0 : score.comfortScore()).average().orElse(0))
+                .setScale(1, java.math.RoundingMode.HALF_UP);
+        List<String> supportCodes = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
                         .eq(ReviewSupportPosition::getReviewId, review.getId()).orderByAsc(ReviewSupportPosition::getPositionCode))
                 .stream().map(ReviewSupportPosition::getPositionCode).toList();
+        List<String> positions = supportCodes.stream().filter(SUPPORT_POSITION_ANCHORS::containsKey).toList();
+        List<SupportDab> dabs = supportCodes.stream().sorted().map(AdminService::parseSupportDab)
+                .filter(Objects::nonNull).toList();
+        List<SupportCell> cells = supportCodes.stream().map(AdminService::parseSupportCell)
+                .filter(Objects::nonNull).distinct().toList();
+        if (cells.isEmpty() && dabs.isEmpty()) {
+            cells = positions.stream().map(SUPPORT_POSITION_ANCHORS::get).filter(Objects::nonNull).distinct().toList();
+        }
         return new AdminReviewView(base.id(), base.userId(), base.mouseId(), base.userEmail(), base.mouseName(), base.status(),
-                base.gripStyle(), user == null ? null : user.getHandSize(), base.usageDuration(), base.overallScore(),
-                base.comfortScore(), base.clickScore(), base.scrollScore(), base.buildScore(), base.valueScore(), base.coatingScore(),
-                grips, positions, base.moderationReason(), base.moderatedBy(), base.moderatedAt(), base.createdAt());
+                user == null ? null : user.getHandSize(), comfortAverage,
+                grips, positions, cells, dabs, base.moderationReason(), base.moderatedBy(), base.moderatedAt(), base.createdAt());
+    }
+    private static SupportDab parseSupportDab(String code) {
+        if (code == null || !code.startsWith(SUPPORT_DAB_PREFIX)) return null;
+        String[] parts = code.substring(SUPPORT_DAB_PREFIX.length()).split("_");
+        if (parts.length != 5 || !("P".equals(parts[1]) || "E".equals(parts[1]))) return null;
+        try {
+            int x = Integer.parseInt(parts[2]); int y = Integer.parseInt(parts[3]); int radius = Integer.parseInt(parts[4]);
+            if (x < 0 || x > 1000 || y < 0 || y > 1000 || radius < 5 || radius > 200) return null;
+            return new SupportDab(x, y, radius, "E".equals(parts[1]) ? "ERASE" : "PAINT");
+        } catch (NumberFormatException ignored) { return null; }
+    }
+    private static SupportCell parseSupportCell(String code) {
+        if (code == null || !code.startsWith(SUPPORT_GRID_PREFIX)) return null;
+        String[] parts = code.substring(SUPPORT_GRID_PREFIX.length()).split("_");
+        if (parts.length != 2) return null;
+        try {
+            int x = Integer.parseInt(parts[0]); int y = Integer.parseInt(parts[1]);
+            return x >= 0 && x < 24 && y >= 0 && y < 32 ? new SupportCell(x, y) : null;
+        } catch (NumberFormatException ignored) { return null; }
     }
     private static boolean hasText(String value) { return value != null && !value.isBlank(); }
     private static long safeSize(long size) { return Set.of(12L, 24L, 48L).contains(size) ? size : 12; }

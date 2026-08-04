@@ -107,16 +107,20 @@ public class MouseService {
             case "weight_desc" -> query.orderByDesc(MouseDevice::getWeightG).orderByAsc(MouseDevice::getId);
             case "rating_desc" -> query.last("""
                     ORDER BY CASE WHEN (SELECT COUNT(*) FROM reviews r
-                        WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL) >= 5 THEN 0 ELSE 1 END,
-                        (SELECT AVG(r.overall_score) FROM reviews r
-                         WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL) DESC,
+                        WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL
+                          AND r.comfort_score IS NOT NULL) >= 5 THEN 0 ELSE 1 END,
+                        (SELECT AVG(r.comfort_score) FROM reviews r
+                         WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL
+                           AND r.comfort_score IS NOT NULL) DESC,
                         (SELECT COUNT(*) FROM reviews r
-                         WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL) DESC,
+                         WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL
+                           AND r.comfort_score IS NOT NULL) DESC,
                         mice.id ASC
                     """);
             case "review_count_desc" -> query.last("""
                     ORDER BY (SELECT COUNT(*) FROM reviews r
-                        WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL) DESC,
+                        WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL
+                          AND r.comfort_score IS NOT NULL) DESC,
                         mice.id ASC
                     """);
             default -> query.orderByDesc(MouseDevice::getCreatedAt, MouseDevice::getId);
@@ -127,6 +131,11 @@ public class MouseService {
     }
 
     public PageResponse<MouseView> adminSearch(String q, String status, long page, long pageSize) {
+        return adminSearch(q, status, null, null, null, null, page, pageSize);
+    }
+
+    public PageResponse<MouseView> adminSearch(String q, String status, String quality, String verification,
+                                               String workflow, String assignee, long page, long pageSize) {
         long safeSize = List.of(12L, 24L, 48L).contains(pageSize) ? pageSize : 12;
         LambdaQueryWrapper<MouseDevice> query = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(q)) {
@@ -138,7 +147,21 @@ public class MouseService {
                     .or().apply("LOWER(aliases) LIKE {0}", pattern)
                     .or().apply("LOWER(sensor_name) LIKE {0}", pattern));
         }
-        query.eq(StringUtils.hasText(status), MouseDevice::getStatus, status).orderByDesc(MouseDevice::getUpdatedAt);
+        query.eq(StringUtils.hasText(status), MouseDevice::getStatus, status)
+                .eq(StringUtils.hasText(workflow), MouseDevice::getVerificationWorkflowStatus, workflow)
+                .eq(StringUtils.hasText(assignee), MouseDevice::getVerificationAssignee, assignee)
+                .orderByDesc(MouseDevice::getUpdatedAt);
+        if (StringUtils.hasText(quality) || StringUtils.hasText(verification)) {
+            List<MouseDevice> filtered = mice.selectList(query).stream()
+                    .filter(mouse -> !"INCOMPLETE".equals(quality) || !MouseDataQuality.missingPublicationFields(mouse).isEmpty())
+                    .filter(mouse -> !"READY".equals(quality) || MouseDataQuality.missingPublicationFields(mouse).isEmpty())
+                    .filter(mouse -> !StringUtils.hasText(verification) || verification.equals(MouseDataQuality.verificationStatus(mouse)))
+                    .toList();
+            long safePage = Math.max(1, page); int from = (int) Math.min(filtered.size(), (safePage - 1) * safeSize);
+            int to = (int) Math.min(filtered.size(), from + safeSize);
+            long pages = filtered.isEmpty() ? 0 : (filtered.size() + safeSize - 1) / safeSize;
+            return new PageResponse<>(viewsWithRatingStats(filtered.subList(from, to)), new PageResponse.PageMeta(safePage, safeSize, filtered.size(), pages));
+        }
         Page<MouseDevice> result = mice.selectPage(new Page<>(Math.max(1, page), safeSize), query);
         return new PageResponse<>(viewsWithRatingStats(result.getRecords()),
                 new PageResponse.PageMeta(result.getCurrent(), result.getSize(), result.getTotal(), result.getPages()));
@@ -158,7 +181,7 @@ public class MouseService {
         applyRequest(mouse, request);
         if (StringUtils.hasText(request.status())) mouse.setStatus(request.status());
         validateForStatus(mouse, mouse.getStatus());
-        if ("PUBLISHED".equals(mouse.getStatus())) mouse.setVerifiedAt(OffsetDateTime.now());
+        if ("PUBLISHED".equals(mouse.getStatus())) { mouse.setVerifiedAt(OffsetDateTime.now()); mouse.setVerificationWorkflowStatus("DONE"); }
         mouse.setUpdatedAt(OffsetDateTime.now()); mice.updateById(mouse);
         events.publishAfterCommit("mouse.changed", mouse.getId());
         MouseView after = MouseView.from(mouse);
@@ -181,7 +204,7 @@ public class MouseService {
         MouseView before = MouseView.from(mouse);
         validateForStatus(mouse, status);
         mouse.setStatus(status);
-        if ("PUBLISHED".equals(status)) mouse.setVerifiedAt(OffsetDateTime.now());
+        if ("PUBLISHED".equals(status)) { mouse.setVerifiedAt(OffsetDateTime.now()); mouse.setVerificationWorkflowStatus("DONE"); }
         mouse.setUpdatedAt(OffsetDateTime.now());
         mice.updateById(mouse);
         events.publishAfterCommit("mouse.changed", mouse.getId());
@@ -222,7 +245,8 @@ public class MouseService {
         mouse.setCreatedAt(now);
         applyRequest(mouse, request);
         validateForStatus(mouse, mouse.getStatus());
-        if ("PUBLISHED".equals(mouse.getStatus())) mouse.setVerifiedAt(now);
+        if ("PUBLISHED".equals(mouse.getStatus())) { mouse.setVerifiedAt(now); mouse.setVerificationWorkflowStatus("DONE"); }
+        else mouse.setVerificationWorkflowStatus("OPEN");
         mouse.setUpdatedAt(now);
         mice.insert(mouse);
         events.publishAfterCommit("mouse.changed", mouse.getId());
@@ -288,12 +312,12 @@ public class MouseService {
         List<UUID> ids = records.stream().map(MouseDevice::getId).toList();
         Map<UUID, List<Review>> byMouse = reviews.selectList(new LambdaQueryWrapper<Review>()
                         .in(Review::getMouseId, ids).eq(Review::getStatus, "ACTIVE")
-                        .isNull(Review::getDeletedAt).isNotNull(Review::getOverallScore))
+                        .isNull(Review::getDeletedAt).isNotNull(Review::getComfortScore))
                 .stream().collect(java.util.stream.Collectors.groupingBy(Review::getMouseId));
         return records.stream().map(mouse -> {
             List<Review> mouseReviews = byMouse.getOrDefault(mouse.getId(), List.of());
             BigDecimal average = mouseReviews.isEmpty() ? BigDecimal.ZERO : mouseReviews.stream()
-                    .map(Review::getOverallScore).reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .map(review -> BigDecimal.valueOf(review.getComfortScore())).reduce(BigDecimal.ZERO, BigDecimal::add)
                     .divide(BigDecimal.valueOf(mouseReviews.size()), 1, java.math.RoundingMode.HALF_UP);
             return MouseView.from(mouse, average, mouseReviews.size());
         }).toList();

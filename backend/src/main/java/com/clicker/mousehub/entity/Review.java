@@ -18,11 +18,6 @@ public class Review {
     private String handSize;
     private String usageDuration;
     private Integer comfortScore;
-    private Integer clickScore;
-    private Integer scrollScore;
-    private Integer buildScore;
-    private Integer valueScore;
-    private Integer coatingScore;
     private BigDecimal overallScore;
     private String status;
     private String moderationReason;
@@ -47,16 +42,6 @@ public class Review {
     public void setUsageDuration(String usageDuration) { this.usageDuration = usageDuration; }
     public Integer getComfortScore() { return comfortScore; }
     public void setComfortScore(Integer comfortScore) { this.comfortScore = comfortScore; }
-    public Integer getClickScore() { return clickScore; }
-    public void setClickScore(Integer clickScore) { this.clickScore = clickScore; }
-    public Integer getScrollScore() { return scrollScore; }
-    public void setScrollScore(Integer scrollScore) { this.scrollScore = scrollScore; }
-    public Integer getBuildScore() { return buildScore; }
-    public void setBuildScore(Integer buildScore) { this.buildScore = buildScore; }
-    public Integer getValueScore() { return valueScore; }
-    public void setValueScore(Integer valueScore) { this.valueScore = valueScore; }
-    public Integer getCoatingScore() { return coatingScore; }
-    public void setCoatingScore(Integer coatingScore) { this.coatingScore = coatingScore; }
     public BigDecimal getOverallScore() { return overallScore; }
     public void setOverallScore(BigDecimal overallScore) { this.overallScore = overallScore; }
     public String getStatus() { return status; }

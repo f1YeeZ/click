@@ -229,8 +229,8 @@ class ApiIntegrationTest {
 
         mvc.perform(get("/api/v1/mice/" + reliableHigh.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.reviewSummary.baseSampleCount", is(5)))
-                .andExpect(jsonPath("$.reviewSummary.baseScoreDistribution.8", is(5)))
+                .andExpect(jsonPath("$.reviewSummary.sampleCount", is(5)))
+                .andExpect(jsonPath("$.reviewSummary.scoreDistribution.8", is(5)))
                 .andExpect(jsonPath("$.reviewSummary.lastUpdatedAt", not(emptyOrNullString())));
     }
 
@@ -410,8 +410,8 @@ class ApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"verificationCode\":\"" + passwordCode
                                 + "\",\"newPassword\":\"another-password123\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code", is("INVALID_VERIFICATION_CODE")));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code", is("AUTHENTICATION_REQUIRED")));
     }
 
     @Test
@@ -458,6 +458,27 @@ class ApiIntegrationTest {
                                 + resetCode + "\",\"newPassword\":\"another-password123\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code", is("INVALID_VERIFICATION_CODE")));
+    }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "admin@example.com", roles = "ADMIN")
+    void completeAdminOperationsExposeClosedLoopEndpoints() throws Exception {
+        mvc.perform(get("/api/v1/admin/analytics").param("days", "7"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.days", is(7)))
+                .andExpect(jsonPath("$.points", hasSize(7)));
+        String brand = "{\"name\":\"Test Brand\",\"officialUrl\":\"https://example.com\",\"status\":\"ACTIVE\"}";
+        mvc.perform(post("/api/v1/admin/brand-profiles").contentType(MediaType.APPLICATION_JSON).content(brand))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.name", is("Test Brand")));
+        mvc.perform(get("/api/v1/admin/brand-profiles"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[*].name", hasItem("Test Brand")));
+        mvc.perform(put("/api/v1/admin/settings/registration.enabled").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"value\":\"false\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.value", is("false")));
+        mvc.perform(get("/api/v1/config"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.registrationEnabled", is(false)));
+        mvc.perform(get("/api/v1/admin/exports/users"))
+                .andExpect(status().isOk()).andExpect(header().string("Content-Type", containsString("text/csv")));
     }
 
     @TestConfiguration
@@ -511,7 +532,7 @@ class ApiIntegrationTest {
         OffsetDateTime now = OffsetDateTime.now();
         Review review = new Review();
         review.setId(UUID.randomUUID()); review.setUserId(user.getId()); review.setMouseId(mouse.getId());
-        review.setClickScore(score); review.setScrollScore(score); review.setBuildScore(score); review.setCoatingScore(score);
+        review.setGripStyle("CLAW"); review.setComfortScore(score);
         review.setOverallScore(BigDecimal.valueOf(score)); review.setStatus("ACTIVE"); review.setVersion(0L);
         review.setCreatedAt(now); review.setUpdatedAt(now); reviews.insert(review);
     }

@@ -1,5 +1,11 @@
 <script setup>
+import { computed, defineAsyncComponent } from "vue";
 import { useAdminConsole } from "../composables/useAdminConsole";
+import AdminExpansionPanels from "../components/AdminExpansionPanels.vue";
+import AdminFloatingPanel from "../components/AdminFloatingPanel.vue";
+import AdminImageEditor from "../components/AdminImageEditor.vue";
+
+const HandSupport3D = defineAsyncComponent(() => import("../components/HandSupport3D.vue"));
 
 const {
     auth,
@@ -12,7 +18,10 @@ const {
     mice,
     mouseQuery,
     mouseStatus,
+    mouseQuality,
+    mouseVerification,
     mousePage,
+    mouseSelection,
     brands,
     brandOpen,
     brandQuery,
@@ -24,6 +33,7 @@ const {
     imageUploading,
     imageError,
     showImageLibrary,
+    imageEditorSource,
     importFileInput,
     importFile,
     importPreview,
@@ -33,6 +43,8 @@ const {
     userStatus,
     userRole,
     userPage,
+    userSelection,
+    userDetail,
     managedUser,
     userStatusReason,
     userRoleDraft,
@@ -41,12 +53,17 @@ const {
     reviewStatus,
     reviewQuery,
     reviewPage,
-    expandedReviewId,
+    reviewSelection,
+    selectedReview,
     moderationReason,
     audits,
     auditQuery,
     auditEntityType,
     auditPage,
+    auditAction,
+    auditFrom,
+    auditTo,
+    selectedAudit,
     editingId,
     showEditor,
     initial,
@@ -70,6 +87,9 @@ const {
     loadImages,
     toggleImageLibrary,
     uploadImage,
+    editCurrentImage,
+    cancelImageEditor,
+    saveEditedImage,
     selectImage,
     removeImage,
     deleteImage,
@@ -88,18 +108,32 @@ const {
     editMouse,
     saveMouse,
     changeMouseStatus,
+    updateVerification,
+    openMouseQueue,
+    openReviewQueue,
+    batchStatus,
     changeUserStatus,
     changeUserRole,
     toggleUserAction,
     closeUserAction,
-    toggleReviewDetails,
+    openReviewDetails,
+    closeReviewDetails,
     moderateReview,
     actionLabel,
+    selectAudit,
+    closeAudit,
+    formatAuditState,
     statusLabel,
     gripLabel,
-    supportLabel,
     handleEscape,
 } = useAdminConsole();
+
+const reviewSupportCells = computed(() =>
+    (selectedReview.value?.supportCells || []).map((cell) => ({ ...cell, count: 1 })),
+);
+const reviewHasSupport = computed(() =>
+    Boolean(selectedReview.value?.supportDabs?.length || reviewSupportCells.value.length),
+);
 </script>
 
 
@@ -109,7 +143,7 @@ const {
             <RouterLink class="admin-brand" to="/"
                 >CLICKER <span>/ CONTROL</span></RouterLink
             >
-            <div class="admin-session">
+            <div v-if="auth.authenticated && auth.admin" class="admin-session">
                 <span>{{ auth.user?.email }}</span
                 ><button class="admin-logout" @click="logout">退出后台</button>
             </div>
@@ -271,11 +305,11 @@ const {
                                     <dt>草稿鼠标</dt>
                                     <dd>{{ dashboard?.miceDraft ?? 0 }}</dd>
                                 </div>
-                                <div>
+                                <div class="signal-action" role="button" tabindex="0" @click="openMouseQueue('INCOMPLETE')" @keyup.enter="openMouseQueue('INCOMPLETE')">
                                     <dt>资料未完整</dt>
                                     <dd>{{ dashboard?.miceIncomplete ?? 0 }}</dd>
                                 </div>
-                                <div>
+                                <div class="signal-action" role="button" tabindex="0" @click="openMouseQueue('STALE')" @keyup.enter="openMouseQueue('STALE')">
                                     <dt>核验已过期</dt>
                                     <dd>{{ dashboard?.miceVerificationStale ?? 0 }}</dd>
                                 </div>
@@ -283,7 +317,7 @@ const {
                                     <dt>已归档鼠标</dt>
                                     <dd>{{ dashboard?.miceArchived ?? 0 }}</dd>
                                 </div>
-                                <div>
+                                <div class="signal-action" role="button" tabindex="0" @click="openReviewQueue" @keyup.enter="openReviewQueue">
                                     <dt>待处理评价</dt>
                                     <dd>
                                         {{ dashboard?.reviewsPending ?? 0 }}
@@ -312,6 +346,10 @@ const {
                             <option value="PUBLISHED">已发布</option>
                             <option value="DRAFT">草稿</option>
                             <option value="ARCHIVED">已归档</option></select
+                        ><select v-model="mouseQuality" @change="loadMice(1)">
+                            <option value="">全部完整度</option><option value="INCOMPLETE">资料不完整</option><option value="READY">资料完整</option></select
+                        ><select v-model="mouseVerification" @change="loadMice(1)">
+                            <option value="">全部核验状态</option><option value="STALE">核验过期</option><option value="NEVER">从未核验</option><option value="CURRENT">核验有效</option></select
                         ><input
                             ref="importFileInput"
                             class="visually-hidden"
@@ -332,29 +370,41 @@ const {
                             ＋ 新增鼠标
                         </button>
                     </div>
-                    <section v-if="importPreview" class="import-preview" aria-live="polite">
-                        <div>
-                            <strong>{{ importPreview.filename }}</strong>
-                            <span>共 {{ importPreview.totalRows }} 行，{{ importPreview.validRows }} 行通过</span>
-                        </div>
-                        <dl>
-                            <div><dt>新增</dt><dd>{{ importPreview.createRows }}</dd></div>
-                            <div><dt>更新</dt><dd>{{ importPreview.updateRows }}</dd></div>
-                            <div><dt>错误</dt><dd :class="{ danger: importPreview.errors.length }">{{ importPreview.errors.length }}</dd></div>
-                        </dl>
-                        <div v-if="importPreview.errors.length" class="import-errors">
-                            <p v-for="issue in importPreview.errors.slice(0, 20)" :key="`${issue.row}-${issue.field}-${issue.message}`">
-                                第 {{ issue.row }} 行 · {{ issue.field }}：{{ issue.message }}<span v-if="issue.value">（{{ issue.value }}）</span>
-                            </p>
-                            <small v-if="importPreview.errors.length > 20">另有 {{ importPreview.errors.length - 20 }} 条错误，请修正后重新预检。</small>
-                        </div>
-                        <div class="import-actions">
-                            <button type="button" class="toolbar-action" @click="cancelImport">取消导入</button>
-                            <button type="button" class="button" :disabled="!importPreview.ready || importLoading" @click="commitImport">
-                                {{ importLoading ? "正在写入…" : "确认写入数据库" }}
-                            </button>
-                        </div>
-                    </section>
+                    <div v-if="mouseSelection.length" class="batch-action-bar"><strong>已选择 {{ mouseSelection.length }} 项</strong><button @click="batchStatus('mice', 'PUBLISHED')">批量发布</button><button @click="batchStatus('mice', 'DRAFT')">转为草稿</button><button class="danger" @click="batchStatus('mice', 'ARCHIVED')">批量归档</button><button @click="mouseSelection = []">取消选择</button></div>
+                    <AdminFloatingPanel
+                        :open="Boolean(importPreview)"
+                        title="CSV 导入预检"
+                        :subtitle="importPreview ? `${importPreview.filename} · 共 ${importPreview.totalRows} 行` : ''"
+                        size="default"
+                        :busy="importLoading"
+                        @close="cancelImport"
+                    >
+                        <section v-if="importPreview" class="import-preview import-preview-floating" aria-live="polite">
+                            <div>
+                                <strong>{{ importPreview.filename }}</strong>
+                                <span>{{ importPreview.validRows }} 行通过校验</span>
+                            </div>
+                            <dl>
+                                <div><dt>新增</dt><dd>{{ importPreview.createRows }}</dd></div>
+                                <div><dt>更新</dt><dd>{{ importPreview.updateRows }}</dd></div>
+                                <div><dt>错误</dt><dd :class="{ danger: importPreview.errors.length }">{{ importPreview.errors.length }}</dd></div>
+                            </dl>
+                            <div v-if="importPreview.errors.length" class="import-errors">
+                                <p v-for="issue in importPreview.errors.slice(0, 20)" :key="`${issue.row}-${issue.field}-${issue.message}`">
+                                    第 {{ issue.row }} 行 · {{ issue.field }}：{{ issue.message }}<span v-if="issue.value">（{{ issue.value }}）</span>
+                                </p>
+                                <small v-if="importPreview.errors.length > 20">另有 {{ importPreview.errors.length - 20 }} 条错误，请修正后重新预检。</small>
+                            </div>
+                        </section>
+                        <template #footer>
+                            <div class="floating-action-row">
+                                <button type="button" class="toolbar-action" :disabled="importLoading" @click="cancelImport">取消导入</button>
+                                <button type="button" class="button" :disabled="!importPreview?.ready || importLoading" @click="commitImport">
+                                    {{ importLoading ? "正在写入…" : "确认写入数据库" }}
+                                </button>
+                            </div>
+                        </template>
+                    </AdminFloatingPanel>
                     <Teleport to="body">
                         <div
                             v-if="showEditor"
@@ -885,6 +935,11 @@ const {
                                                     class="image-picker-filename"
                                                     >{{ selectedImageName }}</span
                                                 >
+                                                <span
+                                                    v-if="form.imageUrl"
+                                                    class="image-preview-mode"
+                                                    >前台卡片预览</span
+                                                >
                                                 <div
                                                     v-if="imageUploading"
                                                     class="image-uploading"
@@ -912,9 +967,17 @@ const {
                                                     >
                                                     {{
                                                         form.imageUrl
-                                                            ? "上传并替换"
-                                                            : "从电脑上传"
+                                                            ? "上传并截选新图"
+                                                            : "上传并截选图片"
                                                     }}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    :disabled="!form.imageUrl || imageUploading"
+                                                    @click="editCurrentImage"
+                                                >
+                                                    <span aria-hidden="true">✦</span>
+                                                    编辑当前图片
                                                 </button>
                                                 <button
                                                     type="button"
@@ -939,66 +1002,38 @@ const {
                                             >
                                                 {{ imageError }}
                                             </p>
-                                            <div
-                                                v-if="showImageLibrary"
-                                                class="image-library"
+                                            <AdminFloatingPanel
+                                                :open="showImageLibrary"
+                                                title="项目图片库"
+                                                subtitle="选择图片后会立即用于当前鼠标；删除仅允许未被引用的图片。"
+                                                size="wide"
+                                                :busy="imageLoading"
+                                                @close="showImageLibrary = false"
                                             >
-                                                <div
-                                                    class="image-library-heading"
-                                                >
-                                                    <div>
-                                                        <strong
-                                                            >项目图片库</strong
-                                                        >
-                                                        <small
-                                                            >data/mouse-images</small
-                                                        >
+                                                <div class="image-library image-library-floating">
+                                                    <div class="image-library-heading">
+                                                        <small>data/mouse-images · {{ imageAssets.length }} 张图片</small>
+                                                        <button type="button" :disabled="imageLoading" @click="loadImages">↻ 刷新图片库</button>
                                                     </div>
-                                                    <button
-                                                        type="button"
-                                                        :disabled="imageLoading"
-                                                        @click="loadImages"
-                                                    >
-                                                        ↻ 刷新
-                                                    </button>
-                                                </div>
-                                                <div
-                                                    v-if="imageLoading"
-                                                    class="image-library-state"
-                                                >
-                                                    正在读取图片库…
-                                                </div>
-                                                <div
-                                                    v-else-if="
-                                                        !imageAssets.length
-                                                    "
-                                                    class="image-library-state"
-                                                >
-                                                    图片库暂无内容，可先从电脑上传一张
-                                                </div>
-                                                <div
-                                                    v-else
-                                                    class="image-library-grid"
-                                                >
-                                                    <div
-                                                        v-for="asset in imageAssets"
-                                                        :key="asset.url"
-                                                        class="image-library-entry"
-                                                        :class="{
-                                                            selected:
-                                                                form.imageUrl ===
-                                                                asset.url,
-                                                        }"
-                                                    >
-                                                        <button type="button" class="image-library-item" @click="selectImage(asset)">
-                                                            <img :src="asset.url" :alt="asset.name" loading="lazy" />
-                                                            <span>{{ asset.name }}</span>
-                                                            <i v-if="form.imageUrl === asset.url">✓</i>
-                                                        </button>
-                                                        <button type="button" class="image-delete" :aria-label="`删除图片 ${asset.name}`" @click="deleteImage(asset)">删除</button>
+                                                    <div v-if="imageLoading" class="image-library-state">正在读取图片库…</div>
+                                                    <div v-else-if="!imageAssets.length" class="image-library-state">图片库暂无内容，可先从电脑上传一张</div>
+                                                    <div v-else class="image-library-grid">
+                                                        <div
+                                                            v-for="asset in imageAssets"
+                                                            :key="asset.url"
+                                                            class="image-library-entry"
+                                                            :class="{ selected: form.imageUrl === asset.url }"
+                                                        >
+                                                            <button type="button" class="image-library-item" @click="selectImage(asset)">
+                                                                <img :src="asset.url" :alt="asset.name" loading="lazy" />
+                                                                <span>{{ asset.name }}</span>
+                                                                <i v-if="form.imageUrl === asset.url">✓</i>
+                                                            </button>
+                                                            <button type="button" class="image-delete" :aria-label="`删除图片 ${asset.name}`" @click="deleteImage(asset)">删除</button>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
+                                            </AdminFloatingPanel>
                                         </div
                                         ><label class="wide"
                                             >购买渠道<input
@@ -1041,6 +1076,7 @@ const {
                     <table class="admin-table asset-table">
                         <thead>
                             <tr>
+                                <th class="selection-cell"></th>
                                 <th>产品</th>
                                 <th>尺寸 / 重量</th>
                                 <th>传感器 / 性能</th>
@@ -1050,6 +1086,7 @@ const {
                         </thead>
                         <tbody>
                             <tr v-for="mouse in mice.items" :key="mouse.id">
+                                <td class="selection-cell"><input v-model="mouseSelection" type="checkbox" :value="mouse.id" :aria-label="`选择 ${mouse.displayName}`"></td>
                                 <td>
                                     <strong>{{ mouse.displayName }}</strong
                                     ><small
@@ -1078,6 +1115,8 @@ const {
                                 <td class="row-actions">
                                     <button @click="editMouse(mouse)">
                                         编辑</button
+                                    ><button v-if="mouse.verificationWorkflowStatus !== 'IN_PROGRESS'" @click="updateVerification(mouse, 'IN_PROGRESS')">认领复核</button
+                                    ><button v-if="mouse.verificationWorkflowStatus !== 'DONE' || mouse.verificationStatus !== 'CURRENT'" @click="updateVerification(mouse, 'DONE')">完成复核</button
                                     ><button v-if="mouse.status !== 'PUBLISHED'" @click="changeMouseStatus(mouse, 'PUBLISHED')">
                                         发布</button
                                     ><button v-if="mouse.status === 'PUBLISHED'" @click="changeMouseStatus(mouse, 'DRAFT')">
@@ -1092,7 +1131,7 @@ const {
                                 </td>
                             </tr>
                             <tr v-if="!mice.items.length">
-                                <td colspan="5" class="table-empty">
+                                <td colspan="6" class="table-empty">
                                     暂无鼠标资产
                                 </td>
                             </tr>
@@ -1148,9 +1187,11 @@ const {
                             <option value="ADMIN">管理员</option>
                         </select>
                     </div>
+                    <div v-if="userSelection.length" class="batch-action-bar"><strong>已选择 {{ userSelection.length }} 项</strong><button @click="batchStatus('users', 'ACTIVE')">批量解封</button><button class="danger" @click="batchStatus('users', 'DISABLED')">批量封禁</button><button @click="userSelection = []">取消选择</button></div>
                     <table class="admin-table">
                         <thead>
                             <tr>
+                                <th class="selection-cell"></th>
                                 <th>用户</th>
                                 <th>角色</th>
                                 <th>手长资料</th>
@@ -1162,6 +1203,7 @@ const {
                         </thead>
                         <tbody>
                             <tr v-for="user in users.items" :key="user.id">
+                                <td class="selection-cell"><input v-model="userSelection" type="checkbox" :value="user.id" :disabled="user.role === 'ADMIN'" :aria-label="`选择 ${user.email}`"></td>
                                 <td>
                                     <strong>{{ user.email }}</strong
                                     ><small>{{ user.id }}</small>
@@ -1200,7 +1242,7 @@ const {
                                 </td>
                             </tr>
                             <tr v-if="!users.items.length">
-                                <td colspan="7" class="table-empty">
+                                <td colspan="8" class="table-empty">
                                     暂无用户
                                 </td>
                             </tr>
@@ -1225,6 +1267,7 @@ const {
                                     <button type="button" aria-label="关闭用户管理窗口" @click="closeUserAction">×</button>
                                 </header>
                                 <p class="user-management-summary">角色和封禁状态会在下一次接口请求时立即生效，所有操作都会写入审计日志。</p>
+                                <div v-if="userDetail" class="user-detail-strip"><div><span>评价数量</span><strong>{{ userDetail.reviewCount }}</strong></div><div><span>活跃会话</span><strong>{{ userDetail.activeSessionCount }}</strong></div><div><span>全部会话</span><strong>{{ userDetail.sessions.length }}</strong></div><div><span>最近活动</span><strong>{{ userDetail.sessions[0]?.lastUsedAt ? new Date(userDetail.sessions[0].lastUsedAt).toLocaleString('zh-CN') : '—' }}</strong></div></div>
                                 <div class="user-management-grid">
                                     <article class="user-role-card">
                                         <div><span>ROLE</span><h4>角色权限</h4><p>管理员可以访问整个后台；普通用户只能使用公开功能和个人评价。</p></div>
@@ -1286,58 +1329,80 @@ const {
                             <option value="DISABLED">已停用</option>
                         </select>
                     </div>
+                    <div v-if="reviewSelection.length" class="batch-action-bar"><strong>已选择 {{ reviewSelection.length }} 项</strong><button @click="batchStatus('reviews', 'ACTIVE')">批量恢复</button><button @click="batchStatus('reviews', 'PENDING')">转待审核</button><button class="danger" @click="batchStatus('reviews', 'DISABLED')">批量停用</button><button @click="reviewSelection = []">取消选择</button></div>
                     <table class="admin-table">
                         <thead>
                             <tr>
+                                <th class="selection-cell"></th>
                                 <th>评价者</th>
                                 <th>鼠标</th>
-                                <th>评分</th>
+                                <th>握姿舒适度</th>
                                 <th>状态</th>
                                 <th>提交时间</th>
                                 <th></th>
                             </tr>
                         </thead>
                         <tbody>
-                            <template v-for="review in reviews.items" :key="review.id">
-                                <tr>
-                                    <td><strong>{{ review.userEmail }}</strong><small>{{ gripLabel(review.gripStyle) }} / {{ review.handSize || '未填写手长' }}</small></td>
-                                    <td>{{ review.mouseName }}</td>
-                                    <td class="score-value">{{ review.overallScore }} / 10</td>
-                                    <td><em :class="`status-${review.status?.toLowerCase()}`">{{ statusLabel(review.status) }}</em></td>
-                                    <td class="mono">{{ review.createdAt ? new Date(review.createdAt).toLocaleDateString("zh-CN") : "—" }}</td>
-                                    <td class="row-actions"><button @click="toggleReviewDetails(review)">{{ expandedReviewId === review.id ? "收起" : "查看与处理" }}</button></td>
-                                </tr>
-                                <tr v-if="expandedReviewId === review.id" class="review-detail-row">
-                                    <td colspan="6">
-                                        <section class="review-detail">
-                                            <div class="review-score-grid">
-                                                <div><span>点击</span><strong>{{ review.clickScore ?? '—' }}</strong></div>
-                                                <div><span>滚轮</span><strong>{{ review.scrollScore ?? '—' }}</strong></div>
-                                                <div><span>做工</span><strong>{{ review.buildScore ?? '—' }}</strong></div>
-                                                <div><span>涂层</span><strong>{{ review.coatingScore ?? '—' }}</strong></div>
-                                                <div><span>舒适</span><strong>{{ review.comfortScore ?? '—' }}</strong></div>
-                                            </div>
-                                            <div class="review-evidence">
-                                                <div><span>握姿评分</span><p v-if="!review.gripScores?.length">暂无</p><p v-for="score in review.gripScores" :key="score.gripStyle">{{ gripLabel(score.gripStyle) }} {{ score.comfortScore }}/10</p></div>
-                                                <div><span>支撑位置</span><p v-if="!review.supportPositions?.length">暂无</p><p v-for="position in review.supportPositions" :key="position">{{ supportLabel(position) }}</p></div>
-                                                <div><span>最近处理</span><p>{{ review.moderatedBy || '尚未处理' }}</p><p v-if="review.moderationReason">{{ review.moderationReason }}</p></div>
-                                            </div>
-                                            <label class="moderation-reason">处理原因<textarea v-model.trim="moderationReason" maxlength="500" placeholder="停用时必填，说明判断依据；恢复时可填写复核说明。"></textarea></label>
-                                            <div class="review-actions">
-                                                <button v-if="review.status !== 'ACTIVE'" class="button button-ghost" @click="moderateReview(review, 'ACTIVE')">恢复评价</button>
-                                                <button v-if="review.status !== 'DISABLED'" class="button danger-button" @click="moderateReview(review, 'DISABLED')">停用评价</button>
-                                            </div>
-                                        </section>
-                                    </td>
-                                </tr>
-                            </template>
+                            <tr v-for="review in reviews.items" :key="review.id">
+                                <td class="selection-cell"><input v-model="reviewSelection" type="checkbox" :value="review.id" :aria-label="`选择 ${review.userEmail} 的评价`"></td>
+                                <td><strong>{{ review.userEmail }}</strong><small>{{ review.gripScores?.map((score) => gripLabel(score.gripStyle)).join(' / ') || '暂无握姿评分' }} / {{ review.handSize || '未填写手长' }}</small></td>
+                                <td>{{ review.mouseName }}</td>
+                                <td class="score-value">{{ review.comfortAverage || '—' }} / 10</td>
+                                <td><em :class="`status-${review.status?.toLowerCase()}`">{{ statusLabel(review.status) }}</em></td>
+                                <td class="mono">{{ review.createdAt ? new Date(review.createdAt).toLocaleDateString("zh-CN") : "—" }}</td>
+                                <td class="row-actions"><button @click="openReviewDetails(review)">查看与处理</button></td>
+                            </tr>
                             <tr v-if="!reviews.items.length">
-                                <td colspan="6" class="table-empty">
+                                <td colspan="7" class="table-empty">
                                     暂无评价记录
                                 </td>
                             </tr>
                         </tbody>
                     </table>
+                    <AdminFloatingPanel
+                        :open="Boolean(selectedReview)"
+                        title="评价查看与处理"
+                        :subtitle="selectedReview ? `${selectedReview.userEmail} · ${selectedReview.mouseName}` : ''"
+                        size="wide"
+                        :busy="loading"
+                        @close="closeReviewDetails"
+                    >
+                        <section v-if="selectedReview" class="review-governance-modal">
+                            <div class="review-governance-layout">
+                                <div class="review-hand-section">
+                                    <div class="review-section-heading">
+                                        <div><strong>支撑涂抹结果</strong><span>拖动可旋转手模，滚轮可缩放</span></div>
+                                        <em>{{ reviewHasSupport ? '已提交涂抹' : '未提交涂抹' }}</em>
+                                    </div>
+                                    <div class="review-hand-model" :class="{ empty: !reviewHasSupport }">
+                                        <HandSupport3D
+                                            :dabs="selectedReview.supportDabs || []"
+                                            :summary-cells="reviewSupportCells"
+                                            :max-count="reviewSupportCells.length ? 1 : 0"
+                                            :grid-columns="24"
+                                            :grid-rows="32"
+                                            :editable="false"
+                                            :aria-label="`${selectedReview.userEmail} 的支撑位置三维涂抹结果`"
+                                        />
+                                        <p v-if="!reviewHasSupport">该评价没有提交支撑位置涂抹。</p>
+                                    </div>
+                                </div>
+                                <aside class="review-governance-details">
+                                    <div class="review-score-summary"><span>握姿舒适均分</span><strong>{{ selectedReview.comfortAverage ?? '—' }}</strong><small>/ 10</small></div>
+                                    <section><span>握姿评分</span><p v-if="!selectedReview.gripScores?.length">暂无握姿评分</p><p v-for="score in selectedReview.gripScores" :key="score.gripStyle"><strong>{{ gripLabel(score.gripStyle) }}</strong><em>{{ score.comfortScore }}/10</em></p></section>
+                                    <section><span>最近处理</span><p><strong>{{ selectedReview.moderatedBy || '尚未处理' }}</strong></p><p v-if="selectedReview.moderationReason">{{ selectedReview.moderationReason }}</p></section>
+                                    <label class="moderation-reason">处理原因<textarea v-model.trim="moderationReason" maxlength="500" placeholder="停用时必填，说明判断依据；恢复时可填写复核说明。"></textarea></label>
+                                </aside>
+                            </div>
+                        </section>
+                        <template #footer>
+                            <div v-if="selectedReview" class="floating-action-row review-actions">
+                                <button type="button" class="button button-ghost" :disabled="loading" @click="closeReviewDetails">关闭窗口</button>
+                                <button v-if="selectedReview.status !== 'ACTIVE'" class="button button-ghost" :disabled="loading" @click="moderateReview(selectedReview, 'ACTIVE')">恢复评价</button>
+                                <button v-if="selectedReview.status !== 'DISABLED'" class="button danger-button" :disabled="loading" @click="moderateReview(selectedReview, 'DISABLED')">停用评价</button>
+                            </div>
+                        </template>
+                    </AdminFloatingPanel>
                     <div
                         class="admin-pagination"
                         v-if="reviews.page.totalPages > 1"
@@ -1365,26 +1430,45 @@ const {
                         </div>
                     </div>
                 </section>
-                <section v-else class="admin-panel full-panel">
+                <AdminExpansionPanels
+                    v-else-if="['analytics', 'brands', 'feedback', 'operations'].includes(activeTab)"
+                    :active-tab="activeTab"
+                />
+                <section v-else-if="activeTab === 'audit'" class="admin-panel full-panel">
                     <div class="toolbar">
                         <div class="toolbar-search"><span>⌕</span><input v-model="auditQuery" placeholder="搜索管理员、对象或操作摘要…" @keyup.enter="loadAudits(1)" /></div>
                         <select v-model="auditEntityType" @change="loadAudits(1)">
                             <option value="">全部对象</option><option value="MOUSE">鼠标</option><option value="USER">用户</option>
                             <option value="REVIEW">评价</option><option value="MOUSE_IMPORT">批量导入</option><option value="IMAGE">图片</option>
                         </select>
+                        <select v-model="auditAction" @change="loadAudits(1)"><option value="">全部操作</option><option value="MOUSE_UPDATE">更新鼠标</option><option value="MOUSE_STATUS_CHANGE">鼠标状态</option><option value="MOUSE_VERIFICATION">数据复核</option><option value="USER_STATUS_CHANGE">用户状态</option><option value="USER_ROLE_CHANGE">用户角色</option><option value="REVIEW_MODERATION">评价治理</option><option value="REPORT_WORKFLOW_CHANGE">反馈处理</option><option value="SESSION_REVOKE">会话撤销</option><option value="SYSTEM_SETTING_UPDATE">系统设置</option></select>
+                        <label class="audit-date">起<input v-model="auditFrom" type="date" @change="loadAudits(1)"></label><label class="audit-date">止<input v-model="auditTo" type="date" @change="loadAudits(1)"></label>
                     </div>
                     <table class="admin-table audit-table">
-                        <thead><tr><th>时间</th><th>管理员</th><th>操作</th><th>摘要</th><th>原因</th></tr></thead>
+                        <thead><tr><th>时间</th><th>管理员</th><th>操作</th><th>摘要</th><th>原因</th><th></th></tr></thead>
                         <tbody>
-                            <tr v-for="entry in audits.items" :key="entry.id">
+                            <tr v-for="entry in audits.items" :key="entry.id" class="audit-entry">
                                 <td class="mono">{{ new Date(entry.createdAt).toLocaleString("zh-CN") }}</td>
                                 <td><strong>{{ entry.actorEmail }}</strong><small>{{ entry.entityType }} · {{ entry.entityId || '—' }}</small></td>
                                 <td><em>{{ actionLabel(entry.action) }}</em></td>
-                                <td>{{ entry.summary }}</td><td>{{ entry.reason || '—' }}</td>
+                                <td>{{ entry.summary }}</td><td>{{ entry.reason || '—' }}</td><td class="row-actions"><button @click="selectAudit(entry)">查看变更</button></td>
                             </tr>
-                            <tr v-if="!audits.items.length"><td colspan="5" class="table-empty">暂无符合条件的操作记录</td></tr>
+                            <tr v-if="!audits.items.length"><td colspan="6" class="table-empty">暂无符合条件的操作记录</td></tr>
                         </tbody>
                     </table>
+                    <AdminFloatingPanel
+                        :open="Boolean(selectedAudit)"
+                        :title="selectedAudit ? actionLabel(selectedAudit.action) : '审计变更详情'"
+                        :subtitle="selectedAudit?.summary || ''"
+                        size="wide"
+                        @close="closeAudit"
+                    >
+                        <section v-if="selectedAudit" class="audit-detail-panel audit-detail-floating">
+                            <div class="audit-diff"><article><span>修改前</span><pre>{{ formatAuditState(selectedAudit.beforeState) }}</pre></article><article><span>修改后</span><pre>{{ formatAuditState(selectedAudit.afterState) }}</pre></article></div>
+                            <footer>{{ new Date(selectedAudit.createdAt).toLocaleString('zh-CN') }} · {{ selectedAudit.actorEmail }} · {{ selectedAudit.reason || '未填写原因' }}</footer>
+                        </section>
+                        <template #footer><div class="floating-action-row"><button type="button" class="button button-ghost" @click="closeAudit">关闭窗口</button></div></template>
+                    </AdminFloatingPanel>
                     <div class="admin-pagination" v-if="audits.page.totalPages > 1">
                         <span>第 {{ audits.page.number }} / {{ audits.page.totalPages }} 页 · 共 {{ audits.page.totalItems }} 条</span>
                         <div><button :disabled="audits.page.number <= 1" @click="loadAudits(audits.page.number - 1)">← 上一页</button><button :disabled="audits.page.number >= audits.page.totalPages" @click="loadAudits(audits.page.number + 1)">下一页 →</button></div>
@@ -1393,4 +1477,13 @@ const {
             </main>
         </div>
     </div>
+    <AdminImageEditor
+        :source="imageEditorSource"
+        :saving="imageUploading"
+        :external-error="imageError"
+        :brand="form.brand"
+        :model="form.model"
+        @cancel="cancelImageEditor"
+        @save="saveEditedImage"
+    />
 </template>

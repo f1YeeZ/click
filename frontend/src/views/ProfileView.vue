@@ -96,7 +96,7 @@ const save = async () => {
       preferredGripStyle: preferredGripStyle.value || null
     })
     auth.user = data
-    localStorage.setItem('clicker.user', JSON.stringify(data))
+    sessionStorage.setItem('clicker.user', JSON.stringify(data))
     message.value = '个人资料已保存'
     messageTimer = setTimeout(() => { message.value = '' }, 3200)
   } catch (e) { error.value = errorMessage(e) }

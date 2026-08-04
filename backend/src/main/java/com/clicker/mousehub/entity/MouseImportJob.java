@@ -15,6 +15,10 @@ public class MouseImportJob {
     private Integer createdCount;
     private Integer updatedCount;
     private OffsetDateTime createdAt;
+    private Integer totalCount;
+    private String status;
+    private String errorReport;
+    private OffsetDateTime completedAt;
 
     public String getChecksum() { return checksum; }
     public void setChecksum(String checksum) { this.checksum = checksum; }
@@ -28,4 +32,12 @@ public class MouseImportJob {
     public void setUpdatedCount(Integer updatedCount) { this.updatedCount = updatedCount; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
+    public Integer getTotalCount() { return totalCount; }
+    public void setTotalCount(Integer value) { totalCount = value; }
+    public String getStatus() { return status; }
+    public void setStatus(String value) { status = value; }
+    public String getErrorReport() { return errorReport; }
+    public void setErrorReport(String value) { errorReport = value; }
+    public OffsetDateTime getCompletedAt() { return completedAt; }
+    public void setCompletedAt(OffsetDateTime value) { completedAt = value; }
 }

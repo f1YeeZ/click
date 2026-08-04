@@ -43,6 +43,11 @@ public class AuditLogService {
     }
 
     public PageResponse<AuditLogView> search(String q, String entityType, long page, long pageSize) {
+        return search(q, entityType, null, null, null, page, pageSize);
+    }
+
+    public PageResponse<AuditLogView> search(String q, String entityType, String action,
+                                             OffsetDateTime from, OffsetDateTime to, long page, long pageSize) {
         String term = q == null ? null : q.trim();
         Page<AuditLog> result = logs.selectPage(new Page<>(Math.max(1, page), safeSize(pageSize)),
                 new LambdaQueryWrapper<AuditLog>()
@@ -52,9 +57,18 @@ public class AuditLogService {
                                 .or().like(AuditLog::getEntityId, term)
                                 .or().like(AuditLog::getReason, term))
                         .eq(entityType != null && !entityType.isBlank(), AuditLog::getEntityType, entityType)
+                        .eq(action != null && !action.isBlank(), AuditLog::getAction, action)
+                        .ge(from != null, AuditLog::getCreatedAt, from)
+                        .le(to != null, AuditLog::getCreatedAt, to)
                         .orderByDesc(AuditLog::getCreatedAt));
         return new PageResponse<>(result.getRecords().stream().map(AuditLogView::from).toList(),
                 new PageResponse.PageMeta(result.getCurrent(), result.getSize(), result.getTotal(), result.getPages()));
+    }
+
+    public AuditLogView detail(UUID id) {
+        AuditLog value = logs.selectById(id);
+        if (value == null) throw new com.clicker.mousehub.common.BusinessException("AUDIT_NOT_FOUND", "审计记录不存在", org.springframework.http.HttpStatus.NOT_FOUND);
+        return AuditLogView.from(value);
     }
 
     public String currentActor() {
