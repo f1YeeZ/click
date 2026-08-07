@@ -53,17 +53,21 @@ public class AuthController {
     }
 
     @PostMapping("/sessions")
-    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request, HttpServletRequest servletRequest,
-                                   HttpServletResponse response) {
+    public ResponseEntity<SessionResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest servletRequest,
+                                                 HttpServletResponse response) {
         limits.check("login", servletRequest.getRemoteAddr(), request.email(), 10, Duration.ofMinutes(5));
-        AuthService.LoginOutcome outcome = auth.login(request);
-        if (outcome.requiresSecondFactor()) {
-            var challenge = outcome.challenge();
-            return ResponseEntity.status(HttpStatus.ACCEPTED)
-                    .body(new LoginChallengeResponse(true, challenge.id(), challenge.expiresInSeconds()));
-        }
-        attach(outcome.session(), servletRequest); writeSession(response, false, outcome.session());
-        return ResponseEntity.created(URI.create("/api/v1/sessions/current")).body(outcome.session().response());
+        SessionService.SessionGrant grant = auth.login(request);
+        attach(grant, servletRequest); writeSession(response, false, grant);
+        return ResponseEntity.created(URI.create("/api/v1/sessions/current")).body(grant.response());
+    }
+
+    @PostMapping("/admin-sessions")
+    public ResponseEntity<LoginChallengeResponse> loginAdmin(@Valid @RequestBody LoginRequest request,
+                                                              HttpServletRequest servletRequest) {
+        limits.check("admin-login", servletRequest.getRemoteAddr(), request.email(), 10, Duration.ofMinutes(5));
+        var challenge = auth.beginAdminLogin(request);
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(new LoginChallengeResponse(true, challenge.id(), challenge.expiresInSeconds()));
     }
 
     @PostMapping("/admin-sessions/verify")
@@ -78,7 +82,7 @@ public class AuthController {
 
     @PostMapping("/sessions/refresh")
     public SessionResponse refresh(HttpServletRequest request, HttpServletResponse response) {
-        SessionService.SessionGrant grant = sessions.refresh(cookies.read(request, false));
+        SessionService.SessionGrant grant = sessions.refresh(cookies.read(request, false), false);
         attach(grant, request);
         writeSession(response, false, grant);
         return grant.response();
@@ -86,7 +90,7 @@ public class AuthController {
 
     @PostMapping("/admin-sessions/refresh")
     public SessionResponse refreshAdmin(HttpServletRequest request, HttpServletResponse response) {
-        SessionService.SessionGrant grant = sessions.refresh(cookies.read(request, true));
+        SessionService.SessionGrant grant = sessions.refresh(cookies.read(request, true), true);
         attach(grant, request);
         writeSession(response, true, grant);
         return grant.response();

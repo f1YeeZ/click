@@ -20,6 +20,7 @@ public class AuthSession {
     private OffsetDateTime createdAt;
     private String ipAddress;
     private String userAgent;
+    private Boolean adminVerified;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -41,4 +42,6 @@ public class AuthSession {
     public void setIpAddress(String value) { this.ipAddress = value; }
     public String getUserAgent() { return userAgent; }
     public void setUserAgent(String value) { this.userAgent = value; }
+    public Boolean getAdminVerified() { return adminVerified; }
+    public void setAdminVerified(Boolean value) { this.adminVerified = value; }
 }

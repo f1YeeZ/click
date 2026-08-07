@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class SecurityRateLimitFilter extends OncePerRequestFilter {
     private static final List<Rule> RULES = List.of(
             new Rule("POST", "/api/v1/sessions", "auth-login", 10, Duration.ofMinutes(5)),
+            new Rule("POST", "/api/v1/admin-sessions", "auth-admin-login", 10, Duration.ofMinutes(5)),
             new Rule("POST", "/api/v1/registration-verification-codes", "auth-register-code", 5, Duration.ofMinutes(10)),
             new Rule("POST", "/api/v1/users", "auth-register", 10, Duration.ofMinutes(10)),
             new Rule("POST", "/api/v1/password-verification-codes", "auth-password-code", 5, Duration.ofMinutes(10)),

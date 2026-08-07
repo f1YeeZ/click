@@ -416,6 +416,50 @@ class ApiIntegrationTest {
 
     @Test
     @Transactional
+    void administratorCanUseFrontendWithoutBypassingAdminSecondFactor() throws Exception {
+        UserAccount administrator = user("front-admin@example.com", "ADMIN");
+        administrator.setPasswordHash(passwordEncoder.encode("password123"));
+        users.insert(administrator);
+
+        String frontendResponse = mvc.perform(post("/api/v1/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"front-admin@example.com\",\"password\":\"password123\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Set-Cookie", containsString("clicker_refresh=")))
+                .andExpect(jsonPath("$.token", not(emptyString())))
+                .andExpect(jsonPath("$.user.role", is("USER")))
+                .andReturn().getResponse().getContentAsString();
+        org.assertj.core.api.Assertions.assertThat(mail.codeFor("ADMIN_LOGIN")).isNull();
+
+        String frontendToken = json.readTree(frontendResponse).get("token").asText();
+        mvc.perform(get("/api/v1/admin/analytics").header("Authorization", "Bearer " + frontendToken))
+                .andExpect(status().isForbidden());
+
+        String challengeResponse = mvc.perform(post("/api/v1/admin-sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"front-admin@example.com\",\"password\":\"password123\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.challengeId", not(emptyString())))
+                .andReturn().getResponse().getContentAsString();
+        String challengeId = json.readTree(challengeResponse).get("challengeId").asText();
+        String verificationCode = mail.codeFor("ADMIN_LOGIN");
+        org.assertj.core.api.Assertions.assertThat(verificationCode).matches("\\d{6}");
+
+        String adminResponse = mvc.perform(post("/api/v1/admin-sessions/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"challengeId\":\"" + challengeId + "\",\"email\":\"front-admin@example.com\",\"code\":\""
+                                + verificationCode + "\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Set-Cookie", containsString("clicker_admin_refresh=")))
+                .andExpect(jsonPath("$.user.role", is("ADMIN")))
+                .andReturn().getResponse().getContentAsString();
+        String adminToken = json.readTree(adminResponse).get("token").asText();
+        mvc.perform(get("/api/v1/admin/analytics").header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @Transactional
     void forgottenPasswordCanBeResetWithoutAnActiveSession() throws Exception {
         UserAccount account = user("forgot-password@example.com", "USER");
         account.setPasswordHash(passwordEncoder.encode("old-password123"));

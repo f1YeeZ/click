@@ -1,0 +1,2 @@
+ALTER TABLE auth_sessions
+    ADD COLUMN IF NOT EXISTS admin_verified BOOLEAN NOT NULL DEFAULT FALSE;

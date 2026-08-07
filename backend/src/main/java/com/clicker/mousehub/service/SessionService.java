@@ -40,24 +40,39 @@ public class SessionService {
 
     @Transactional
     public SessionGrant issue(UserAccount user) {
+        return issue(user, false);
+    }
+
+    @Transactional
+    public SessionGrant issueAdmin(UserAccount user) {
+        if (!"ADMIN".equals(user.getRole())) throw unauthorized();
+        return issue(user, true);
+    }
+
+    private SessionGrant issue(UserAccount user, boolean adminVerified) {
         OffsetDateTime now = OffsetDateTime.now();
         String raw = randomToken();
         AuthSession session = new AuthSession();
         session.setId(UUID.randomUUID()); session.setUserId(user.getId());
         session.setRefreshTokenHash(hash(raw)); session.setTokenVersion(user.getTokenVersion());
+        session.setAdminVerified(adminVerified);
         session.setExpiresAt(now.plus(refreshDuration)); session.setCreatedAt(now);
         sessions.insert(session);
         return grant(user, session, raw);
     }
 
     @Transactional
-    public SessionGrant refresh(String rawRefreshToken) {
+    public SessionGrant refresh(String rawRefreshToken, boolean adminRequired) {
         AuthSession session = find(rawRefreshToken);
         if (session == null || session.getRevokedAt() != null || !session.getExpiresAt().isAfter(OffsetDateTime.now())) {
             throw unauthorized();
         }
+        if (Boolean.TRUE.equals(session.getAdminVerified()) != adminRequired) {
+            throw unauthorized();
+        }
         UserAccount user = users.selectById(session.getUserId());
-        if (user == null || !"ACTIVE".equals(user.getStatus()) || user.getTokenVersion() != session.getTokenVersion()) {
+        if (user == null || !"ACTIVE".equals(user.getStatus()) || user.getTokenVersion() != session.getTokenVersion()
+                || (adminRequired && !"ADMIN".equals(user.getRole()))) {
             revoke(session); throw unauthorized();
         }
         OffsetDateTime now = OffsetDateTime.now();
@@ -85,9 +100,10 @@ public class SessionService {
     public long refreshExpiresInSeconds() { return refreshDuration.toSeconds(); }
 
     private SessionGrant grant(UserAccount user, AuthSession session, String rawRefresh) {
-        SessionResponse response = new SessionResponse(jwt.create(user, session.getId(), user.getTokenVersion()),
+        String effectiveRole = Boolean.TRUE.equals(session.getAdminVerified()) ? "ADMIN" : "USER";
+        SessionResponse response = new SessionResponse(jwt.create(user, session.getId(), user.getTokenVersion(), effectiveRole),
                 jwt.accessExpiresInSeconds(), new com.clicker.mousehub.dto.AuthDtos.UserView(
-                        user.getId(), user.getEmail(), user.getRole(), user.getHandSize(), user.getHandLengthCm(), user.getPreferredGripStyle()));
+                        user.getId(), user.getEmail(), effectiveRole, user.getHandSize(), user.getHandLengthCm(), user.getPreferredGripStyle()));
         return new SessionGrant(response, rawRefresh, session.getExpiresAt(), session.getId());
     }
 

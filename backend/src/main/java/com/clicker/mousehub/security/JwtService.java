@@ -38,9 +38,13 @@ public class JwtService {
     }
 
     public String create(UserAccount user, UUID sessionId, long tokenVersion) {
+        return create(user, sessionId, tokenVersion, user.getRole());
+    }
+
+    public String create(UserAccount user, UUID sessionId, long tokenVersion, String effectiveRole) {
         Instant now = Instant.now();
         var builder = Jwts.builder().issuer(issuer).subject(user.getEmail()).audience().add(audience).and()
-                .id(UUID.randomUUID().toString()).claim("role", user.getRole()).claim("ver", tokenVersion);
+                .id(UUID.randomUUID().toString()).claim("role", effectiveRole).claim("ver", tokenVersion);
         if (sessionId != null) builder.claim("sid", sessionId.toString());
         return builder
                 .issuedAt(Date.from(now)).expiration(Date.from(now.plus(duration)))

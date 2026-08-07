@@ -38,13 +38,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 JwtService.JwtPrincipal principal = jwtService.principal(header.substring(7));
                 UserAccount user = userMapper.selectOne(Wrappers.<UserAccount>lambdaQuery().eq(UserAccount::getEmail, principal.email()));
                 AuthSession session = principal.sessionId() == null ? null : sessionMapper.selectById(principal.sessionId());
+                boolean adminSession = session != null && Boolean.TRUE.equals(session.getAdminVerified());
                 if (user != null && "ACTIVE".equals(user.getStatus())
                         && user.getTokenVersion() == principal.tokenVersion()
                         && session != null && session.getUserId().equals(user.getId())
                         && session.getTokenVersion() == principal.tokenVersion()
-                        && session.getRevokedAt() == null && session.getExpiresAt().isAfter(java.time.OffsetDateTime.now())) {
+                        && session.getRevokedAt() == null && session.getExpiresAt().isAfter(java.time.OffsetDateTime.now())
+                        && (!adminSession || "ADMIN".equals(user.getRole()))) {
+                    String effectiveRole = adminSession ? "ADMIN" : "USER";
                     var authentication = new UsernamePasswordAuthenticationToken(
-                            user.getEmail(), null, List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole())));
+                            user.getEmail(), null, List.of(new SimpleGrantedAuthority("ROLE_" + effectiveRole)));
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
             } catch (JwtException | IllegalArgumentException ignored) {

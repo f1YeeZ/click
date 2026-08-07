@@ -106,18 +106,29 @@ public class AuthService {
         return new MessageResponse("密码修改成功");
     }
 
-    public LoginOutcome login(LoginRequest request) {
+    public SessionService.SessionGrant login(LoginRequest request) {
+        return sessions.issue(authenticate(request));
+    }
+
+    public AdminLoginChallengeService.Challenge beginAdminLogin(LoginRequest request) {
+        UserAccount user = authenticate(request);
+        if (!"ADMIN".equals(user.getRole())) {
+            throw invalidCredentials();
+        }
+        return adminChallenges.begin(user);
+    }
+
+    private UserAccount authenticate(LoginRequest request) {
         UserAccount user = find(UserAccount.normalizeEmail(request.email()));
         if (user == null || !"ACTIVE".equals(user.getStatus()) || !encoder.matches(request.password(), user.getPasswordHash())) {
-            throw new BusinessException("INVALID_CREDENTIALS", "账号或密码错误", HttpStatus.UNAUTHORIZED);
+            throw invalidCredentials();
         }
-        if ("ADMIN".equals(user.getRole())) return LoginOutcome.challenge(adminChallenges.begin(user));
-        return LoginOutcome.session(sessions.issue(user));
+        return user;
     }
 
     public SessionService.SessionGrant verifyAdmin(AdminLoginVerificationRequest request) {
         UserAccount user = adminChallenges.verify(request.challengeId(), UserAccount.normalizeEmail(request.email()), request.code());
-        return sessions.issue(user);
+        return sessions.issueAdmin(user);
     }
 
     public UserView me(String email) {
@@ -172,9 +183,7 @@ public class AuthService {
         return "LARGE";
     }
 
-    public record LoginOutcome(SessionService.SessionGrant session, AdminLoginChallengeService.Challenge challenge) {
-        public static LoginOutcome session(SessionService.SessionGrant grant) { return new LoginOutcome(grant, null); }
-        public static LoginOutcome challenge(AdminLoginChallengeService.Challenge challenge) { return new LoginOutcome(null, challenge); }
-        public boolean requiresSecondFactor() { return challenge != null; }
+    private BusinessException invalidCredentials() {
+        return new BusinessException("INVALID_CREDENTIALS", "账号或密码错误", HttpStatus.UNAUTHORIZED);
     }
 }

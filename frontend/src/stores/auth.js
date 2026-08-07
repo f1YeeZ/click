@@ -23,7 +23,8 @@ const createAuthStore = (id, storagePrefix) => defineStore(id, {
   },
   actions: {
     async login(payload) {
-      const response = await api.post('/sessions', payload)
+      const path = storagePrefix === 'clicker.admin' ? '/admin-sessions' : '/sessions'
+      const response = await api.post(path, payload)
       if (response.status === 202 || response.data?.challengeId) {
         this.pendingChallenge = response.data
         return response.data

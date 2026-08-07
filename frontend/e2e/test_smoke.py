@@ -153,14 +153,26 @@ class ClickerSmokeTest(unittest.TestCase):
             return
         if path == "/api/v1/sessions" and method == "POST":
             payload = json.loads(route.request.post_data or "{}")
-            is_admin = payload.get("email") == "admin@example.com"
             route.fulfill(content_type="application/json", body=json.dumps({
-                "token": "admin-token" if is_admin else "user-token",
+                "token": "user-token",
                 "user": {
-                    "id": "admin-a" if is_admin else "user-a",
+                    "id": "admin-a" if payload.get("email") == "admin@example.com" else "user-a",
                     "email": payload.get("email"),
-                    "role": "ADMIN" if is_admin else "USER",
+                    "role": "USER",
                 },
+            }))
+            return
+        if path == "/api/v1/admin-sessions" and method == "POST":
+            route.fulfill(status=202, content_type="application/json", body=json.dumps({
+                "secondFactorRequired": True,
+                "challengeId": "11111111-1111-1111-1111-111111111111",
+                "expiresInSeconds": 600,
+            }))
+            return
+        if path == "/api/v1/admin-sessions/verify" and method == "POST":
+            route.fulfill(status=201, content_type="application/json", body=json.dumps({
+                "token": "admin-token",
+                "user": {"id": "admin-a", "email": "admin@example.com", "role": "ADMIN"},
             }))
             return
         if path == "/api/v1/config" and method == "GET":
@@ -853,9 +865,24 @@ class ClickerSmokeTest(unittest.TestCase):
         self.page.get_by_label("邮箱").fill("admin@example.com")
         self.page.get_by_label("密码").fill("password123")
         self.page.get_by_role("button", name="登录 →").click()
+        expect(self.page.get_by_role("heading", name="验证管理员身份")).to_be_visible()
+        self.page.get_by_label("邮箱验证码").fill("123456")
+        self.page.get_by_role("button", name="验证并进入后台 →").click()
 
         self.page.wait_for_url(f"{BASE_URL}/admin")
         expect(self.page.locator(".metric-grid article").first.locator("strong")).to_have_text("9")
+
+    def test_administrator_can_log_into_frontend_without_a_verification_code(self):
+        self.page.goto(f"{BASE_URL}/login")
+        self.page.get_by_label("邮箱").fill("admin@example.com")
+        self.page.get_by_label("密码", exact=True).fill("password123")
+        self.page.get_by_role("button", name="登录 →").click()
+
+        self.page.wait_for_url(f"{BASE_URL}/mice")
+        self.assertEqual(self.page.evaluate("sessionStorage.getItem('clicker.token')"), "user-token")
+        expect(self.page.get_by_text("验证管理员身份", exact=True)).to_have_count(0)
+        self.assertTrue(any(item[:2] == ("POST", "/api/v1/sessions") for item in self.requests))
+        self.assertFalse(any(item[:2] == ("POST", "/api/v1/admin-sessions") for item in self.requests))
 
     def test_admin_editor_shows_live_publication_checklist(self):
         admin = {"id": "admin-a", "email": "admin@example.com", "role": "ADMIN"}
