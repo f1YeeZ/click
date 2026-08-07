@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent } from "vue";
+import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { useAdminConsole } from "../composables/useAdminConsole";
 import AdminExpansionPanels from "../components/AdminExpansionPanels.vue";
 import AdminFloatingPanel from "../components/AdminFloatingPanel.vue";
@@ -128,12 +128,40 @@ const {
     handleEscape,
 } = useAdminConsole();
 
+const selectedReviewSupportGrip = ref("");
+watch(selectedReview, (review) => {
+    selectedReviewSupportGrip.value = review?.supportByGrip?.[0]?.gripStyle || "";
+});
+const selectedReviewSupportMap = computed(() => selectedReview.value?.supportByGrip?.find(
+    (support) => support.gripStyle === selectedReviewSupportGrip.value,
+));
 const reviewSupportCells = computed(() =>
-    (selectedReview.value?.supportCells || []).map((cell) => ({ ...cell, count: 1 })),
+    (selectedReviewSupportMap.value?.supportCells || selectedReview.value?.supportCells || []).map((cell) => ({ ...cell, count: 1 })),
 );
+const reviewSupportDabs = computed(() => selectedReviewSupportMap.value?.supportDabs || selectedReview.value?.supportDabs || []);
 const reviewHasSupport = computed(() =>
-    Boolean(selectedReview.value?.supportDabs?.length || reviewSupportCells.value.length),
+    Boolean(selectedReview.value?.supportByGrip?.length || reviewSupportDabs.value.length || reviewSupportCells.value.length),
 );
+const reviewStats = computed(() => {
+    const items = reviews.value.items || [];
+    return {
+        high: items.filter((item) => item.riskLevel === "HIGH").length,
+        reported: items.filter((item) => (item.openReportCount || 0) > 0).length,
+        pending: items.filter((item) => item.status === "PENDING").length,
+        disabled: items.filter((item) => item.status === "DISABLED").length,
+    };
+});
+const riskLabel = (level) => ({ HIGH: "高风险", MEDIUM: "需关注", LOW: "低风险" }[level] || "待判断");
+const riskFlagLabel = (flag) => ({
+    多次举报: "多次举报",
+    有举报: "有举报",
+    极端评分: "极端评分",
+    内容不完整: "内容不完整",
+}[flag] || flag);
+const setReviewQueue = (status) => {
+    reviewStatus.value = status;
+    loadReviews(1);
+};
 </script>
 
 
@@ -1318,6 +1346,26 @@ const reviewHasSupport = computed(() =>
                     </div>
                 </section>
                 <section v-else-if="activeTab === 'reviews'" class="admin-panel full-panel">
+                    <div class="review-governance-hero">
+                        <div>
+                            <span class="panel-kicker">CONTRIBUTION CONTROL</span>
+                            <h3>评价治理工作台</h3>
+                            <p>前台展示综合热力图；后台按“用户 × 鼠标”评价包追溯每一份贡献。</p>
+                        </div>
+                        <div class="review-guardrail"><span>治理原则</span><strong>先看影响，再做处置</strong><small>停用评价会自动退出评分与热力图聚合</small></div>
+                    </div>
+                    <div class="review-signal-grid">
+                        <button :class="{ active: reviewStatus === 'PENDING' }" @click="setReviewQueue('PENDING')"><span>待审核</span><strong>{{ reviews.page.totalItems && reviewStatus === 'PENDING' ? reviews.page.totalItems : reviewStats.pending }}</strong><small>需要人工判断</small></button>
+                        <button class="signal-danger" @click="setReviewQueue('')"><span>当前页有举报</span><strong>{{ reviewStats.reported }}</strong><small>打开详情查看证据</small></button>
+                        <button @click="setReviewQueue('DISABLED')"><span>当前页已停用</span><strong>{{ reviewStats.disabled }}</strong><small>可复核并恢复</small></button>
+                        <button class="signal-accent" @click="setReviewQueue('')"><span>当前页高风险</span><strong>{{ reviewStats.high }}</strong><small>多次举报或极端评分</small></button>
+                    </div>
+                    <div class="review-queue-tabs" role="tablist" aria-label="评价治理队列">
+                        <button :class="{ active: reviewStatus === '' }" @click="setReviewQueue('')">全部评价</button>
+                        <button :class="{ active: reviewStatus === 'PENDING' }" @click="setReviewQueue('PENDING')">待审核</button>
+                        <button :class="{ active: reviewStatus === 'ACTIVE' }" @click="setReviewQueue('ACTIVE')">正常贡献</button>
+                        <button :class="{ active: reviewStatus === 'DISABLED' }" @click="setReviewQueue('DISABLED')">已排除</button>
+                    </div>
                     <div class="toolbar">
                         <div class="toolbar-search">
                             <span>⌕</span><input v-model="reviewQuery" placeholder="搜索评价者邮箱或鼠标…" @keyup.enter="loadReviews(1)" />
@@ -1334,9 +1382,10 @@ const reviewHasSupport = computed(() =>
                         <thead>
                             <tr>
                                 <th class="selection-cell"></th>
-                                <th>评价者</th>
+                                <th>评价包</th>
                                 <th>鼠标</th>
-                                <th>握姿舒适度</th>
+                                <th>贡献内容</th>
+                                <th>风险信号</th>
                                 <th>状态</th>
                                 <th>提交时间</th>
                                 <th></th>
@@ -1345,15 +1394,16 @@ const reviewHasSupport = computed(() =>
                         <tbody>
                             <tr v-for="review in reviews.items" :key="review.id">
                                 <td class="selection-cell"><input v-model="reviewSelection" type="checkbox" :value="review.id" :aria-label="`选择 ${review.userEmail} 的评价`"></td>
-                                <td><strong>{{ review.userEmail }}</strong><small>{{ review.gripScores?.map((score) => gripLabel(score.gripStyle)).join(' / ') || '暂无握姿评分' }} / {{ review.handSize || '未填写手长' }}</small></td>
+                                <td><strong>{{ review.userEmail }}</strong><small>{{ review.handSize || '未填写手长' }} · {{ review.gripScores?.map((score) => gripLabel(score.gripStyle)).join(' / ') || '暂无握姿评分' }}</small></td>
                                 <td>{{ review.mouseName }}</td>
-                                <td class="score-value">{{ review.comfortAverage || '—' }} / 10</td>
+                                <td><strong class="score-value">{{ review.comfortAverage || '—' }} / 10</strong><small>{{ review.gripScoreCount || 0 }} 个握姿评分 · {{ review.supportMarkCount || 0 }} 个支撑标记</small></td>
+                                <td><div class="review-risk-cell"><em :class="`risk-${review.riskLevel?.toLowerCase()}`">{{ riskLabel(review.riskLevel) }}</em><small v-if="review.openReportCount">{{ review.openReportCount }} 条待处理举报</small><small v-for="flag in (review.riskFlags || []).slice(0, 2)" :key="flag">{{ riskFlagLabel(flag) }}</small></div></td>
                                 <td><em :class="`status-${review.status?.toLowerCase()}`">{{ statusLabel(review.status) }}</em></td>
                                 <td class="mono">{{ review.createdAt ? new Date(review.createdAt).toLocaleDateString("zh-CN") : "—" }}</td>
                                 <td class="row-actions"><button @click="openReviewDetails(review)">查看与处理</button></td>
                             </tr>
                             <tr v-if="!reviews.items.length">
-                                <td colspan="7" class="table-empty">
+                                <td colspan="8" class="table-empty">
                                     暂无评价记录
                                 </td>
                             </tr>
@@ -1374,9 +1424,13 @@ const reviewHasSupport = computed(() =>
                                         <div><strong>支撑涂抹结果</strong><span>拖动可旋转手模，滚轮可缩放</span></div>
                                         <em>{{ reviewHasSupport ? '已提交涂抹' : '未提交涂抹' }}</em>
                                     </div>
+                                    <div v-if="selectedReview.supportByGrip?.length" class="review-support-grip-tabs">
+                                        <button v-for="support in selectedReview.supportByGrip" :key="support.gripStyle" type="button" :class="{ active: selectedReviewSupportGrip === support.gripStyle }" @click="selectedReviewSupportGrip = support.gripStyle">{{ gripLabel(support.gripStyle) }}</button>
+                                    </div>
                                     <div class="review-hand-model" :class="{ empty: !reviewHasSupport }">
                                         <HandSupport3D
-                                            :dabs="selectedReview.supportDabs || []"
+                                            :key="`${selectedReview.id}-${selectedReviewSupportGrip}`"
+                                            :dabs="reviewSupportDabs"
                                             :summary-cells="reviewSupportCells"
                                             :max-count="reviewSupportCells.length ? 1 : 0"
                                             :grid-columns="24"
@@ -1388,7 +1442,9 @@ const reviewHasSupport = computed(() =>
                                     </div>
                                 </div>
                                 <aside class="review-governance-details">
-                                    <div class="review-score-summary"><span>握姿舒适均分</span><strong>{{ selectedReview.comfortAverage ?? '—' }}</strong><small>/ 10</small></div>
+                                    <div class="review-score-summary"><span>评价包贡献</span><strong>{{ selectedReview.comfortAverage ?? '—' }}</strong><small>/ 10</small></div>
+                                    <section class="review-evidence-summary"><span>治理信号</span><div class="review-chip-row"><em :class="`risk-${selectedReview.riskLevel?.toLowerCase()}`">{{ riskLabel(selectedReview.riskLevel) }}</em><em v-for="flag in (selectedReview.riskFlags || [])" :key="flag">{{ riskFlagLabel(flag) }}</em></div><p><strong>{{ selectedReview.openReportCount || 0 }}</strong> 条待处理举报 · 共 {{ selectedReview.reportCount || 0 }} 条历史举报</p></section>
+                                    <section class="review-report-list"><span>举报证据</span><p v-if="!selectedReview.reports?.length">暂无关联举报</p><article v-for="report in (selectedReview.reports || []).slice(0, 3)" :key="report.id"><div><strong>{{ report.category }}</strong><em>{{ report.status === 'OPEN' ? '待处理' : report.status === 'IN_PROGRESS' ? '处理中' : '已结案' }}</em></div><p>{{ report.description }}</p><small>{{ report.reporterEmail }} · {{ report.createdAt ? new Date(report.createdAt).toLocaleString('zh-CN') : '—' }}</small></article></section>
                                     <section><span>握姿评分</span><p v-if="!selectedReview.gripScores?.length">暂无握姿评分</p><p v-for="score in selectedReview.gripScores" :key="score.gripStyle"><strong>{{ gripLabel(score.gripStyle) }}</strong><em>{{ score.comfortScore }}/10</em></p></section>
                                     <section><span>最近处理</span><p><strong>{{ selectedReview.moderatedBy || '尚未处理' }}</strong></p><p v-if="selectedReview.moderationReason">{{ selectedReview.moderationReason }}</p></section>
                                     <label class="moderation-reason">处理原因<textarea v-model.trim="moderationReason" maxlength="500" placeholder="停用时必填，说明判断依据；恢复时可填写复核说明。"></textarea></label>
@@ -1398,8 +1454,8 @@ const reviewHasSupport = computed(() =>
                         <template #footer>
                             <div v-if="selectedReview" class="floating-action-row review-actions">
                                 <button type="button" class="button button-ghost" :disabled="loading" @click="closeReviewDetails">关闭窗口</button>
-                                <button v-if="selectedReview.status !== 'ACTIVE'" class="button button-ghost" :disabled="loading" @click="moderateReview(selectedReview, 'ACTIVE')">恢复评价</button>
-                                <button v-if="selectedReview.status !== 'DISABLED'" class="button danger-button" :disabled="loading" @click="moderateReview(selectedReview, 'DISABLED')">停用评价</button>
+                                <button v-if="selectedReview.status !== 'ACTIVE'" class="button button-ghost" :disabled="loading" @click="moderateReview(selectedReview, 'ACTIVE')">恢复评价包</button>
+                                <button v-if="selectedReview.status !== 'DISABLED'" class="button danger-button" :disabled="loading" @click="moderateReview(selectedReview, 'DISABLED')">排除评价包</button>
                             </div>
                         </template>
                     </AdminFloatingPanel>

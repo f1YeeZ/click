@@ -2,6 +2,9 @@ package com.clicker.mousehub.dto;
 
 import com.clicker.mousehub.dto.AdminDtos.AdminUserView;
 import com.clicker.mousehub.dto.ReviewDtos.GripComfort;
+import com.clicker.mousehub.dto.ReviewDtos.SupportCell;
+import com.clicker.mousehub.dto.ReviewDtos.SupportDab;
+import com.clicker.mousehub.dto.ReviewDtos.SupportGrip;
 import com.clicker.mousehub.entity.*;
 import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
@@ -79,5 +82,6 @@ public final class OperationsDtos {
 
     public record PublicReviewView(UUID id, String author, String gripStyle, String handSize, String usageDuration,
                                    BigDecimal comfortAverage, List<GripComfort> gripScores,
-                                   OffsetDateTime createdAt) {}
+                                   OffsetDateTime createdAt, List<SupportCell> supportCells,
+                                   List<SupportDab> supportDabs, List<SupportGrip> supportByGrip) {}
 }

@@ -13,6 +13,7 @@ const ProfileView = () => import('../views/ProfileView.vue')
 const LeaderboardView = () => import('../views/LeaderboardView.vue')
 const RecommendationView = () => import('../views/RecommendationView.vue')
 const LegalView = () => import('../views/LegalView.vue')
+const CodeMapView = () => import('../views/CodeMapView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -31,7 +32,8 @@ const router = createRouter({
     { path: '/forgot-password', component: PasswordResetView },
     { path: '/profile', component: ProfileView, meta: { requiresAuth: true } },
     { path: '/admin/login', component: AuthView, props: { mode: 'login', admin: true } },
-    { path: '/admin', component: AdminView, meta: { requiresAdmin: true } }
+    { path: '/admin', component: AdminView, meta: { requiresAdmin: true } },
+    ...(import.meta.env.DEV ? [{ path: '/dev/code-map', component: CodeMapView }] : [])
   ],
   // Route transitions should not compete with a smooth scroll animation.
   scrollBehavior: () => ({ top: 0, left: 0, behavior: 'instant' })

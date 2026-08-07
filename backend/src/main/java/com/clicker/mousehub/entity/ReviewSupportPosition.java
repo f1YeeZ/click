@@ -12,6 +12,7 @@ public class ReviewSupportPosition {
     @TableId(type = IdType.INPUT)
     private UUID id;
     private UUID reviewId;
+    private String gripStyle;
     private String positionCode;
     private OffsetDateTime createdAt;
 
@@ -19,6 +20,8 @@ public class ReviewSupportPosition {
     public void setId(UUID id) { this.id = id; }
     public UUID getReviewId() { return reviewId; }
     public void setReviewId(UUID reviewId) { this.reviewId = reviewId; }
+    public String getGripStyle() { return gripStyle; }
+    public void setGripStyle(String gripStyle) { this.gripStyle = gripStyle; }
     public String getPositionCode() { return positionCode; }
     public void setPositionCode(String positionCode) { this.positionCode = positionCode; }
     public OffsetDateTime getCreatedAt() { return createdAt; }

@@ -230,6 +230,32 @@ class ReviewServiceIntegrationTest {
                 .singleElement().extracting("count").isEqualTo(1L);
     }
 
+    @Test void supportPaintIsStoredAndAggregatedIndependentlyPerGrip() {
+        String email = "per-grip-support@example.com";
+        createUser(email);
+        auth.updateProfile(email, new ProfileRequest(new BigDecimal("18.0"), "CLAW"));
+        MouseDevice mouse = mouse();
+        mice.insert(mouse);
+
+        List<SupportDab> clawStroke = List.of(new SupportDab(300, 450, 70, "PAINT"));
+        List<SupportDab> palmStroke = List.of(new SupportDab(700, 650, 90, "PAINT"));
+        reviews.saveSupportPositions(mouse.getId(), email, "CLAW",
+                new SupportPositionRequest(List.of(), List.of(), clawStroke));
+        reviews.saveSupportPositions(mouse.getId(), email, "PALM",
+                new SupportPositionRequest(List.of(), List.of(), palmStroke));
+
+        var mine = reviews.mine(mouse.getId(), email);
+        assertThat(mine.supportByGrip()).extracting("gripStyle")
+                .containsExactlyInAnyOrder("CLAW", "PALM");
+        assertThat(mine.supportByGrip()).filteredOn(item -> item.gripStyle().equals("CLAW"))
+                .singleElement().satisfies(item -> assertThat(item.supportDabs()).containsExactlyElementsOf(clawStroke));
+        assertThat(mine.supportByGrip()).filteredOn(item -> item.gripStyle().equals("PALM"))
+                .singleElement().satisfies(item -> assertThat(item.supportDabs()).containsExactlyElementsOf(palmStroke));
+        assertThat(reviews.supportSummary(mouse.getId()).sampleCount()).isEqualTo(2);
+        assertThat(reviews.supportSummary(mouse.getId(), "CLAW", "MEDIUM").sampleCount()).isEqualTo(1);
+        assertThat(reviews.supportSummary(mouse.getId(), "PALM", "MEDIUM").sampleCount()).isEqualTo(1);
+    }
+
     @Test void handLengthAndPreferredGripAreImmutableAfterFirstSelection() {
         String email = "locked-profile@example.com";
         createUser(email);

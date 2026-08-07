@@ -34,6 +34,13 @@ public class ReviewController {
         settings.requireEnabled("reviews.enabled", "当前暂停提交评价");
         return reviews.saveSupportPositions(mouseId, auth.getName(), request);
     }
+    @PutMapping("/support-positions/{gripStyle}") public ReviewView saveSupportPositionsForGrip(@PathVariable UUID mouseId,
+                                                                                                      @PathVariable String gripStyle,
+                                                                                                      Authentication auth,
+                                                                                                      @Valid @RequestBody SupportPositionRequest request) {
+        settings.requireEnabled("reviews.enabled", "当前暂停提交评价");
+        return reviews.saveSupportPositions(mouseId, auth.getName(), gripStyle, request);
+    }
     @DeleteMapping("/grip-scores/{gripStyle}") @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteGrip(@PathVariable UUID mouseId, @PathVariable String gripStyle, Authentication auth) {
         reviews.deleteGrip(mouseId, auth.getName(), gripStyle);

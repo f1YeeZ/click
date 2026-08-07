@@ -63,10 +63,19 @@ public class ReviewService {
 
     @Transactional
     public ReviewView saveSupportPositions(UUID mouseId, String email, SupportPositionRequest request) {
+        return saveSupportPositions(mouseId, email, null, request);
+    }
+
+    @Transactional
+    public ReviewView saveSupportPositions(UUID mouseId, String email, String gripStyle, SupportPositionRequest request) {
         UserAccount user = auth.require(email);
         requireHandLength(user);
-        if (user.getPreferredGripStyle() == null || user.getPreferredGripStyle().isBlank()) {
+        String selectedGrip = gripStyle == null || gripStyle.isBlank() ? user.getPreferredGripStyle() : gripStyle.trim().toUpperCase(Locale.ROOT);
+        if (selectedGrip == null || selectedGrip.isBlank()) {
             throw new BusinessException("PROFILE_GRIP_STYLE_REQUIRED", "请先在个人资料中选择习惯握姿", HttpStatus.CONFLICT);
+        }
+        if (!GRIPS.containsKey(selectedGrip)) {
+            throw new BusinessException("INVALID_OPTION", "握持方式不符合要求", HttpStatus.BAD_REQUEST);
         }
         mice.requirePublished(mouseId);
         List<String> requestedPositions = request.positions() == null ? List.of() : request.positions();
@@ -122,12 +131,20 @@ public class ReviewService {
             }
         }
 
-        supportPositions.delete(new LambdaQueryWrapper<ReviewSupportPosition>()
-                .eq(ReviewSupportPosition::getReviewId, review.getId()));
+        UUID reviewId = review.getId();
+        LambdaQueryWrapper<ReviewSupportPosition> deleteMap = new LambdaQueryWrapper<ReviewSupportPosition>()
+                .eq(ReviewSupportPosition::getReviewId, reviewId)
+                .and(wrapper -> wrapper.eq(ReviewSupportPosition::getGripStyle, selectedGrip));
+        if (selectedGrip.equals(user.getPreferredGripStyle())) {
+            deleteMap.or(wrapper -> wrapper.eq(ReviewSupportPosition::getReviewId, reviewId)
+                    .isNull(ReviewSupportPosition::getGripStyle));
+        }
+        supportPositions.delete(deleteMap);
         if (selectedDabs.isEmpty()) {
             for (SupportCell cell : selectedCells) {
                 ReviewSupportPosition position = new ReviewSupportPosition();
                 position.setId(UUID.randomUUID()); position.setReviewId(review.getId());
+                position.setGripStyle(selectedGrip);
                 position.setPositionCode(supportCellCode(cell)); position.setCreatedAt(now);
                 supportPositions.insert(position);
             }
@@ -135,6 +152,7 @@ public class ReviewService {
             for (int index = 0; index < selectedDabs.size(); index++) {
                 ReviewSupportPosition position = new ReviewSupportPosition();
                 position.setId(UUID.randomUUID()); position.setReviewId(review.getId());
+                position.setGripStyle(selectedGrip);
                 position.setPositionCode(supportDabCode(index, selectedDabs.get(index))); position.setCreatedAt(now);
                 supportPositions.insert(position);
             }
@@ -142,6 +160,7 @@ public class ReviewService {
         for (String code : selectedPositions) {
             ReviewSupportPosition position = new ReviewSupportPosition();
             position.setId(UUID.randomUUID()); position.setReviewId(review.getId());
+            position.setGripStyle(selectedGrip);
             position.setPositionCode(code); position.setCreatedAt(now);
             supportPositions.insert(position);
         }
@@ -207,6 +226,14 @@ public class ReviewService {
         int deleted = gripScores.delete(new LambdaQueryWrapper<ReviewGripScore>()
                 .eq(ReviewGripScore::getReviewId, review.getId()).eq(ReviewGripScore::getGripStyle, gripStyle));
         if (deleted == 0) throw new BusinessException("GRIP_REVIEW_NOT_FOUND", "握姿评分不存在", HttpStatus.NOT_FOUND);
+        LambdaQueryWrapper<ReviewSupportPosition> supportDelete = new LambdaQueryWrapper<ReviewSupportPosition>()
+                .eq(ReviewSupportPosition::getReviewId, review.getId())
+                .eq(ReviewSupportPosition::getGripStyle, gripStyle);
+        if (gripStyle.equals(user.getPreferredGripStyle())) {
+            supportDelete.or(wrapper -> wrapper.eq(ReviewSupportPosition::getReviewId, review.getId())
+                    .isNull(ReviewSupportPosition::getGripStyle));
+        }
+        supportPositions.delete(supportDelete);
         List<ReviewGripScore> remaining = gripScores.selectList(new LambdaQueryWrapper<ReviewGripScore>().eq(ReviewGripScore::getReviewId, review.getId()));
         if (remaining.isEmpty() && !hasSupportPositions(review.getId())) {
             reviews.deleteById(review.getId());
@@ -256,9 +283,6 @@ public class ReviewService {
                 .collect(java.util.stream.Collectors.toMap(UserAccount::getId, user -> user));
         List<UUID> reviewIds = active.stream()
                 .filter(review -> handMatches(review, handSize, userById.get(review.getUserId())))
-                .filter(review -> gripStyle == null || gripStyle.isBlank()
-                        || gripStyle.equals(Optional.ofNullable(userById.get(review.getUserId()))
-                        .map(UserAccount::getPreferredGripStyle).orElse(null)))
                 .map(Review::getId).toList();
         if (reviewIds.isEmpty()) return emptySupportSummary();
         List<ReviewSupportPosition> rows = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
@@ -266,8 +290,18 @@ public class ReviewService {
         Map<UUID, List<ReviewSupportPosition>> rowsByReview = rows.stream().collect(
                 java.util.stream.Collectors.groupingBy(ReviewSupportPosition::getReviewId));
         Map<SupportGridCell, Long> cellCounts = new HashMap<>();
+        Map<String, Long> positionCounts = new HashMap<>();
         int samples = 0;
-        for (List<ReviewSupportPosition> reviewRows : rowsByReview.values()) {
+        for (UUID reviewId : reviewIds) {
+            List<ReviewSupportPosition> allReviewRows = rowsByReview.getOrDefault(reviewId, List.of());
+            Review review = active.stream().filter(item -> item.getId().equals(reviewId)).findFirst().orElse(null);
+            UserAccount user = review == null ? null : userById.get(review.getUserId());
+            Map<String, List<ReviewSupportPosition>> rowsByGrip = allReviewRows.stream().collect(
+                    java.util.stream.Collectors.groupingBy(row -> effectiveSupportGrip(row, review, user),
+                            java.util.stream.Collectors.toList()));
+            for (Map.Entry<String, List<ReviewSupportPosition>> gripRows : rowsByGrip.entrySet()) {
+                if (gripStyle != null && !gripStyle.isBlank() && !gripStyle.equals(gripRows.getKey())) continue;
+                List<ReviewSupportPosition> reviewRows = gripRows.getValue();
             List<SupportDab> reviewDabs = reviewRows.stream().map(ReviewSupportPosition::getPositionCode)
                     .sorted().map(this::parseSupportDab).filter(Objects::nonNull).toList();
             BitSet reviewMask;
@@ -283,14 +317,16 @@ public class ReviewService {
                 }
                 reviewMask = maskFromLegacyCells(reviewCells);
             }
-            if (!reviewMask.isEmpty()) samples++;
-            reviewMask.stream().mapToObj(this::gridCellFromIndex)
-                    .forEach(cell -> cellCounts.merge(cell, 1L, Long::sum));
+                if (!reviewMask.isEmpty()) {
+                    samples++;
+                    reviewMask.stream().mapToObj(this::gridCellFromIndex)
+                            .forEach(cell -> cellCounts.merge(cell, 1L, Long::sum));
+                    reviewRows.stream().map(ReviewSupportPosition::getPositionCode)
+                            .filter(SUPPORT_POSITIONS::containsKey).distinct()
+                            .forEach(code -> positionCounts.merge(code, 1L, Long::sum));
+                }
+            }
         }
-        Map<String, Long> positionCounts = rows.stream()
-                .filter(row -> SUPPORT_POSITIONS.containsKey(row.getPositionCode()))
-                .collect(java.util.stream.Collectors.groupingBy(ReviewSupportPosition::getPositionCode,
-                        java.util.stream.Collectors.counting()));
         int sampleCount = samples;
         List<SupportHeatCell> cells = cellCounts.entrySet().stream()
                 .sorted(Comparator.comparingInt((Map.Entry<SupportGridCell, Long> entry) -> entry.getKey().y())
@@ -378,17 +414,36 @@ public class ReviewService {
         List<ReviewSupportPosition> supportRows = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
                         .eq(ReviewSupportPosition::getReviewId, review.getId()).orderByAsc(ReviewSupportPosition::getPositionCode))
                 .stream().toList();
+        Map<String, List<ReviewSupportPosition>> rowsByGrip = supportRows.stream().collect(
+                java.util.stream.Collectors.groupingBy(row -> effectiveSupportGrip(row, review, user),
+                        java.util.stream.Collectors.toList()));
+        List<SupportGrip> supportByGrip = rowsByGrip.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .map(entry -> supportGripView(entry.getKey(), entry.getValue())).toList();
         List<String> positions = supportRows.stream().map(ReviewSupportPosition::getPositionCode)
                 .filter(SUPPORT_POSITIONS::containsKey).toList();
-        List<SupportDab> dabs = supportRows.stream().map(ReviewSupportPosition::getPositionCode)
-                .sorted().map(this::parseSupportDab).filter(Objects::nonNull).toList();
-        List<SupportCell> cells = supportRows.stream().map(ReviewSupportPosition::getPositionCode)
-                .map(this::parseSupportCell).filter(Objects::nonNull).distinct().toList();
-        if (cells.isEmpty() && !dabs.isEmpty()) cells = legacyCellsFromMask(replaySupportDabs(dabs));
-        if (cells.isEmpty()) cells = positions.stream().map(SUPPORT_POSITION_ANCHORS::get).filter(Objects::nonNull).distinct().toList();
+        List<SupportDab> dabs = supportByGrip.stream().flatMap(item -> item.supportDabs().stream()).toList();
+        List<SupportCell> cells = supportByGrip.stream().flatMap(item -> item.supportCells().stream()).distinct().toList();
         return new ReviewView(review.getId(), review.getMouseId(), user == null ? null : user.getHandSize(),
                 comfortAverage, grips,
-                user == null ? null : user.getHandLengthCm(), positions, cells, dabs);
+                user == null ? null : user.getHandLengthCm(), positions, cells, dabs, supportByGrip);
+    }
+
+    private SupportGrip supportGripView(String gripStyle, List<ReviewSupportPosition> rows) {
+        List<SupportDab> dabs = rows.stream().map(ReviewSupportPosition::getPositionCode).sorted()
+                .map(this::parseSupportDab).filter(Objects::nonNull).toList();
+        List<SupportCell> cells = rows.stream().map(ReviewSupportPosition::getPositionCode)
+                .map(this::parseSupportCell).filter(Objects::nonNull).distinct().toList();
+        if (cells.isEmpty() && !dabs.isEmpty()) cells = legacyCellsFromMask(replaySupportDabs(dabs));
+        if (cells.isEmpty()) cells = rows.stream().map(ReviewSupportPosition::getPositionCode)
+                .map(SUPPORT_POSITION_ANCHORS::get).filter(Objects::nonNull).distinct().toList();
+        return new SupportGrip(gripStyle, cells, dabs);
+    }
+
+    private String effectiveSupportGrip(ReviewSupportPosition row, Review review, UserAccount user) {
+        if (row.getGripStyle() != null && !row.getGripStyle().isBlank()) return row.getGripStyle();
+        if (user != null && user.getPreferredGripStyle() != null && !user.getPreferredGripStyle().isBlank()) return user.getPreferredGripStyle();
+        if (review.getGripStyle() != null && !review.getGripStyle().isBlank()) return review.getGripStyle();
+        return "MIXED";
     }
 
     private SupportPositionSummary emptySupportSummary() {

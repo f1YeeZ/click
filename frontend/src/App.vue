@@ -12,6 +12,7 @@ const route = useRoute()
 const router = useRouter()
 const year = new Date().getFullYear()
 const isAdminRoute = computed(() => route.path === '/admin' || route.path === '/admin/login')
+const isCodeMapRoute = computed(() => route.path === '/dev/code-map')
 const routeMotion = ref('idle')
 const publicConfig = ref({ maintenanceNotice: '', registrationEnabled: true, reviewSubmissionEnabled: true })
 let routeMotionTimer
@@ -69,7 +70,7 @@ onBeforeUnmount(() => {
       </nav>
     </div>
   </footer>
-  <CompareTray v-if="!isAdminRoute && route.path !== '/compare'" />
+  <CompareTray v-if="!isAdminRoute && !isCodeMapRoute && route.path !== '/compare'" />
   <div class="route-motion-line" :class="`is-${routeMotion}`" aria-hidden="true"></div>
 </template>
 

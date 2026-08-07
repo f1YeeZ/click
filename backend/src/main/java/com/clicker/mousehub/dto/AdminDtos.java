@@ -5,6 +5,7 @@ import com.clicker.mousehub.entity.UserAccount;
 import com.clicker.mousehub.entity.AuditLog;
 import com.clicker.mousehub.dto.ReviewDtos.SupportCell;
 import com.clicker.mousehub.dto.ReviewDtos.SupportDab;
+import com.clicker.mousehub.dto.ReviewDtos.SupportGrip;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -37,18 +38,24 @@ public final class AdminDtos {
                                   String status, String handSize, java.math.BigDecimal comfortAverage,
                                   List<GripScoreView> gripScores, List<String> supportPositions,
                                   List<SupportCell> supportCells, List<SupportDab> supportDabs,
+                                  List<SupportGrip> supportByGrip,
                                   String moderationReason, String moderatedBy, OffsetDateTime moderatedAt,
-                                  OffsetDateTime createdAt) {
+                                  OffsetDateTime createdAt, int gripScoreCount, int supportMarkCount,
+                                  long reportCount, long openReportCount, String riskLevel, List<String> riskFlags,
+                                  List<ReviewReportView> reports) {
         public static AdminReviewView from(Review review, String userEmail, String mouseName) {
             return new AdminReviewView(review.getId(), review.getUserId(), review.getMouseId(), userEmail, mouseName,
                     review.getStatus(), review.getHandSize(), review.getComfortScore() == null ? java.math.BigDecimal.ZERO
                             : java.math.BigDecimal.valueOf(review.getComfortScore()).setScale(1),
-                    List.of(), List.of(), List.of(), List.of(), review.getModerationReason(),
-                    review.getModeratedBy(), review.getModeratedAt(), review.getCreatedAt());
+                    List.of(), List.of(), List.of(), List.of(), List.of(), review.getModerationReason(),
+                    review.getModeratedBy(), review.getModeratedAt(), review.getCreatedAt(), 0, 0, 0, 0,
+                    "LOW", List.of(), List.of());
         }
     }
 
     public record GripScoreView(String gripStyle, Integer comfortScore) {}
+    public record ReviewReportView(UUID id, String category, String description, String status,
+                                   String reporterEmail, OffsetDateTime createdAt) {}
 
     public record AuditLogView(UUID id, String actorEmail, String action, String entityType, String entityId,
                                String summary, String beforeState, String afterState, String reason,

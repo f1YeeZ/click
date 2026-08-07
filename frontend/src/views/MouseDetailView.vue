@@ -16,7 +16,9 @@ const mouse = ref(null)
 const summary = ref(null)
 const options = ref(null)
 const supportSummary = ref({ sampleCount: 0, positions: [], cells: [], maxCount: 0 })
-const personalSupportDabs = ref([])
+const personalSupportDabsByGrip = reactive({ PALM: [], CLAW: [], FINGERTIP: [], MIXED: [] })
+const activeSupportGrip = ref('')
+const publicSupportGripSelection = reactive({})
 const supportTool = ref('paint')
 const supportBrushSize = ref(12)
 const selectedGrip = ref('')
@@ -33,7 +35,10 @@ const supportError = ref('')
 const message = ref('')
 const error = ref('')
 const publicReviews = ref({ items: [], page: { number: 1, totalPages: 1, totalItems: 0 } })
+const publicReviewsRail = ref(null)
 const reportTarget = ref(null)
+const reportScope = ref('MOUSE_DATA')
+const reportDialog = ref(null)
 const reportCategory = ref('DATA_ERROR')
 const reportDescription = ref('')
 const reportNotice = ref('')
@@ -42,14 +47,17 @@ const reviewSubmissionEnabled = ref(true)
 const gripScores = reactive({ PALM: 8, CLAW: 8, FINGERTIP: 8, MIXED: 8 })
 const profileReady = computed(() => Boolean(auth.user?.handLengthCm && auth.user?.preferredGripStyle))
 const submittedGrip = (code) => mine.value?.gripComforts?.find((item) => item.gripStyle === code)
+const personalSupportDabs = computed(() => personalSupportDabsByGrip[activeSupportGrip.value] || [])
 const supportCoverage = computed(() => supportCoveragePercentage(personalSupportDabs.value))
 const supportHasPaint = computed(() => supportCoverage.value > 0)
-const hasSubmittedSupport = computed(() => Boolean(mine.value?.supportDabs?.length || mine.value?.supportCells?.length))
+const supportGripCount = computed(() => Object.values(personalSupportDabsByGrip).filter((dabs) => supportCoveragePercentage(dabs) > 0).length)
+const hasSubmittedSupport = computed(() => supportGripCount.value > 0)
 const completedGripCount = computed(() => mine.value?.gripComforts?.length || 0)
+const reviewCompletionCount = computed(() => completedGripCount.value + supportGripCount.value)
+const reviewProgressPercent = computed(() => reviewCompletionCount.value / 8 * 100)
 const reviewProgressLabel = computed(() => {
   if (!mine.value) return '还没有提交评价'
-  const completed = Number(completedGripCount.value > 0) + Number(hasSubmittedSupport.value)
-  return `已完成 ${completed} / 2 类评价`
+  return `已完成 ${reviewCompletionCount.value} / 8 项评价`
 })
 const gripSummaryLabel = computed(() => selectedGrip.value
   ? `${options.value?.gripStyles?.find((item) => item.code === selectedGrip.value)?.label || '当前握姿'}总评`
@@ -71,6 +79,22 @@ const supportFilterLabel = computed(() => {
   const hand = options.value?.handSizes?.find((item) => item.code === selectedHand.value)?.label || '全部手长'
   return `${grip} · ${hand}`
 })
+const supportMapForGrip = (review, gripStyle) => {
+  const mapped = review?.supportByGrip?.find((item) => item.gripStyle === gripStyle)
+  if (mapped) return mapped
+  const legacyGrip = review?.gripScores?.[0]?.gripStyle || review?.gripStyle
+  if (legacyGrip === gripStyle && (review?.supportDabs?.length || review?.supportCells?.length)) {
+    return { gripStyle, supportDabs: review.supportDabs || [], supportCells: review.supportCells || [] }
+  }
+  return null
+}
+const activePublicSupportGrip = (review) => publicSupportGripSelection[review.id]
+  || review.gripScores?.[0]?.gripStyle
+  || review.supportByGrip?.[0]?.gripStyle
+  || 'CLAW'
+const activePublicSupportMap = (review) => supportMapForGrip(review, activePublicSupportGrip(review))
+const publicSupportCount = (review) => review?.supportByGrip?.length || (review?.supportDabs?.length || review?.supportCells?.length ? 1 : 0)
+const selectPublicSupportGrip = (review, gripStyle) => { publicSupportGripSelection[review.id] = gripStyle }
 const labels = {
   FINGERTIP: 'Fingertip', EXTRA_SMALL: '超小', SMALL: '小', MEDIUM: '中', LARGE: '大',
   SYMMETRICAL: '对称', ERGONOMIC: '人体工学', HYBRID: '混合', RIGHT: '右手', LEFT: '左手', AMBIDEXTROUS: '双手',
@@ -88,13 +112,24 @@ const loadMine = async () => {
   try {
     const { data } = await api.get(`/mice/${mouse.value.id}/reviews/mine`)
     mine.value = data || null
-    if (data) {
-      personalSupportDabs.value = data.supportDabs?.length
+    for (const grip of Object.keys(personalSupportDabsByGrip)) personalSupportDabsByGrip[grip] = []
+    if (data?.supportByGrip?.length) {
+      for (const support of data.supportByGrip) {
+        personalSupportDabsByGrip[support.gripStyle] = support.supportDabs?.length
+          ? [...support.supportDabs]
+          : legacyCellsToDabs(support.supportCells || [])
+      }
+    } else if (data) {
+      const legacyGrip = auth.user?.preferredGripStyle || 'MIXED'
+      personalSupportDabsByGrip[legacyGrip] = data.supportDabs?.length
         ? [...data.supportDabs]
         : legacyCellsToDabs(data.supportCells || [])
     }
-    else personalSupportDabs.value = []
-  } catch { mine.value = null; personalSupportDabs.value = [] }
+    if (!activeSupportGrip.value) activeSupportGrip.value = auth.user?.preferredGripStyle || 'CLAW'
+  } catch {
+    mine.value = null
+    for (const grip of Object.keys(personalSupportDabsByGrip)) personalSupportDabsByGrip[grip] = []
+  }
 }
 const reviewFilterParams = () => {
   const params = new URLSearchParams()
@@ -109,11 +144,28 @@ const loadSupportSummary = async (params = reviewFilterParams()) => {
 const loadPublicReviews = async (page = 1) => {
   if (!mouse.value) return
   publicReviews.value = (await api.get(`/mice/${mouse.value.id}/reviews`, { params: { page } })).data
+  for (const review of publicReviews.value.items || []) {
+    if (!publicSupportGripSelection[review.id]) {
+      publicSupportGripSelection[review.id] = review.gripScores?.[0]?.gripStyle || review.supportByGrip?.[0]?.gripStyle || 'CLAW'
+    }
+  }
 }
-const openReport = (targetType, targetId) => {
+const openReport = (targetType, targetId, scope = targetType === 'REVIEW' ? 'REVIEW_ITEM' : 'MOUSE_DATA') => {
   reportTarget.value = { targetType, targetId }
-  reportCategory.value = targetType === 'MOUSE' ? 'DATA_ERROR' : 'INAPPROPRIATE'
+  reportScope.value = scope
+  reportCategory.value = scope === 'REVIEW_AGGREGATE' ? 'SUSPICIOUS' : targetType === 'MOUSE' ? 'DATA_ERROR' : 'INAPPROPRIATE'
   reportDescription.value = ''; reportNotice.value = ''
+  nextTick(() => { if (reportDialog.value && !reportDialog.value.open) reportDialog.value.showModal() })
+}
+const scrollPublicReviews = (direction) => {
+  publicReviewsRail.value?.scrollBy({ left: direction * 390, behavior: 'smooth' })
+}
+const closeReport = () => {
+  if (reportDialog.value?.open) reportDialog.value.close()
+  else reportTarget.value = null
+}
+const closeReportFromBackdrop = (event) => {
+  if (event.target === reportDialog.value) closeReport()
 }
 const submitReport = async () => {
   if (!reportTarget.value || !reportDescription.value.trim()) return
@@ -121,7 +173,7 @@ const submitReport = async () => {
   try {
     await api.post('/reports', { ...reportTarget.value, category: reportCategory.value, description: reportDescription.value.trim() })
     reportNotice.value = '反馈已提交，管理员处理后会保留完整记录'
-    reportDescription.value = ''; reportTarget.value = null
+    reportDescription.value = ''; closeReport()
   } catch (e) { error.value = errorMessage(e) } finally { reportLoading.value = false }
 }
 const initializeReviewFilters = () => {
@@ -165,27 +217,27 @@ const saveGrip = async (code) => {
   catch (e) { error.value = errorMessage(e) } finally { gripLoading.value = '' }
 }
 const deleteGrip = async (item) => {
-  if (!window.confirm(`确定删除${item.label}的舒适度评分吗？`)) return
+  if (!window.confirm(`确定删除${item.label}的舒适度评分及对应支撑涂抹吗？`)) return
   message.value = ''; error.value = ''
-  try { await api.delete(`/mice/${mouse.value.id}/reviews/mine/grip-scores/${item.code}`); message.value = `${item.label}评分已删除`; await refreshReview() }
+  try { await api.delete(`/mice/${mouse.value.id}/reviews/mine/grip-scores/${item.code}`); message.value = `${item.label}评分及支撑涂抹已删除`; await refreshReview() }
   catch (e) { error.value = errorMessage(e) }
 }
 const updateSupportDabs = (dabs) => {
-  personalSupportDabs.value = dabs
+  personalSupportDabsByGrip[activeSupportGrip.value] = dabs
   supportMessage.value = ''; supportError.value = ''
 }
 const handlePublicSupportModelError = () => { publicSupportError.value = '支撑位置热力图加载失败，请刷新页面后重试' }
 const handlePersonalSupportModelError = () => { supportError.value = '个人支撑位置画布加载失败，请刷新页面后重试' }
 const clearSupportSelection = () => {
-  personalSupportDabs.value = []
+  personalSupportDabsByGrip[activeSupportGrip.value] = []
   supportMessage.value = ''
   supportError.value = ''
 }
 const saveSupport = async () => {
   supportLoading.value = true; supportMessage.value = ''; supportError.value = ''
   try {
-    await api.put(`/mice/${mouse.value.id}/reviews/mine/support-positions`, { dabs: personalSupportDabs.value })
-    supportMessage.value = '涂抹区域已保存并计入热力图'
+    await api.put(`/mice/${mouse.value.id}/reviews/mine/support-positions/${activeSupportGrip.value}`, { dabs: personalSupportDabs.value })
+    supportMessage.value = `${valueLabel(activeSupportGrip.value)}支撑涂抹已保存并计入热力图`
     await refreshReview()
   } catch (e) { supportError.value = errorMessage(e) } finally { supportLoading.value = false }
 }
@@ -281,7 +333,7 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
       <aside class="support-panel">
         <div class="section-heading compact support-heading">
           <div><p class="eyebrow">CONTACT HEATMAP</p><h2>支撑位置评价</h2></div>
-          <span class="sample-badge" :class="{ low: supportSummary.sampleCount < 5 }">{{ supportSummary.sampleCount }} 人标记</span>
+          <span class="sample-badge" :class="{ low: supportSummary.sampleCount < 5 }">{{ supportSummary.sampleCount }} 份握姿标记</span>
         </div>
         <p class="support-intro">这里仅展示全部用户提交后的匿名汇总结果。被更多用户标记的区域颜色更深，不会叠加你尚未保存的个人笔迹。</p>
         <div class="support-filter-context"><span>同步筛选</span><strong>{{ supportFilterLabel }}</strong><small>握姿按用户资料中的习惯握姿归类</small></div>
@@ -297,11 +349,15 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
             aria-label="所有用户支撑位置热力图"
             @error="handlePublicSupportModelError"
           />
-          <span class="support-mode-hint">{{ supportSummary.cells?.length ? `当前展示 ${supportSummary.sampleCount} 人的汇总结果，可用左键拖动旋转` : '当前筛选下暂无支撑位置评价，可用左键拖动旋转模型' }}</span>
+          <span class="support-mode-hint">{{ supportSummary.cells?.length ? `当前展示 ${supportSummary.sampleCount} 份握姿涂抹的汇总结果，可用左键拖动旋转` : '当前筛选下暂无支撑位置评价，可用左键拖动旋转模型' }}</span>
         </div>
         <div class="heat-legend" v-if="supportSummary.cells?.length"><span>覆盖较少</span><i></i><span>覆盖较多</span></div>
         <div class="flash error" v-if="publicSupportError">{{ publicSupportError }}</div>
-        <p class="public-support-note">想添加或修改自己的支撑位置，请点击左侧的“写评价”按钮。</p>
+        <div class="support-feedback-row">
+          <p class="public-support-note">想添加或修改自己的支撑位置，请点击左侧的“写评价”按钮。</p>
+          <button v-if="auth.authenticated" type="button" class="support-report-button" @click="openReport('MOUSE', mouse.id, 'REVIEW_AGGREGATE')">反馈汇总异常</button>
+          <RouterLink v-else class="support-report-button" to="/login">登录后反馈异常</RouterLink>
+        </div>
       </aside>
     </div>
 
@@ -312,22 +368,53 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
         <RouterLink v-else class="button button-ghost" to="/login">登录后纠错</RouterLink>
       </div>
       <div v-if="reportNotice" class="flash success">{{ reportNotice }}</div>
-      <form v-if="reportTarget" class="public-report-form" @submit.prevent="submitReport">
-        <div><strong>{{ reportTarget.targetType === 'MOUSE' ? '提交参数纠错' : '举报这条评价' }}</strong><small>请提供可复核的信息；恶意或重复提交可能被忽略。</small></div>
-        <label>问题分类<select v-model="reportCategory"><option v-if="reportTarget.targetType === 'MOUSE'" value="DATA_ERROR">参数错误</option><option v-if="reportTarget.targetType === 'MOUSE'" value="SOURCE_UPDATE">来源需要更新</option><option v-if="reportTarget.targetType === 'REVIEW'" value="INAPPROPRIATE">不当内容</option><option v-if="reportTarget.targetType === 'REVIEW'" value="SUSPICIOUS">疑似异常评价</option><option value="OTHER">其他</option></select></label>
-        <label class="wide">详细说明<textarea v-model.trim="reportDescription" maxlength="1000" required placeholder="说明具体问题、正确数据或判断依据…"></textarea></label>
-        <div class="report-form-actions"><button type="button" class="button button-ghost" @click="reportTarget = null">取消</button><button class="button" :disabled="reportLoading">{{ reportLoading ? '提交中…' : '提交反馈' }}</button></div>
-      </form>
-      <div class="public-review-grid">
-        <article v-for="review in publicReviews.items" :key="review.id">
-          <header><div><strong>{{ review.author }}</strong><small>{{ new Date(review.createdAt).toLocaleDateString('zh-CN') }}</small></div><span>{{ review.comfortAverage || '—' }}<small>/ 10</small></span></header>
-          <div class="public-score-strip"><span v-for="score in review.gripScores" :key="score.gripStyle">{{ valueLabel(score.gripStyle) }} <b>{{ score.comfortScore }}</b></span></div>
-          <footer><span>{{ review.gripScores?.map((score) => valueLabel(score.gripStyle)).join(' / ') || '—' }} · {{ valueLabel(review.handSize) }}</span><button v-if="auth.authenticated" type="button" @click="openReport('REVIEW', review.id)">举报</button></footer>
-        </article>
-        <p v-if="!publicReviews.items.length" class="table-empty">暂无可公开的逐条评价</p>
+      <div class="public-review-rail-shell" :class="{ single: publicReviews.items.length <= 1 }">
+        <button v-if="publicReviews.items.length > 1" class="public-review-rail-arrow previous" type="button" aria-label="查看上一组评价" @click="scrollPublicReviews(-1)">←</button>
+        <div ref="publicReviewsRail" class="public-review-rail" tabindex="0" aria-label="横向浏览逐条公开评价">
+          <article v-for="review in publicReviews.items" :key="review.id" class="public-review-ticket">
+            <header class="ticket-header"><div><strong>{{ review.author }}</strong><small>{{ new Date(review.createdAt).toLocaleDateString('zh-CN') }} · {{ valueLabel(review.handSize) }}</small></div><div class="ticket-score"><b>{{ review.comfortAverage || '—' }}</b><small>/ 10</small></div></header>
+            <div class="ticket-grip-row" role="tablist" :aria-label="`${review.author} 的握姿评价`"><button v-for="score in review.gripScores" :key="score.gripStyle" type="button" role="tab" :aria-selected="activePublicSupportGrip(review) === score.gripStyle" :class="{ active: activePublicSupportGrip(review) === score.gripStyle, painted: supportMapForGrip(review, score.gripStyle) }" @click="selectPublicSupportGrip(review, score.gripStyle)"><em>{{ valueLabel(score.gripStyle) }}</em><b>{{ score.comfortScore }}</b><i aria-hidden="true"></i></button><span v-if="!review.gripScores?.length" class="ticket-empty-score">暂无握姿评分</span></div>
+            <div class="ticket-support-map" :class="{ empty: !activePublicSupportMap(review)?.supportDabs?.length && !activePublicSupportMap(review)?.supportCells?.length }">
+              <HandSupport3D v-if="activePublicSupportMap(review)?.supportDabs?.length || activePublicSupportMap(review)?.supportCells?.length" :key="`${review.id}-${activePublicSupportGrip(review)}`" :summary-cells="activePublicSupportMap(review).supportCells || []" :max-count="activePublicSupportMap(review).supportCells?.length ? 1 : 0" :grid-columns="24" :grid-rows="32" :dabs="activePublicSupportMap(review).supportDabs || []" tool="view" :editable="false" :aria-label="`${review.author} 的${valueLabel(activePublicSupportGrip(review))}支撑位置 3D 涂抹`" />
+              <span v-else>{{ valueLabel(activePublicSupportGrip(review)) }}暂未提交支撑位置涂抹</span>
+              <small class="ticket-support-label">{{ valueLabel(activePublicSupportGrip(review)) }} / SUPPORT MAP</small>
+            </div>
+            <footer class="ticket-footer"><span>{{ review.gripScores?.map((score) => valueLabel(score.gripStyle)).join(' / ') || '未填写握姿' }} · {{ publicSupportCount(review) }} 份支撑图</span><button v-if="auth.authenticated" type="button" @click="openReport('REVIEW', review.id)">举报</button></footer>
+          </article>
+          <p v-if="!publicReviews.items.length" class="table-empty">暂无可公开的逐条评价</p>
+        </div>
+        <button v-if="publicReviews.items.length > 1" class="public-review-rail-arrow next" type="button" aria-label="查看下一组评价" @click="scrollPublicReviews(1)">→</button>
       </div>
       <div v-if="publicReviews.page.totalPages > 1" class="public-review-pagination"><button :disabled="publicReviews.page.number <= 1" @click="loadPublicReviews(publicReviews.page.number - 1)">上一页</button><span>{{ publicReviews.page.number }} / {{ publicReviews.page.totalPages }}</span><button :disabled="publicReviews.page.number >= publicReviews.page.totalPages" @click="loadPublicReviews(publicReviews.page.number + 1)">下一页</button></div>
     </section>
+
+    <Teleport to="body">
+      <dialog
+        v-if="reportTarget"
+        ref="reportDialog"
+        class="report-dialog"
+        aria-labelledby="report-dialog-title"
+        @click="closeReportFromBackdrop"
+        @close="reportTarget = null"
+      >
+        <form class="report-dialog-shell" @submit.prevent="submitReport">
+          <header class="report-dialog-header">
+            <div>
+              <small>{{ reportScope === 'REVIEW_AGGREGATE' ? 'COMMUNITY SIGNAL / AGGREGATE' : reportTarget.targetType === 'REVIEW' ? 'COMMUNITY SIGNAL / REVIEW' : 'COMMUNITY SIGNAL / DATA' }}</small>
+              <h2 id="report-dialog-title">{{ reportScope === 'REVIEW_AGGREGATE' ? '反馈评价汇总异常' : reportTarget.targetType === 'MOUSE' ? '提交参数纠错' : '举报这条评价' }}</h2>
+              <p>{{ reportScope === 'REVIEW_AGGREGATE' ? `当前范围：${supportFilterLabel}。反馈会帮助管理员定位污染聚合结果的评价包。` : '请提供可复核的信息；恶意或重复提交可能被忽略。' }}</p>
+            </div>
+            <button class="report-dialog-close" type="button" aria-label="关闭反馈窗口" @click="closeReport">×</button>
+          </header>
+          <div class="report-dialog-body">
+            <div class="report-context-card"><span>反馈对象</span><strong>{{ mouse?.brand }} {{ mouse?.model }}</strong><small>{{ reportScope === 'REVIEW_AGGREGATE' ? `聚合评价 · ${supportFilterLabel}` : reportTarget.targetType === 'REVIEW' ? '当前匿名评价' : '鼠标客观参数' }}</small></div>
+            <label class="report-field">问题分类<select v-model="reportCategory"><option v-if="reportScope === 'REVIEW_AGGREGATE'" value="SUSPICIOUS">疑似异常汇总</option><option v-if="reportScope === 'REVIEW_AGGREGATE'" value="HEATMAP_ERROR">热力图结果异常</option><option v-if="reportTarget.targetType === 'MOUSE' && reportScope !== 'REVIEW_AGGREGATE'" value="DATA_ERROR">参数错误</option><option v-if="reportTarget.targetType === 'MOUSE' && reportScope !== 'REVIEW_AGGREGATE'" value="SOURCE_UPDATE">来源需要更新</option><option v-if="reportTarget.targetType === 'REVIEW'" value="INAPPROPRIATE">不当内容</option><option v-if="reportTarget.targetType === 'REVIEW'" value="SUSPICIOUS">疑似异常评价</option><option value="OTHER">其他</option></select></label>
+            <label class="report-field">详细说明<textarea v-model.trim="reportDescription" maxlength="1000" required :placeholder="reportScope === 'REVIEW_AGGREGATE' ? '例如：中手 / 抓握下的热力图集中在不合理区域，或评分分布明显失真…' : '说明具体问题、正确数据或判断依据…'"></textarea><small>{{ reportDescription.length }} / 1000</small></label>
+          </div>
+          <footer class="report-dialog-footer"><button type="button" class="button button-ghost" :disabled="reportLoading" @click="closeReport">取消</button><button class="button primary-action-button" :disabled="reportLoading || !reportDescription.trim()">{{ reportLoading ? '提交中…' : '提交反馈' }}<span aria-hidden="true">→</span></button></footer>
+        </form>
+      </dialog>
+    </Teleport>
 
     <Teleport to="body">
       <dialog
@@ -349,7 +436,7 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
           </header>
           <div class="review-dialog-status" aria-live="polite">
             <span>{{ reviewProgressLabel }}</span>
-            <i><b :style="{ width: `${(Number(completedGripCount > 0) + Number(hasSubmittedSupport)) / 2 * 100}%` }"></b></i>
+            <i><b :style="{ width: `${reviewProgressPercent}%` }"></b></i>
           </div>
           <div class="review-dialog-body">
             <div class="flash success" v-if="message">{{ message }}</div>
@@ -369,10 +456,15 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
               </section>
               <section class="review-entry-card support-entry personal-support-editor">
                 <header>
-                  <div><span>02 / SUPPORT MAP</span><h3>我的支撑位置</h3></div>
-                  <em>{{ supportHasPaint ? `已涂抹约 ${supportCoverage}%` : '尚未涂抹' }}</em>
+                  <div><span>02 / SUPPORT MAPS</span><h3>不同握姿的支撑位置</h3></div>
+                  <em>{{ supportGripCount }} / 4 已涂抹</em>
                 </header>
-                <p class="review-hint">这张手掌图只用于编辑你的评价。保存后，笔迹才会匿名计入详情页的全部用户热力图。</p>
+                <p class="review-hint">四种握姿分别保存一份 3D 涂抹。先选择握姿，再标记该握姿下鼠标实际托住手部的位置。</p>
+                <div class="support-grip-tabs" role="tablist" aria-label="选择要编辑的握姿支撑图">
+                  <button v-for="item in options.gripStyles" :key="item.code" type="button" role="tab" :aria-selected="activeSupportGrip === item.code" :class="{ active: activeSupportGrip === item.code, completed: personalSupportDabsByGrip[item.code]?.length }" @click="activeSupportGrip = item.code; supportMessage = ''; supportError = ''">
+                    <span>{{ item.label }}</span><small>{{ personalSupportDabsByGrip[item.code]?.length ? '已涂抹' : '未填写' }}</small>
+                  </button>
+                </div>
                 <div class="support-editor-layout">
                   <div class="support-editor-controls">
                     <div class="support-tools" aria-label="个人支撑位置涂抹工具">
@@ -393,7 +485,7 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
                     <div class="flash error" v-if="supportError">{{ supportError }}</div>
                     <div class="support-profile-required" v-if="!profileReady"><span>需要先填写手长与习惯握姿</span><RouterLink to="/profile" @click="closeReviewEditor">完善个人资料 →</RouterLink></div>
                     <button class="button full support-submit" type="button" :disabled="!profileReady || !supportHasPaint || supportLoading" @click="saveSupport">
-                      {{ supportLoading ? '保存中…' : mine?.supportDabs?.length || mine?.supportCells?.length ? '更新我的支撑位置' : '提交我的支撑位置' }}
+                      {{ supportLoading ? '保存中…' : supportMapForGrip(mine, activeSupportGrip) ? `更新${valueLabel(activeSupportGrip)}支撑图` : `提交${valueLabel(activeSupportGrip)}支撑图` }}
                     </button>
                   </div>
                   <div class="support-editor-canvas">
@@ -405,7 +497,7 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
                         :brush-size="supportBrushSize"
                         :tool="supportTool"
                         :editable="profileReady"
-                        aria-label="可涂抹的个人支撑位置图"
+                        :aria-label="`可涂抹的${valueLabel(activeSupportGrip)}个人支撑位置图`"
                         @update:dabs="updateSupportDabs"
                         @error="handlePersonalSupportModelError"
                       />
@@ -457,5 +549,118 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
 </template>
 
 <style scoped>
-.community-review-section{margin-top:32px}.community-review-section .section-heading>div>p:last-child{margin:.35rem 0 0;color:var(--muted,#647278)}.public-report-form{display:grid;grid-template-columns:1fr 220px;gap:14px;padding:18px;margin:18px 0;border-radius:18px;background:#edf6f5;border:1px solid #cfe4e1}.public-report-form>div strong,.public-report-form>div small{display:block}.public-report-form label{display:grid;gap:6px;font-size:12px;font-weight:700}.public-report-form .wide{grid-column:1/-1}.public-report-form textarea{min-height:88px}.report-form-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}.public-review-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}.public-review-grid article{padding:18px;border:1px solid #dde5e6;border-radius:18px;background:#fff}.public-review-grid article header,.public-review-grid article footer{display:flex;justify-content:space-between;align-items:center}.public-review-grid article header strong,.public-review-grid article header small{display:block}.public-review-grid article header>span{font-size:24px;font-weight:800}.public-review-grid article header>span small{font-size:11px}.public-score-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:16px 0}.public-score-strip span{padding:8px 4px;background:#f4f7f7;border-radius:9px;text-align:center;font-size:10px}.public-score-strip b{display:block;font-size:16px}.public-review-grid footer{font-size:12px;color:#66767a}.public-review-grid footer button{border:0;background:none;color:#9e3a3a}.public-review-pagination{display:flex;justify-content:center;align-items:center;gap:12px;margin-top:18px}@media(max-width:760px){.public-review-grid{grid-template-columns:1fr}.public-report-form{grid-template-columns:1fr}.public-report-form .wide{grid-column:auto}}
+.community-review-section{margin-top:32px}.community-review-section .section-heading>div>p:last-child{margin:.35rem 0 0;color:var(--muted,#647278)}.support-feedback-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.support-feedback-row .public-support-note{margin:0}.support-report-button{flex:0 0 auto;padding:7px 10px;border:1px solid #c6d8d6;border-radius:999px;background:#f7fbfa;color:#56706e;font-size:11px;text-decoration:none;cursor:pointer}.support-report-button:hover{border-color:#8aa9a5;background:#edf6f5}.public-review-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}.public-review-grid article{padding:18px;border:1px solid #dde5e6;border-radius:18px;background:#fff}.public-review-grid article header,.public-review-grid article footer{display:flex;justify-content:space-between;align-items:center}.public-review-grid article header strong,.public-review-grid article header small{display:block}.public-review-grid article header>span{font-size:24px;font-weight:800}.public-review-grid article header>span small{font-size:11px}.public-score-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:16px 0}.public-score-strip span{padding:8px 4px;background:#f4f7f7;border-radius:9px;text-align:center;font-size:10px}.public-score-strip b{display:block;font-size:16px}.public-review-grid footer{font-size:12px;color:#66767a}.public-review-grid footer button{border:0;background:none;color:#9e3a3a}.public-review-pagination{display:flex;justify-content:center;align-items:center;gap:12px;margin-top:18px}.report-dialog{width:min(560px,calc(100vw - 32px));max-width:none;max-height:min(760px,calc(100dvh - 32px));padding:0;border:1px solid #cfdcda;border-radius:22px;background:#fbfdfc;color:#173332;box-shadow:0 30px 90px rgba(17,53,50,.28)}.report-dialog::backdrop{background:rgba(11,29,28,.52);backdrop-filter:blur(8px)}.report-dialog[open]{animation:report-dialog-in 190ms cubic-bezier(.22,1,.36,1)}.report-dialog-shell{display:grid;grid-template-rows:auto minmax(0,1fr) auto;max-height:min(760px,calc(100dvh - 32px));margin:0}.report-dialog-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:25px 26px 20px;border-bottom:1px solid #e0eae8;background:linear-gradient(135deg,#f4fbfa,#eef6f4)}.report-dialog-header>div{display:grid;gap:6px}.report-dialog-header small{color:#6b8581;font:600 .6rem var(--mono);letter-spacing:.12em}.report-dialog-header h2{margin:0;color:#183a37;font-size:1.45rem;letter-spacing:-.035em}.report-dialog-header p{margin:0;color:#6c7f7d;font-size:.73rem;line-height:1.55}.report-dialog-close{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border:1px solid #c8d9d6;border-radius:11px;background:rgba(255,255,255,.58);color:#52706c;font-size:1.25rem;cursor:pointer}.report-dialog-close:hover{background:#fff;color:#173332}.report-dialog-body{display:grid;gap:16px;overflow:auto;padding:22px 26px 24px}.report-context-card{display:grid;gap:5px;padding:13px 14px;border:1px solid #d6e5e2;border-radius:13px;background:#f4f9f8}.report-context-card span,.report-field{color:#56716e;font-size:.68rem;font-weight:700}.report-context-card strong{color:#173332;font-size:.9rem}.report-context-card small{color:#748885;font-size:.63rem}.report-field{display:grid;gap:7px}.report-field select,.report-field textarea{width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid #cbdcd9;border-radius:11px;background:#fff;color:#173332;font:inherit}.report-field select:focus,.report-field textarea:focus{border-color:#6faaa2;outline:3px solid rgba(111,170,162,.18)}.report-field textarea{min-height:140px;resize:vertical;line-height:1.55}.report-field>small{justify-self:end;color:#81928f;font-size:.6rem;font-weight:400}.report-dialog-footer{display:flex;justify-content:flex-end;gap:9px;padding:16px 26px 20px;border-top:1px solid #e0eae8;background:#f8fbfa}.report-dialog-footer .button{min-width:106px}.report-dialog-footer .primary-action-button{background:#214c47;color:#f3fbf9}.report-dialog-footer .primary-action-button:hover{background:#173a36}.community-review-section .public-report-form{display:none}@keyframes report-dialog-in{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}@media(max-width:760px){.public-review-grid{grid-template-columns:1fr}.report-dialog{width:100vw;height:100dvh;max-height:100dvh;border-radius:0}.report-dialog-shell{height:100dvh;max-height:100dvh}.report-dialog-header{padding:20px 18px 16px}.report-dialog-header h2{font-size:1.2rem}.report-dialog-body{padding:18px}.report-dialog-footer{padding:13px 18px}.report-dialog-footer .button{width:100%}.report-dialog-footer{display:grid;grid-template-columns:1fr 1fr}.support-feedback-row{align-items:flex-start;flex-direction:column}.support-report-button{width:fit-content}}
+</style>
+
+<style scoped>
+.support-report-button {
+  border-color: var(--dv-outline);
+  background: var(--dv-surface-high);
+  color: var(--dv-text-soft);
+}
+.support-report-button:hover {
+  border-color: var(--dv-primary-line);
+  background: var(--dv-primary-soft);
+  color: var(--dv-primary-bright);
+}
+.report-dialog {
+  border-color: var(--dv-border);
+  background: var(--dv-surface);
+  color: var(--dv-text);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .52);
+}
+.report-dialog::backdrop {
+  background: rgba(5, 5, 6, .82);
+  backdrop-filter: blur(8px);
+}
+.report-dialog-header {
+  border-bottom-color: var(--dv-border);
+  background: linear-gradient(135deg, #18191d, #141416);
+}
+.report-dialog-header small { color: var(--dv-primary-bright); }
+.report-dialog-header h2 { color: var(--dv-text); }
+.report-dialog-header p { color: var(--dv-text-soft); }
+.report-dialog-close {
+  border-color: var(--dv-outline);
+  background: var(--dv-surface-high);
+  color: var(--dv-text-soft);
+}
+.report-dialog-close:hover { border-color: var(--dv-primary-line); background: var(--dv-primary-soft); color: var(--dv-primary-bright); }
+.report-context-card {
+  border-color: var(--dv-border);
+  background: var(--dv-surface-high);
+}
+.report-context-card span, .report-field { color: var(--dv-primary-bright); }
+.report-context-card strong { color: var(--dv-text); }
+.report-context-card small { color: var(--dv-muted); }
+.report-field select, .report-field textarea {
+  border-color: var(--dv-outline);
+  background: var(--dv-background);
+  color: var(--dv-text);
+}
+.report-field select:focus, .report-field textarea:focus { border-color: var(--dv-primary); outline-color: var(--dv-primary-soft); }
+.report-field > small { color: var(--dv-muted); }
+.report-dialog-footer { border-top-color: var(--dv-border); background: var(--dv-surface-high); }
+.report-dialog-footer .button-ghost { border-color: var(--dv-outline); background: transparent; color: var(--dv-text-soft); }
+.report-dialog-footer .primary-action-button { border-color: var(--dv-primary); background: var(--dv-primary); color: #fff; }
+.report-dialog-footer .primary-action-button:hover { border-color: #6ca3fa; background: #6ca3fa; }
+.community-review-section { color: var(--dv-text); }
+.community-review-section .section-heading h2 { color: var(--dv-text); }
+.community-review-section .section-heading > div > p:last-child { color: var(--dv-muted); }
+.public-review-grid article {
+  border-color: var(--dv-border);
+  background: var(--dv-surface);
+  color: var(--dv-text);
+  box-shadow: none;
+}
+.public-review-grid article:hover { border-color: var(--dv-primary-line); background: var(--dv-surface-high); }
+.public-review-grid article header strong { color: var(--dv-text); }
+.public-review-grid article header small { color: var(--dv-muted); }
+.public-review-grid article header > span { color: var(--dv-primary-bright); }
+.public-review-grid article header > span small { color: var(--dv-muted); }
+.public-score-strip span { background: var(--dv-surface-high); color: var(--dv-text-soft); }
+.public-score-strip b { color: var(--dv-text); }
+.public-review-grid footer { color: var(--dv-muted); }
+.public-review-grid footer button { color: var(--dv-error); }
+.public-review-grid footer button:hover { color: #f2a6ad; }
+.public-review-pagination { color: var(--dv-muted); }
+.public-review-pagination button { border-color: var(--dv-border); background: var(--dv-surface); color: var(--dv-text-soft); }
+.public-review-pagination button:hover:not(:disabled) { border-color: var(--dv-primary-line); background: var(--dv-primary-soft); color: var(--dv-primary-bright); }
+.public-review-rail-shell { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px; align-items: center; gap: 10px; width: 100%; min-width: 0; margin-top: 18px; }
+.public-review-rail-shell.single { grid-template-columns: minmax(0, 1fr); }
+.public-review-rail { display: flex; gap: 12px; width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; padding: 2px 2px 14px; scroll-snap-type: x mandatory; scrollbar-color: var(--dv-outline) transparent; scrollbar-width: thin; }
+.public-review-ticket { display: grid; flex: 0 0 min(342px, calc(100vw - 116px)); grid-template-rows: auto auto minmax(148px, 1fr) auto; gap: 12px; min-height: 368px; padding: 15px; scroll-snap-align: start; border: 1px solid var(--dv-border); border-radius: 12px; background: var(--dv-surface); color: var(--dv-text); box-shadow: 0 12px 32px rgba(0,0,0,.18); transition: border-color 160ms ease, background 160ms ease, transform 160ms ease; }
+.public-review-ticket:hover { border-color: var(--dv-primary-line); background: var(--dv-surface-high); transform: translateY(-2px); }
+.ticket-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.ticket-header strong, .ticket-header small { display: block; }
+.ticket-header strong { color: var(--dv-text); font-size: .78rem; }
+.ticket-header small { margin-top: 4px; color: var(--dv-muted); font: .58rem var(--dv-mono); }
+.ticket-score { display: flex; align-items: baseline; gap: 3px; }
+.ticket-score b { color: var(--dv-primary-bright); font: 700 1.45rem var(--dv-mono); }
+.ticket-score small { color: var(--dv-muted); font-size: .58rem; }
+.ticket-grip-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.ticket-grip-row > button { position: relative; display: grid; gap: 3px; min-width: 0; padding: 7px 4px; border: 1px solid var(--dv-border); border-radius: 7px; background: var(--dv-surface-high); color: inherit; text-align: center; cursor: pointer; transition: border-color 150ms ease, background 150ms ease, transform 150ms ease; }
+.ticket-grip-row > button:hover { border-color: var(--dv-primary-line); transform: translateY(-1px); }
+.ticket-grip-row > button.active { border-color: var(--dv-primary); background: var(--dv-primary-soft); box-shadow: inset 0 -2px 0 var(--dv-primary); }
+.ticket-grip-row > button i { position: absolute; top: 5px; right: 5px; width: 4px; height: 4px; border-radius: 50%; background: var(--dv-outline); }
+.ticket-grip-row > button.painted i { background: var(--dv-primary-bright); box-shadow: 0 0 7px var(--dv-primary); }
+.ticket-grip-row em { color: var(--dv-muted); font-size: .52rem; font-style: normal; }
+.ticket-grip-row button.active em { color: var(--dv-primary-bright); }
+.ticket-grip-row b { color: var(--dv-text); font: 700 .86rem var(--dv-mono); }
+.ticket-grip-row .ticket-empty-score { grid-column: 1 / -1; display: block; color: var(--dv-muted); font-size: .62rem; }
+.ticket-support-map { position: relative; min-height: 148px; overflow: hidden; border: 1px solid var(--dv-border); border-radius: 9px; background: radial-gradient(circle at 50% 42%, rgba(59,130,246,.13), transparent 58%), var(--dv-background); }
+.ticket-support-map.empty { display: grid; place-items: center; color: var(--dv-muted); font-size: .6rem; }
+.ticket-support-label { position: absolute; z-index: 3; top: 8px; left: 9px; padding: 4px 6px; border: 1px solid var(--dv-border); border-radius: 5px; background: rgba(9,10,12,.78); color: var(--dv-primary-bright); font: .48rem var(--dv-mono); letter-spacing: .08em; pointer-events: none; }
+.support-grip-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin: 14px 0; }
+.support-grip-tabs button { display: grid; gap: 4px; min-width: 0; padding: 10px 8px; border: 1px solid var(--dv-border); border-radius: 8px; background: var(--dv-surface-high); color: var(--dv-text-soft); cursor: pointer; }
+.support-grip-tabs button span { font-size: .66rem; font-weight: 700; }
+.support-grip-tabs button small { color: var(--dv-muted); font: .5rem var(--dv-mono); }
+.support-grip-tabs button.completed small { color: var(--dv-primary-bright); }
+.support-grip-tabs button.active { border-color: var(--dv-primary); background: var(--dv-primary-soft); color: var(--dv-text); box-shadow: inset 0 -2px 0 var(--dv-primary); }
+.ticket-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--dv-muted); font-size: .58rem; }
+.ticket-footer button { border: 0; background: transparent; color: var(--dv-error); font-size: .62rem; cursor: pointer; }
+.ticket-footer button:hover { color: #f2a6ad; }
+.public-review-rail-arrow { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--dv-outline); border-radius: 8px; background: var(--dv-surface-high); color: var(--dv-text-soft); font-size: 1rem; cursor: pointer; }
+.public-review-rail-arrow:hover { border-color: var(--dv-primary-line); background: var(--dv-primary-soft); color: var(--dv-primary-bright); }
+@media (max-width: 600px) { .support-grip-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

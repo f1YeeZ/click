@@ -8,6 +8,7 @@ import com.clicker.mousehub.dto.MouseDtos.MouseView;
 import com.clicker.mousehub.dto.PageResponse;
 import com.clicker.mousehub.dto.ReviewDtos.SupportCell;
 import com.clicker.mousehub.dto.ReviewDtos.SupportDab;
+import com.clicker.mousehub.dto.ReviewDtos.SupportGrip;
 import com.clicker.mousehub.entity.*;
 import com.clicker.mousehub.mapper.*;
 import com.clicker.mousehub.util.MouseDataQuality;
@@ -32,6 +33,7 @@ public class AdminService {
     private final ReviewMapper reviews;
     private final ReviewGripScoreMapper gripScores;
     private final ReviewSupportPositionMapper supportPositions;
+    private final ContentReportMapper reports;
     private final MouseService mouseService;
     private final RealtimeEventService events;
     private final AuditLogService audit;
@@ -39,10 +41,11 @@ public class AdminService {
 
     public AdminService(MouseMapper mice, UserMapper users, ReviewMapper reviews,
                         ReviewGripScoreMapper gripScores, ReviewSupportPositionMapper supportPositions,
+                        ContentReportMapper reports,
                         MouseService mouseService, RealtimeEventService events, AuditLogService audit,
                         SessionService sessions) {
         this.mice = mice; this.users = users; this.reviews = reviews; this.gripScores = gripScores;
-        this.supportPositions = supportPositions; this.mouseService = mouseService; this.events = events; this.audit = audit;
+        this.supportPositions = supportPositions; this.reports = reports; this.mouseService = mouseService; this.events = events; this.audit = audit;
         this.sessions = sessions;
     }
 
@@ -206,20 +209,53 @@ public class AdminService {
         java.math.BigDecimal comfortAverage = grips.isEmpty() ? base.comfortAverage() : java.math.BigDecimal.valueOf(
                 grips.stream().mapToInt(score -> score.comfortScore() == null ? 0 : score.comfortScore()).average().orElse(0))
                 .setScale(1, java.math.RoundingMode.HALF_UP);
-        List<String> supportCodes = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
-                        .eq(ReviewSupportPosition::getReviewId, review.getId()).orderByAsc(ReviewSupportPosition::getPositionCode))
-                .stream().map(ReviewSupportPosition::getPositionCode).toList();
+        List<ReviewSupportPosition> supportRows = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
+                .eq(ReviewSupportPosition::getReviewId, review.getId()).orderByAsc(ReviewSupportPosition::getPositionCode));
+        List<String> supportCodes = supportRows.stream().map(ReviewSupportPosition::getPositionCode).toList();
         List<String> positions = supportCodes.stream().filter(SUPPORT_POSITION_ANCHORS::containsKey).toList();
-        List<SupportDab> dabs = supportCodes.stream().sorted().map(AdminService::parseSupportDab)
-                .filter(Objects::nonNull).toList();
-        List<SupportCell> cells = supportCodes.stream().map(AdminService::parseSupportCell)
-                .filter(Objects::nonNull).distinct().toList();
-        if (cells.isEmpty() && dabs.isEmpty()) {
-            cells = positions.stream().map(SUPPORT_POSITION_ANCHORS::get).filter(Objects::nonNull).distinct().toList();
+        Map<String, List<ReviewSupportPosition>> rowsByGrip = supportRows.stream().collect(
+                java.util.stream.Collectors.groupingBy(row -> effectiveSupportGrip(row, review, user),
+                        java.util.stream.Collectors.toList()));
+        List<SupportGrip> supportByGrip = rowsByGrip.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .map(entry -> supportGripView(entry.getKey(), entry.getValue())).toList();
+        List<SupportDab> dabs = supportByGrip.stream().flatMap(item -> item.supportDabs().stream()).toList();
+        List<SupportCell> cells = supportByGrip.stream().flatMap(item -> item.supportCells().stream()).distinct().toList();
+        List<ContentReport> reviewReports = reports.selectList(new LambdaQueryWrapper<ContentReport>()
+                .eq(ContentReport::getTargetType, "REVIEW").eq(ContentReport::getTargetId, review.getId()));
+        long openReports = reviewReports.stream().filter(report -> Set.of("OPEN", "IN_PROGRESS").contains(report.getStatus())).count();
+        List<String> riskFlags = new ArrayList<>();
+        if (openReports > 0) riskFlags.add(openReports > 1 ? "多次举报" : "有举报");
+        if (comfortAverage.compareTo(java.math.BigDecimal.valueOf(2)) <= 0 || comfortAverage.compareTo(java.math.BigDecimal.valueOf(9)) >= 0) {
+            riskFlags.add("极端评分");
         }
+        if (grips.isEmpty() && supportCodes.isEmpty()) riskFlags.add("内容不完整");
+        String riskLevel = openReports > 1 || "PENDING".equals(review.getStatus()) ? "HIGH" : riskFlags.isEmpty() ? "LOW" : "MEDIUM";
+        List<ReviewReportView> reportViews = reviewReports.stream()
+                .sorted(Comparator.comparing(ContentReport::getCreatedAt).reversed())
+                .map(report -> new ReviewReportView(report.getId(), report.getCategory(), report.getDescription(),
+                        report.getStatus(), report.getReporterEmail(), report.getCreatedAt()))
+                .toList();
         return new AdminReviewView(base.id(), base.userId(), base.mouseId(), base.userEmail(), base.mouseName(), base.status(),
                 user == null ? null : user.getHandSize(), comfortAverage,
-                grips, positions, cells, dabs, base.moderationReason(), base.moderatedBy(), base.moderatedAt(), base.createdAt());
+                grips, positions, cells, dabs, supportByGrip, base.moderationReason(), base.moderatedBy(), base.moderatedAt(), base.createdAt(),
+                grips.size(), supportCodes.size(), reviewReports.size(), openReports, riskLevel, riskFlags, reportViews);
+    }
+
+    private static SupportGrip supportGripView(String gripStyle, List<ReviewSupportPosition> rows) {
+        List<SupportDab> dabs = rows.stream().map(ReviewSupportPosition::getPositionCode).sorted().map(AdminService::parseSupportDab)
+                .filter(Objects::nonNull).toList();
+        List<SupportCell> cells = rows.stream().map(ReviewSupportPosition::getPositionCode).map(AdminService::parseSupportCell)
+                .filter(Objects::nonNull).distinct().toList();
+        if (cells.isEmpty() && dabs.isEmpty()) cells = rows.stream().map(ReviewSupportPosition::getPositionCode)
+                .map(SUPPORT_POSITION_ANCHORS::get).filter(Objects::nonNull).distinct().toList();
+        return new SupportGrip(gripStyle, cells, dabs);
+    }
+
+    private static String effectiveSupportGrip(ReviewSupportPosition row, Review review, UserAccount user) {
+        if (row.getGripStyle() != null && !row.getGripStyle().isBlank()) return row.getGripStyle();
+        if (user != null && user.getPreferredGripStyle() != null && !user.getPreferredGripStyle().isBlank()) return user.getPreferredGripStyle();
+        if (review.getGripStyle() != null && !review.getGripStyle().isBlank()) return review.getGripStyle();
+        return "MIXED";
     }
     private static SupportDab parseSupportDab(String code) {
         if (code == null || !code.startsWith(SUPPORT_DAB_PREFIX)) return null;

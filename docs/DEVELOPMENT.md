@@ -1,7 +1,7 @@
 # 鼠标参数与主观评价网站开发文档
 
-> 文档版本：v1.0
-> 更新日期：2026-07-26
+> 文档版本：v1.1
+> 更新日期：2026-08-07
 > 项目阶段：功能型 MVP 已完成，进入数据质量与上线验收阶段
 > 参考产品：[EloShapes](https://www.eloshapes.com/)
 
@@ -892,6 +892,7 @@ sort, page, pageSize
 
 ## 18. 上线检查清单
 
+- [ ] 已按第 18.1 节删除临时代码关系观测页 `/dev/code-map` 及其源码索引逻辑；
 - [ ] 生产环境变量通过密钥管理配置；
 - [ ] 数据库迁移在预发布环境演练；
 - [ ] 至少准备 100 款字段完整度可接受的鼠标数据；
@@ -902,6 +903,46 @@ sort, page, pageSize
 - [ ] 隐私政策、用户协议和评价规则可访问；
 - [ ] 错误监控、日志、数据库备份和告警生效；
 - [ ] 对比分享链接在桌面端和移动端通过测试。
+
+### 18.1 删除临时代码关系观测页
+
+> **上线前必做：** `/dev/code-map` 是开发期间用于查看类、函数、调用关系和执行顺序的临时页面。路由当前仅在 `import.meta.env.DEV` 为真时注册，不会出现在生产路由中，但正式上线前仍须删除相关代码，避免后续误改为生产可访问或把完整源码索引打入前端资源。
+
+删除以下文件：
+
+```text
+frontend/src/views/CodeMapView.vue
+frontend/src/utils/codeMapIndex.js
+frontend/src/utils/codeMapIndex.test.js
+```
+
+修改 `frontend/src/router/index.js`：
+
+1. 删除 `CodeMapView` 的动态导入；
+2. 删除通过 `import.meta.env.DEV` 注册的 `/dev/code-map` 路由。
+
+修改 `frontend/src/App.vue`：
+
+1. 删除 `isCodeMapRoute` 计算属性；
+2. 将 `CompareTray` 恢复为以下条件：
+
+```vue
+<CompareTray v-if="!isAdminRoute && route.path !== '/compare'" />
+```
+
+清理后执行：
+
+```powershell
+cd frontend
+npm test -- --run
+npm run build
+```
+
+最终确认：
+
+- 生产构建成功，且构建产物中不存在 `CodeMapView` 或代码索引相关 chunk；
+- `/dev/code-map` 不再注册，开发环境访问该地址应进入前端 404/无匹配路由状态；
+- 普通页面仍正常显示 `CompareTray`，仅 `/compare` 页面隐藏该组件。
 
 ## 19. 默认决策与待确认项
 

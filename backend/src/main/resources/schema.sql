@@ -172,11 +172,13 @@ CREATE INDEX IF NOT EXISTS idx_review_grip_review ON review_grip_scores(review_i
 CREATE TABLE IF NOT EXISTS review_support_positions (
     id UUID PRIMARY KEY,
     review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+    grip_style VARCHAR(20),
     position_code VARCHAR(30) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    CONSTRAINT uk_review_support_position UNIQUE (review_id, position_code)
+    CONSTRAINT uk_review_support_position UNIQUE (review_id, grip_style, position_code)
 );
 CREATE INDEX IF NOT EXISTS idx_review_support_review ON review_support_positions(review_id);
+CREATE INDEX IF NOT EXISTS idx_review_support_grip ON review_support_positions(review_id, grip_style);
 
 CREATE TABLE IF NOT EXISTS review_pro_tags (
     review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,

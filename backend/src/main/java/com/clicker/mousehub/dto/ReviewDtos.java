@@ -32,10 +32,11 @@ public final class ReviewDtos {
     }
 
     public record GripComfort(String gripStyle, int comfortScore) {}
+    public record SupportGrip(String gripStyle, List<SupportCell> supportCells, List<SupportDab> supportDabs) {}
     public record ReviewView(UUID id, UUID mouseId, String handSize,
                              BigDecimal comfortAverage, List<GripComfort> gripComforts, BigDecimal handLengthCm,
                              List<String> supportPositions, List<SupportCell> supportCells,
-                             List<SupportDab> supportDabs) {}
+                             List<SupportDab> supportDabs, List<SupportGrip> supportByGrip) {}
 
     public record SupportPositionCount(String code, String label, long count, int percentage) {}
     public record SupportHeatCell(int x, int y, long count, int percentage) {}
