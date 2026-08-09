@@ -29,7 +29,7 @@ body::before {
   opacity: 0.018;
 }
 
-/* Text hierarchy: white is important, blue is interactive, cool gray is supporting. */
+/* Text hierarchy: white is important, bright neutral is interactive, gray is supporting. */
 h1,
 h2,
 h3,
@@ -171,7 +171,7 @@ a:hover,
 .sign-in-button {
   border-color: var(--accent-strong);
   background: var(--accent-strong);
-  color: #ffffff;
+  color: #090909;
 }
 
 .button:hover,

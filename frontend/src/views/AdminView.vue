@@ -152,6 +152,9 @@ const reviewStats = computed(() => {
     };
 });
 const riskLabel = (level) => ({ HIGH: "高风险", MEDIUM: "需关注", LOW: "低风险" }[level] || "待判断");
+const todayPagesPerVisitor = computed(() => dashboard.value?.todayUniqueVisitors
+    ? (dashboard.value.todayPageViews / dashboard.value.todayUniqueVisitors).toFixed(1)
+    : "0.0");
 const riskFlagLabel = (flag) => ({
     多次举报: "多次举报",
     有举报: "有举报",
@@ -161,6 +164,13 @@ const riskFlagLabel = (flag) => ({
 const setReviewQueue = (status) => {
     reviewStatus.value = status;
     loadReviews(1);
+};
+const showAdminToast = ({ type, message }) => {
+    const target = type === "error" ? error : notice;
+    const other = type === "error" ? notice : error;
+    other.value = "";
+    target.value = "";
+    window.setTimeout(() => { target.value = message; }, 20);
 };
 </script>
 
@@ -176,14 +186,22 @@ const setReviewQueue = (status) => {
                 ><button class="admin-logout" @click="logout">退出后台</button>
             </div>
         </header>
-        <div class="admin-toast-stack" aria-live="polite">
-            <Transition name="admin-toast">
-                <div class="flash success admin-toast" role="status" v-if="notice">{{ notice }}</div>
-            </Transition>
-            <Transition name="admin-toast">
-                <div class="flash error admin-toast" role="alert" v-if="error">{{ error }}</div>
-            </Transition>
-        </div>
+        <Teleport to="body">
+            <div class="admin-toast-stack" aria-live="polite" aria-atomic="true">
+                <Transition name="admin-toast">
+                    <div class="flash success admin-toast" role="status" v-if="notice">
+                        <span class="admin-toast-icon" aria-hidden="true">✓</span>
+                        <div><strong>操作成功</strong><p>{{ notice }}</p></div>
+                    </div>
+                </Transition>
+                <Transition name="admin-toast">
+                    <div class="flash error admin-toast" role="alert" v-if="error">
+                        <span class="admin-toast-icon" aria-hidden="true">!</span>
+                        <div><strong>操作未完成</strong><p>{{ error }}</p></div>
+                    </div>
+                </Transition>
+            </div>
+        </Teleport>
         <div class="admin-layout">
             <aside class="admin-sidebar">
                 <div class="sidebar-kicker">WORKSPACE / 01</div>
@@ -264,6 +282,10 @@ const setReviewQueue = (status) => {
                             ><small>关键参数与来源完整率</small>
                         </article>
                     </div>
+                    <section class="overview-traffic-strip" aria-label="今日前台访问摘要">
+                        <header><div><span>今日访问</span><strong>前台流量快照</strong></div><button @click="selectTab('analytics')">查看详细趋势 →</button></header>
+                        <dl><div><dt>独立访客 UV</dt><dd>{{ dashboard?.todayUniqueVisitors ?? "—" }}</dd></div><div><dt>页面浏览 PV</dt><dd>{{ dashboard?.todayPageViews ?? "—" }}</dd></div><div><dt>人均浏览</dt><dd>{{ todayPagesPerVisitor }}</dd><small>页 / 访客</small></div></dl>
+                    </section>
                     <div class="admin-columns">
                         <section class="admin-panel">
                             <div class="panel-heading">
@@ -1489,6 +1511,7 @@ const setReviewQueue = (status) => {
                 <AdminExpansionPanels
                     v-else-if="['analytics', 'brands', 'feedback', 'operations'].includes(activeTab)"
                     :active-tab="activeTab"
+                    @toast="showAdminToast"
                 />
                 <section v-else-if="activeTab === 'audit'" class="admin-panel full-panel">
                     <div class="toolbar">

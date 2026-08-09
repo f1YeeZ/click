@@ -84,10 +84,9 @@ public class ComparisonService {
     }
 
     public static String delta(BigDecimal base, BigDecimal value) {
-        if (base == null || value == null || base.signum() == 0) return "";
-        BigDecimal result = value.subtract(base).divide(base.abs(), 3, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100)).setScale(1, RoundingMode.HALF_UP);
-        return result.signum() == 0 ? "" : (result.signum() > 0 ? "+" : "") + result + "%";
+        if (base == null || value == null) return "";
+        BigDecimal result = value.subtract(base).stripTrailingZeros();
+        return result.signum() == 0 ? "" : (result.signum() > 0 ? "+" : "") + result.toPlainString();
     }
 
     private BigDecimal number(Integer value) { return value == null ? null : BigDecimal.valueOf(value); }

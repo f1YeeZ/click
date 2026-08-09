@@ -38,15 +38,16 @@ public class AdminService {
     private final RealtimeEventService events;
     private final AuditLogService audit;
     private final SessionService sessions;
+    private final TrafficAnalyticsService traffic;
 
     public AdminService(MouseMapper mice, UserMapper users, ReviewMapper reviews,
                         ReviewGripScoreMapper gripScores, ReviewSupportPositionMapper supportPositions,
                         ContentReportMapper reports,
                         MouseService mouseService, RealtimeEventService events, AuditLogService audit,
-                        SessionService sessions) {
+                        SessionService sessions, TrafficAnalyticsService traffic) {
         this.mice = mice; this.users = users; this.reviews = reviews; this.gripScores = gripScores;
         this.supportPositions = supportPositions; this.reports = reports; this.mouseService = mouseService; this.events = events; this.audit = audit;
-        this.sessions = sessions;
+        this.sessions = sessions; this.traffic = traffic;
     }
 
     public DashboardResponse dashboard() {
@@ -73,8 +74,10 @@ public class AdminService {
         List<AdminReviewView> recentReviews = recentReviewEntities.stream().map(this::reviewView).toList();
         List<MouseView> recentMice = mice.selectList(new LambdaQueryWrapper<MouseDevice>().orderByDesc(MouseDevice::getCreatedAt).last("LIMIT 5"))
                 .stream().map(MouseView::from).toList();
+        TrafficAnalyticsService.TrafficTotals todayTraffic = traffic.today();
         return new DashboardResponse(total, published, draft, archived, userTotal, userActive, userAdmin, userDisabled, reviewTotal, reviewActive,
-                pending, quality, incomplete, stale, recentUsers, recentReviews, recentMice);
+                pending, quality, incomplete, stale, todayTraffic.uniqueVisitors(), todayTraffic.pageViews(),
+                recentUsers, recentReviews, recentMice);
     }
 
     public PageResponse<MouseView> mice(String q, String status, long page, long pageSize) {

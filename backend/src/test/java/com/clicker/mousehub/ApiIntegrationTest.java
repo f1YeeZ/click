@@ -182,6 +182,27 @@ class ApiIntegrationTest {
     @Test
     @Transactional
     @WithMockUser(username = "admin@example.com", roles = "ADMIN")
+    void maintenanceNoticeCanBeClearedAndDisappearsFromPublicConfig() throws Exception {
+        mvc.perform(put("/api/v1/admin/settings/maintenance.notice")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"value\":\"今晚 23:00 维护\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.value", is("今晚 23:00 维护")));
+
+        mvc.perform(put("/api/v1/admin/settings/maintenance.notice")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"value\":\"\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.value", is("")));
+
+        mvc.perform(get("/api/v1/config"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.maintenanceNotice", is("")));
+    }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "admin@example.com", roles = "ADMIN")
     void incompleteDraftCanBeSavedButCannotBePublished() throws Exception {
         String response = mvc.perform(post("/api/v1/admin/mice")
                         .contentType(MediaType.APPLICATION_JSON)

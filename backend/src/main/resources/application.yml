@@ -1,5 +1,13 @@
 server:
   port: ${BACKEND_PORT:8080}
+  tomcat:
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:10000}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:1000}
+    threads:
+      max: ${TOMCAT_MAX_THREADS:200}
+      min-spare: ${TOMCAT_MIN_SPARE_THREADS:20}
+    mbeanregistry:
+      enabled: true
   servlet:
     encoding:
       charset: UTF-8
@@ -64,9 +72,17 @@ app:
     refresh-expires-days: ${REFRESH_TOKEN_EXPIRES_DAYS:30}
     secure-cookies: ${SECURE_AUTH_COOKIES:false}
   realtime:
-    max-connections: ${SSE_MAX_CONNECTIONS:200}
-    max-connections-per-address: ${SSE_MAX_CONNECTIONS_PER_ADDRESS:5}
-    heartbeat-ms: ${SSE_HEARTBEAT_MS:20000}
+    max-connections: ${SSE_MAX_CONNECTIONS:5000}
+    max-connections-per-address: ${SSE_MAX_CONNECTIONS_PER_ADDRESS:50}
+    emitter-timeout-ms: ${SSE_EMITTER_TIMEOUT_MS:0}
+    heartbeat-ms: ${SSE_HEARTBEAT_MS:25000}
+    heartbeat-tick-ms: ${SSE_HEARTBEAT_TICK_MS:1000}
+    event-coalesce-ms: ${SSE_EVENT_COALESCE_MS:100}
+    fanout-threads: ${SSE_FANOUT_THREADS:8}
+    fanout-queue-capacity: ${SSE_FANOUT_QUEUE_CAPACITY:512}
+    fanout-chunk-size: ${SSE_FANOUT_CHUNK_SIZE:128}
+  analytics:
+    hash-salt: ${ANALYTICS_HASH_SALT:${JWT_SECRET:clicker-index-development-secret-change-before-production-2026}}
   mail:
     enabled: ${MAIL_ENABLED:false}
     from: ${QQ_MAIL_FROM:${QQ_MAIL_USERNAME:}}

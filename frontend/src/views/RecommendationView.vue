@@ -55,20 +55,6 @@ const handleSupportModelError = () => { supportModelError.value = '三维模型�
 
 <template>
   <main class="recommendation-page section-shell">
-    <section class="recommendation-hero">
-      <div>
-        <p class="eyebrow">EVIDENCE MATCHER / EXPLAINED</p>
-        <h1 class="visually-hidden">鼠标推荐</h1>
-        <p>选择真实握姿并涂抹期望获得支撑的范围。系统直接比较涂抹图形，优先展示覆盖充分且形状接近的鼠标。</p>
-      </div>
-      <aside class="match-rule-card">
-        <span>匹配规则</span>
-        <strong>EXACT + NEAR</strong>
-        <p>同握姿评价覆盖至少 80% 的期望范围，且形状相似度达到 60%，才会标记为完全匹配。</p>
-        <i><b></b></i>
-      </aside>
-    </section>
-
     <section class="recommendation-lab">
       <div class="recommendation-controls">
         <div class="recommendation-step"><span>01</span><div><small>GRIP PROFILE</small><h2>选择你的握姿</h2></div></div>
@@ -135,6 +121,25 @@ const handleSupportModelError = () => { supportModelError.value = '三维模型�
           <div class="recommendation-product">
             <img v-if="item.mouse.imageUrl" :src="item.mouse.imageUrl" :alt="item.mouse.displayName">
             <span v-else>{{ item.mouse.brand?.slice(0, 1) || 'M' }}</span>
+          </div>
+          <div class="recommendation-support-preview" :class="{ empty: !item.matchedSupportCells?.length }">
+            <div class="recommendation-support-preview-head">
+              <span>MATCHED SUPPORT</span>
+              <strong>{{ item.matchedSupportSampleCount || 0 }} 份匹配涂抹</strong>
+            </div>
+            <div v-if="item.matchedSupportCells?.length" class="recommendation-support-preview-stage">
+              <HandSupport3D
+                :summary-cells="item.matchedSupportCells"
+                :max-count="item.matchedSupportMaxCount || 1"
+                :grid-columns="64"
+                :grid-rows="96"
+                tool="view"
+                :editable="false"
+                :aria-label="`${item.mouse.displayName} 的${selectedGrip?.label || ''}匹配支撑位置三维涂抹`"
+              />
+              <span>拖动旋转查看</span>
+            </div>
+            <div v-else class="recommendation-support-preview-empty"><span>暂无可展示的匹配涂抹</span></div>
           </div>
           <div class="recommendation-result-copy">
             <div class="recommendation-result-topline"><small>{{ item.mouse.brand }}</small><span class="recommendation-match-badge">{{ matchLabel(item) }}</span></div><h3>{{ item.mouse.displayName }}</h3>

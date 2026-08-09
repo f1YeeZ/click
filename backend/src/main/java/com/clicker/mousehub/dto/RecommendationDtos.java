@@ -2,6 +2,7 @@ package com.clicker.mousehub.dto;
 
 import com.clicker.mousehub.dto.MouseDtos.MouseView;
 import com.clicker.mousehub.dto.ReviewDtos.SupportDab;
+import com.clicker.mousehub.dto.ReviewDtos.SupportHeatCell;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -25,5 +26,7 @@ public final class RecommendationDtos {
                                      int eligibleReviewCount, BigDecimal gripComfortAverage,
                                      int gripComfortSampleCount, Map<String, Long> positionEvidence,
                                      boolean lowSample, String matchType, int supportCoveragePercent,
-                                     int shapeSimilarityPercent, String explanation) {}
+                                     int shapeSimilarityPercent, String explanation,
+                                     List<SupportHeatCell> matchedSupportCells,
+                                     long matchedSupportMaxCount, int matchedSupportSampleCount) {}
 }

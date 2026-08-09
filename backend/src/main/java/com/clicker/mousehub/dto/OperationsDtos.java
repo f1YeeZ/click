@@ -49,11 +49,15 @@ public final class OperationsDtos {
     }
 
     public record SettingView(String key, String value, String description, String updatedBy, OffsetDateTime updatedAt) {}
-    public record SettingUpdateRequest(@NotBlank @Size(max = 2000) String value) {}
+    public record SettingUpdateRequest(@NotNull @Size(max = 2000) String value) {}
     public record PublicSettings(String maintenanceNotice, boolean registrationEnabled, boolean reviewSubmissionEnabled) {}
 
-    public record AnalyticsPoint(LocalDate date, long users, long mice, long reviews, long adminActions) {}
-    public record AnalyticsResponse(int days, List<AnalyticsPoint> points, long openReports, long unreadNotifications,
+    public record PageViewRequest(@NotNull UUID visitorId, @NotBlank @Size(max = 240) String path) {}
+    public record AnalyticsPoint(LocalDate date, long pageViews, long uniqueVisitors,
+                                 long users, long mice, long reviews, long adminActions) {}
+    public record AnalyticsResponse(int days, List<AnalyticsPoint> points,
+                                    long periodPageViews, long periodUniqueVisitors,
+                                    long openReports, long unreadNotifications,
                                     long activeSessions, long staleMice) {}
 
     public record SessionView(UUID id, UUID userId, String userEmail, String ipAddress, String userAgent,

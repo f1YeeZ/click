@@ -63,7 +63,23 @@ mouse.example.com {
 
 入口代理必须传递 `X-Forwarded-Proto`、`X-Forwarded-For` 和真实 Host。内部 Nginx 已处理 SPA 回退、静态资源缓存、`/api` 反代及 SSE 禁用缓冲。
 
-## 5. 备份与恢复
+## 5. 单实例容量验证
+
+默认配置允许 5,000 条 SSE 连接、同一来源地址 50 条连接，Tomcat 接收上限为 10,000；内部 Nginx 使用 32,768 个 worker connections，前后端容器的 `nofile` 上限为 65,536。这里的 5,000 是保护上限，不代表任意服务器都能稳定承载。
+
+先在非生产环境从 1,000 条连接开始，逐级增加到目标容量。若所有连接来自同一台压测机，需要临时把该环境的 `SSE_MAX_CONNECTIONS_PER_ADDRESS` 提高到压测目标值并重启后端；不要在生产环境放宽该限制，测试完成后立即恢复：
+
+```bash
+node scripts/sse-load-test.mjs \
+  --url http://127.0.0.1:8080/api/v1/events \
+  --connections 1000 \
+  --ramp-ms 30000 \
+  --hold-ms 60000
+```
+
+压测期间至少观察 `docker stats`、宿主机 CPU/内存、打开文件数、HTTP 429/5xx、SSE 重连次数、PostgreSQL 连接数和普通 API 的 P95 延迟。只有目标连接数持续稳定、没有异常重连，并且普通 API 延迟仍在产品目标内，才能提高 `SSE_MAX_CONNECTIONS`。压测客户端本身也必须具有足够的文件描述符，且不要从正式用户流量入口执行破坏性压力测试。
+
+## 6. 备份与恢复
 
 上线前和每次升级前备份：
 
@@ -84,7 +100,7 @@ docker compose start backend
 
 至少每天自动备份一次，并定期在独立数据库执行恢复演练。仅有备份文件但未验证恢复不视为可用备份。
 
-## 6. 升级与回滚
+## 7. 升级与回滚
 
 ```bash
 git pull --ff-only
@@ -98,7 +114,7 @@ docker compose logs --tail=200 backend frontend
 
 若新迁移已经写入数据库，不能只回滚镜像；应按照迁移说明执行向前修复，或在确认数据影响后恢复升级前备份。
 
-## 7. 上线验收
+## 8. 上线验收
 
 - `mvn clean verify`、`npm test`、`npm run build` 全部通过；
 - `/healthz` 和后端 readiness 为 `UP`；
@@ -108,6 +124,6 @@ docker compose logs --tail=200 backend frontend
 - 监控覆盖容器存活、磁盘、数据库连接、HTTP 5xx、延迟和证书到期；
 - 首批正式鼠标数据不包含 `example.com` 来源。
 
-## 8. 尚需外部平台完成
+## 9. 尚需外部平台完成
 
 仓库无法代替以下外部操作：购买或配置域名、申请证书、创建云服务器、防火墙放行、配置备份存储、设置告警接收人及完成运营主体的法律审查。

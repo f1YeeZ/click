@@ -60,7 +60,6 @@ onBeforeUnmount(() => {
       <p>© {{ year }} Clicker Index · 技术鼠标数据库</p>
       <nav aria-label="页脚导航">
         <RouterLink to="/mice">鼠标库</RouterLink>
-        <RouterLink to="/ranking">排行榜</RouterLink>
         <RouterLink to="/recommend">鼠标推荐</RouterLink>
         <RouterLink to="/compare">参数对比</RouterLink>
         <RouterLink to="/privacy">隐私政策</RouterLink>
@@ -75,5 +74,5 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.maintenance-banner{display:flex;justify-content:center;gap:12px;padding:9px 20px;background:#173f42;color:#eefafa;font-size:13px}.maintenance-banner strong{color:#8ed9d1;letter-spacing:.08em}
+.maintenance-banner{display:flex;justify-content:center;gap:12px;padding:9px 20px;border-bottom:1px solid #3d3d3d;background:#f2f2f2;color:#0b0b0b;font-size:13px}.maintenance-banner strong{color:#0b0b0b;letter-spacing:.08em}
 </style>

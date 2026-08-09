@@ -1,6 +1,6 @@
 <script setup>
 defineOptions({ name: 'HomeView' })
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api/client'
 import MouseCard from '../components/MouseCard.vue'
@@ -18,8 +18,8 @@ const latest = ref([])
 const total = ref(0)
 const contentReady = ref(false)
 const loadLatest = async () => {
-  const { data } = await api.get('/mice', { params: { pageSize: 12, sort: 'newest' } })
-  latest.value = data.items.slice(0, 4)
+  const { data } = await api.get('/mice', { params: { pageSize: 10, sort: 'newest' } })
+  latest.value = data.items.slice(0, 10)
   total.value = data.page.totalItems
 }
 const resetSuggestions = () => {
@@ -79,6 +79,14 @@ let initialLoadTimer
 let contentReadyTimer
 let suggestionTimer
 let suggestionRequest = 0
+const startViewRealtime = () => {
+  stopRealtime()
+  stopRealtime = onRealtime((event) => {
+    if (event.type !== 'mouse.changed' && event.type !== 'sync.required') return
+    clearTimeout(realtimeTimer)
+    realtimeTimer = setTimeout(loadLatest, 250)
+  })
+}
 watch(query, (value) => {
   clearTimeout(suggestionTimer)
   const requestId = ++suggestionRequest
@@ -97,12 +105,9 @@ onMounted(() => {
   contentReadyTimer = window.setTimeout(() => { contentReady.value = true }, 190)
   // Let the route fade finish before inserting the initial card grid.
   initialLoadTimer = window.setTimeout(loadLatest, 220)
-  stopRealtime = onRealtime((event) => {
-    if (event.type !== 'mouse.changed') return
-    clearTimeout(realtimeTimer)
-    realtimeTimer = setTimeout(loadLatest, 250)
-  })
 })
+onActivated(startViewRealtime)
+onDeactivated(() => { stopRealtime(); clearTimeout(realtimeTimer) })
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleOutsidePointer)
   stopRealtime()
@@ -118,9 +123,6 @@ onBeforeUnmount(() => {
   <main class="home-page">
     <section class="home-hero section-shell">
       <div class="hero-copy reveal">
-        <p class="eyebrow">CLICKER INDEX / VERIFIED MOUSE DATA</p>
-        <h1>找到你的完美点击</h1>
-        <p class="hero-lead">面向高性能鼠标的技术数据库。对齐规格、分析参数，用真实数据找到适合你的硬件。</p>
         <div ref="searchShell" class="home-search-shell" :class="{ open: suggestionsOpen }">
           <form class="hero-search" role="search" @submit.prevent="submitSearch">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
@@ -197,26 +199,88 @@ onBeforeUnmount(() => {
         <div><p class="eyebrow">LATEST ARRIVALS / {{ total }} VERIFIED</p><h2>近期新品</h2></div>
         <RouterLink class="inline-link" to="/mice">查看全部 <span>→</span></RouterLink>
       </div>
-      <div class="mouse-grid trending-grid"><MouseCard v-for="(mouse, index) in latest" :key="mouse.id" :mouse="mouse" :index="index" /></div>
-    </section>
-    <section id="core-systems" class="section-shell systems-section">
-      <div class="section-heading ruled-heading"><div><p class="eyebrow">CORE SYSTEMS</p><h2>核心系统</h2></div></div>
-      <div class="systems-grid">
-        <RouterLink class="system-card system-card-wide" to="/compare">
-          <div class="comparison-preview" aria-hidden="true">
-            <div><span>规格</span><span>鼠标 A</span><span>鼠标 B</span></div>
-            <div><span>重量</span><strong>54g</strong><span>60g</span></div>
-            <div><span>回报率</span><span>4000Hz</span><strong>8000Hz</strong></div>
-            <div><span>尺寸</span><span>127×64×40</span><span>125×63×40</span></div>
+      <div class="trending-grid" aria-label="近期新品，无限循环轮播">
+        <div class="trending-track">
+          <div class="trending-set">
+            <MouseCard v-for="(mouse, index) in latest" :key="mouse.id" :mouse="mouse" :index="index" />
           </div>
-          <div class="system-copy"><span class="system-icon">⇆</span><h3>深度参数对比</h3><p>将技术规格逐项对齐，固定网格即时突出产品之间的参数差异。</p></div>
-        </RouterLink>
-        <RouterLink class="system-card" to="/mice">
-          <div class="review-preview" aria-hidden="true"><i style="--value: 92%"></i><i style="--value: 76%"></i><i style="--value: 84%"></i></div>
-          <div class="system-copy"><span class="system-icon">▥</span><h3>结构化主观评价</h3><p>固定评价维度与优缺点标签，让主观感受也能够被快速横向阅读。</p></div>
-        </RouterLink>
+          <div class="trending-set" aria-hidden="true" inert>
+            <MouseCard v-for="(mouse, index) in latest" :key="`loop-${mouse.id}`" :mouse="mouse" :index="index" />
+          </div>
+        </div>
       </div>
     </section>
     </template>
   </main>
 </template>
+
+<style scoped>
+.home-hero {
+  min-height: 300px;
+  padding: 84px 0 52px;
+}
+
+.home-hero::before,
+.home-hero::after {
+  display: none;
+}
+
+.home-hero .hero-copy {
+  max-width: 680px;
+}
+
+.home-page .trending-section {
+  padding-top: 18px;
+}
+
+.home-page .trending-grid {
+  overflow: hidden;
+  padding: 6px 0 10px;
+  border: 0;
+}
+
+.home-page .trending-track {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: trending-loop 48s linear infinite;
+}
+
+.home-page .trending-set {
+  display: flex;
+  gap: 16px;
+  padding-right: 16px;
+}
+
+.home-page .trending-set .mouse-card {
+  flex: 0 0 clamp(230px, 24vw, 290px);
+}
+
+.home-page .trending-grid:hover .trending-track,
+.home-page .trending-grid:focus-within .trending-track {
+  animation-play-state: paused;
+}
+
+@keyframes trending-loop {
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@media (max-width: 820px) {
+  .home-hero {
+    min-height: 250px;
+    padding: 64px 0 36px;
+  }
+
+  .home-page .trending-set .mouse-card {
+    flex-basis: min(76vw, 290px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-page .trending-track {
+    animation: none;
+  }
+}
+</style>

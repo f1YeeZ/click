@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api, { errorMessage } from '../api/client'
 import { useCompareStore } from '../stores/compare'
 import { onRealtime } from '../services/realtime'
+import { normalizeComparison } from '../utils/comparison'
 
 const route = useRoute()
 const router = useRouter()
@@ -31,6 +32,11 @@ const ids = computed(() => store.ids.join(','))
 const compactName = (mouse) => mouse.displayName || [mouse.brand, mouse.model, mouse.variant].filter(Boolean).join(' ')
 const initials = (mouse) => String(mouse.brand || mouse.model || 'M').slice(0, 2).toUpperCase()
 const isSelected = (id) => store.contains(id)
+const deltaClass = (delta) => ({
+  positive: delta?.startsWith('+'),
+  negative: delta?.startsWith('-'),
+  different: delta === '不同'
+})
 
 const load = async () => {
   error.value = ''
@@ -41,7 +47,7 @@ const load = async () => {
   }
   try {
     const { data } = await api.get('/mouse-comparisons', { params: { mouseIds: queryIds } })
-    comparison.value = data
+    comparison.value = normalizeComparison(data)
     store.replace(data.items)
     if (data.items.length) await router.replace({ query: { ids: data.items.map((item) => item.id).join(',') } })
   } catch (e) {
@@ -111,27 +117,27 @@ watch(searchQuery, () => {
   }, 240)
 })
 watch(() => route.query.ids, load)
-onMounted(() => {
+onActivated(() => {
   load()
+  stopRealtime()
   stopRealtime = onRealtime((event) => {
-    if (event.type !== 'mouse.changed' || !store.contains(event.mouseId)) return
+    if (event.type === 'sync.required') {
+      clearTimeout(realtimeTimer)
+      realtimeTimer = setTimeout(load, 250)
+      return
+    }
+    if (event.type !== 'mouse.changed' || (event.mouseId && !store.contains(event.mouseId))) return
     clearTimeout(realtimeTimer)
     realtimeTimer = setTimeout(load, 250)
   })
 })
+onDeactivated(() => { stopRealtime(); clearTimeout(realtimeTimer) })
 onBeforeUnmount(() => { stopRealtime(); clearTimeout(searchTimer); clearTimeout(realtimeTimer) })
 </script>
 
 <template>
   <main class="section-shell compare-page compare-workbench">
-    <div class="page-kicker"><span>COMPARE LAB / LIVE MATRIX</span><span>{{ selectedCount }} / 4 SELECTED</span></div>
-
     <section class="compare-intro">
-      <div class="compare-intro-copy">
-        <p class="eyebrow">PARAMETER COMPARISON</p>
-        <h1 class="visually-hidden">参数对比</h1>
-        <p>搜索型号，点击结果即可加入对比。最多同时放入四款，先选中的鼠标会作为基准。</p>
-      </div>
       <div class="compare-search-panel" :class="{ open: searchOpen }">
         <div class="compare-search-meta"><span>ADD A MOUSE</span><kbd>⌘ K</kbd></div>
         <div class="compare-search-box">
@@ -178,7 +184,7 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(searchTimer); clearTimeout(
         </section>
         <section class="comparison-wrap" v-else>
           <div class="matrix-toolbar"><div><p class="eyebrow">LIVE COMPARISON</p><h2>参数矩阵</h2><p class="mobile-scroll-hint">左右滑动查看全部参数</p></div><label class="difference-toggle"><input v-model="onlyDifference" type="checkbox"><span>仅显示差异</span></label></div>
-          <table class="comparison-table"><thead><tr><th class="parameter-column">参数</th><th v-for="(item,index) in comparison.items" :key="item.id"><span class="channel-label">CH {{ String(index + 1).padStart(2,'0') }}</span><strong>{{ item.model }}</strong><small>{{ item.brand }}</small><button class="compare-remove-inline" type="button" @click="remove(item.id)">移除</button></th></tr></thead><tbody><tr v-for="row in visibleRows" :key="row.group + row.label"><th><span>{{ row.group }}</span><strong>{{ row.label }}</strong><small>{{ row.unit }}</small></th><td v-for="(cell,index) in row.cells" :key="index"><strong>{{ cell.value }}</strong><em v-if="cell.delta" :class="{ positive: cell.delta.startsWith('+') }">{{ cell.delta }}</em></td></tr></tbody></table>
+          <table class="comparison-table"><thead><tr><th class="parameter-column">参数</th><th v-for="(item,index) in comparison.items" :key="item.id"><span class="channel-label">CH {{ String(index + 1).padStart(2,'0') }}</span><strong>{{ item.model }}</strong><small>{{ item.brand }}</small><button class="compare-remove-inline" type="button" @click="remove(item.id)">移除</button></th></tr></thead><tbody><tr v-for="row in visibleRows" :key="row.group + row.label"><th><span>{{ row.group }}</span><strong>{{ row.label }}</strong><small>{{ row.unit }}</small></th><td v-for="(cell,index) in row.cells" :key="index"><strong>{{ cell.value }}</strong><em v-if="cell.delta" :class="deltaClass(cell.delta)">{{ cell.delta }}<small v-if="row.unit">{{ row.unit }}</small></em></td></tr></tbody></table>
         </section>
       </div>
     </section>

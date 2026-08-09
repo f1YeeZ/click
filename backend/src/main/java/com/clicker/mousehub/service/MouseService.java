@@ -10,6 +10,7 @@ import com.clicker.mousehub.entity.Review;
 import com.clicker.mousehub.mapper.MouseMapper;
 import com.clicker.mousehub.mapper.ReviewMapper;
 import com.clicker.mousehub.util.MouseDataQuality;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +37,7 @@ public class MouseService {
         this.audit = audit;
     }
 
+    @Cacheable(cacheNames = "catalog", sync = true)
     public PageResponse<MouseView> search(String q, String brand, String size, String shape, String connection,
                                           String hand, String humpPlacement, String frontFlare, String sideCurvature,
                                           String thumbRest, String ringFingerRest, String sensorType, String sensorName,
@@ -222,6 +224,7 @@ public class MouseService {
         return normalized.stream().map(found::get).filter(Objects::nonNull).toList();
     }
 
+    @Cacheable(cacheNames = "catalog", key = "'brands'", sync = true)
     public List<String> brands() { return mice.selectPublishedBrands(); }
 
     private List<String> csv(String value) {

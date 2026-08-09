@@ -4,9 +4,8 @@ import api, { errorMessage } from '../api/client'
 import AdminFloatingPanel from './AdminFloatingPanel.vue'
 
 const props = defineProps({ activeTab: { type: String, required: true } })
+const emit = defineEmits(['toast'])
 const loading = ref(false)
-const error = ref('')
-const notice = ref('')
 const analytics = ref(null)
 const analyticsDays = ref(30)
 const notifications = ref({ items: [], page: {} })
@@ -26,11 +25,93 @@ const sessionActiveOnly = ref(true)
 const settings = ref([])
 const settingDrafts = reactive({})
 const expansionTabs = new Set(['analytics', 'brands', 'feedback', 'operations'])
-const maxTrend = computed(() => Math.max(1, ...(analytics.value?.points || []).map(point => point.users + point.mice + point.reviews + point.adminActions)))
+const analyticsMetrics = [
+  { key: 'uniqueVisitors', label: '独立访客 UV', description: '每日访问前台的独立浏览器数', color: '#f2f2f2', chartType: 'line', group: 'traffic', totalField: 'periodUniqueVisitors', totalLabel: '区间独立访客' },
+  { key: 'pageViews', label: '页面浏览 PV', description: '前台页面的每日有效浏览次数', color: '#cfcfcf', chartType: 'line', group: 'traffic', totalField: 'periodPageViews', totalLabel: '区间页面浏览' },
+  { key: 'users', label: '新增用户', description: '新注册账户的每日变化', color: '#f2f2f2', chartType: 'line', group: 'operations' },
+  { key: 'mice', label: '新增鼠标', description: '新建鼠标数据的每日变化', color: '#cfcfcf', chartType: 'line', group: 'operations' },
+  { key: 'reviews', label: '新增评价', description: '新评价包的每日提交量', color: '#a8a8a8', chartType: 'line', group: 'operations' },
+  { key: 'adminActions', label: '管理员操作', description: '后台治理与维护操作次数', color: '#dedede', chartType: 'bar', group: 'operations' },
+]
+const metricPoints = key => (analytics.value?.points || []).map(point => Number(point[key] || 0))
+const chartWidth = 720
+const chartTop = 10
+const chartBottom = 174
+const niceStep = max => {
+  if (max <= 1) return 1
+  const roughStep = max / 4
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep))
+  const fraction = roughStep / magnitude
+  const niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10
+  return niceFraction * magnitude
+}
+const comparison = values => {
+  const days = Math.min(7, Math.floor(values.length / 2))
+  if (!days) return { label: '暂无对比区间', value: '—', direction: 'flat' }
+  const recent = values.slice(-days).reduce((sum, value) => sum + value, 0)
+  const previous = values.slice(-(days * 2), -days).reduce((sum, value) => sum + value, 0)
+  if (!previous) return recent
+    ? { label: `较前 ${days} 天`, value: `新增 ${recent}`, direction: 'up' }
+    : { label: `较前 ${days} 天`, value: '持平', direction: 'flat' }
+  const change = Math.round((recent - previous) / previous * 100)
+  return {
+    label: `较前 ${days} 天`,
+    value: change === 0 ? '持平' : `${change > 0 ? '+' : ''}${change}%`,
+    direction: change > 0 ? 'up' : change < 0 ? 'down' : 'flat',
+  }
+}
+const buildChart = metric => {
+  const source = analytics.value?.points || []
+  const values = metricPoints(metric.key)
+  const calculatedTotal = values.reduce((total, value) => total + value, 0)
+  const peak = Math.max(0, ...values)
+  const step = niceStep(peak)
+  const scaleMax = Math.max(1, Math.ceil(peak / step) * step)
+  const plotHeight = chartBottom - chartTop
+  const points = source.map((point, index) => ({
+    x: source.length === 1 ? chartWidth / 2 : index / Math.max(1, source.length - 1) * chartWidth,
+    y: chartBottom - Number(point[metric.key] || 0) / scaleMax * plotHeight,
+    date: point.date,
+    value: Number(point[metric.key] || 0),
+  }))
+  const ticks = []
+  for (let value = scaleMax; value >= 0; value -= step) {
+    ticks.push({ value, y: chartBottom - value / scaleMax * plotHeight })
+  }
+  if (ticks.at(-1)?.value !== 0) ticks.push({ value: 0, y: chartBottom })
+  const tickInterval = Math.max(1, Math.ceil(source.length / 6))
+  const dates = points.filter((point, index) => index === 0 || index === points.length - 1 || index % tickInterval === 0)
+  const peakPoint = points.find(point => point.value === peak)
+  const barWidth = Math.max(2, Math.min(18, chartWidth / Math.max(1, points.length) * .62))
+  return {
+    ...metric,
+    values,
+    points,
+    ticks,
+    dates,
+    peak,
+    peakPoint,
+    barWidth,
+    total: metric.totalField ? Number(analytics.value?.[metric.totalField] || 0) : calculatedTotal,
+    average: values.length ? (calculatedTotal / values.length).toFixed(1) : '0.0',
+    latest: values.at(-1) || 0,
+    trend: comparison(values),
+    linePath: points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' '),
+    areaPath: points.length ? `${points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ')} L ${points.at(-1).x} ${chartBottom} L ${points[0].x} ${chartBottom} Z` : '',
+  }
+}
+const analyticsCharts = computed(() => analyticsMetrics.map(buildChart))
+const analyticsGroups = computed(() => [
+  { key: 'traffic', title: '访问表现', description: '仅统计前台公开页面，后台访问和常见爬虫已排除。', charts: analyticsCharts.value.filter(chart => chart.group === 'traffic') },
+  { key: 'operations', title: '内容与治理', description: '内容供给和后台维护的每日变化。', charts: analyticsCharts.value.filter(chart => chart.group === 'operations') },
+])
+const dateLabel = value => String(value || '').slice(5)
+const showNotice = message => emit('toast', { type: 'success', message })
+const showError = message => emit('toast', { type: 'error', message })
 
 const run = async fn => {
-  loading.value = true; error.value = ''
-  try { await fn() } catch (e) { error.value = errorMessage(e) } finally { loading.value = false }
+  loading.value = true
+  try { await fn() } catch (e) { showError(errorMessage(e)) } finally { loading.value = false }
 }
 const loadAnalytics = () => run(async () => {
   analytics.value = (await api.get('/admin/analytics', { params: { days: analyticsDays.value } })).data
@@ -45,14 +126,14 @@ const saveBrand = () => run(async () => {
   const payload = { ...brandForm }; delete payload.id; delete payload.mouseCount; delete payload.updatedAt
   if (brandForm.id) await api.put(`/admin/brand-profiles/${brandForm.id}`, payload)
   else await api.post('/admin/brand-profiles', payload)
-  notice.value = '品牌资料已保存'; await loadBrands(); closeBrandEditor()
+  await loadBrands(); closeBrandEditor(); showNotice('品牌资料已保存')
 })
 const loadReports = (page = 1) => run(async () => {
   reports.value = (await api.get('/admin/reports', { params: { q: reportQuery.value || undefined, status: reportStatus.value || undefined, targetType: reportType.value || undefined, page } })).data
   reports.value.items.forEach(item => { reportDrafts[item.id] = { status: item.status, assigneeEmail: item.assigneeEmail || '', resolution: item.resolution || '' } })
 })
 const saveReport = report => run(async () => {
-  await api.patch(`/admin/reports/${report.id}`, reportDrafts[report.id]); notice.value = '反馈工单已更新'; await loadReports(reports.value.page.number || 1); selectedReport.value = null
+  await api.patch(`/admin/reports/${report.id}`, reportDrafts[report.id]); await loadReports(reports.value.page.number || 1); selectedReport.value = null; showNotice('反馈工单已更新')
 })
 const openReport = report => { selectedReport.value = report }
 const loadOperations = () => run(async () => {
@@ -65,16 +146,19 @@ const loadOperations = () => run(async () => {
 const loadSessions = (page = 1) => run(async () => { sessions.value = (await api.get('/admin/sessions', { params: { q: sessionQuery.value || undefined, activeOnly: sessionActiveOnly.value, page } })).data })
 const revokeSession = session => run(async () => {
   if (!window.confirm(`确定让 ${session.userEmail} 的该会话立即失效吗？`)) return
-  await api.delete(`/admin/sessions/${session.id}`); notice.value = '会话已撤销'; await loadSessions(sessions.value.page.number || 1)
+  await api.delete(`/admin/sessions/${session.id}`); await loadSessions(sessions.value.page.number || 1); showNotice('会话已撤销')
 })
 const saveSetting = item => run(async () => {
-  await api.put(`/admin/settings/${encodeURIComponent(item.key)}`, { value: String(settingDrafts[item.key]) }); notice.value = '系统设置已生效'; await loadOperations()
+  const value = String(settingDrafts[item.key] ?? '')
+  await api.put(`/admin/settings/${encodeURIComponent(item.key)}`, { value })
+  await loadOperations()
+  showNotice(item.key === 'maintenance.notice' && !value.trim() ? '前台维护公告已关闭' : '系统设置已生效')
 })
-const readNotification = item => run(async () => { await api.patch(`/admin/notifications/${item.id}/read`); await loadAnalytics() })
-const readAll = () => run(async () => { await api.post('/admin/notifications/read-all'); await loadAnalytics() })
+const readNotification = item => run(async () => { await api.patch(`/admin/notifications/${item.id}/read`); await loadAnalytics(); showNotice('通知已标记为已读') })
+const readAll = () => run(async () => { await api.post('/admin/notifications/read-all'); await loadAnalytics(); showNotice('全部通知已标记为已读') })
 const download = async (url, filename) => {
-  try { const { data } = await api.get(url, { responseType: 'blob' }); const href = URL.createObjectURL(data); const link = document.createElement('a'); link.href = href; link.download = filename; link.click(); URL.revokeObjectURL(href) }
-  catch (e) { error.value = errorMessage(e) }
+  try { const { data } = await api.get(url, { responseType: 'blob' }); const href = URL.createObjectURL(data); const link = document.createElement('a'); link.href = href; link.download = filename; link.click(); URL.revokeObjectURL(href); showNotice('导出文件已开始下载') }
+  catch (e) { showError(errorMessage(e)) }
 }
 const exportData = type => download(`/admin/exports/${type}`, `clicker-${type}.csv`)
 const settingLabel = key => ({ 'maintenance.notice': '前台维护公告', 'registration.enabled': '开放用户注册', 'reviews.enabled': '开放评价提交', 'upload.max-mb': '图片上传提示上限（MB）', 'verification.stale-days': '数据核验过期天数', 'security.session-days': '会话有效天数提示' }[key] || key)
@@ -93,15 +177,46 @@ onBeforeUnmount(() => window.removeEventListener('admin:refresh', refreshListene
 
 <template>
   <div class="expansion-shell">
-    <div class="admin-toast-stack"><div v-if="notice" class="flash success">{{ notice }}</div><div v-if="error" class="flash error">{{ error }}</div></div>
-
     <section v-if="activeTab === 'analytics'" class="admin-panel full-panel expansion-panel">
-      <div class="panel-heading expansion-heading"><div><span class="panel-kicker">OPERATIONS PULSE</span><h3>运营分析与通知</h3><p>把增长、治理与安全信号放到同一条时间线上。</p></div><select v-model.number="analyticsDays" @change="loadAnalytics"><option :value="7">近 7 天</option><option :value="14">近 14 天</option><option :value="30">近 30 天</option><option :value="90">近 90 天</option></select></div>
+      <div class="panel-heading expansion-heading"><div><span class="panel-kicker">OPERATIONS PULSE</span><h3>运营分析与通知</h3><p>按指标查看每日变化、区间累计和近期趋势。</p></div><select v-model.number="analyticsDays" aria-label="选择统计时间范围" @change="loadAnalytics"><option :value="7">近 7 天</option><option :value="14">近 14 天</option><option :value="30">近 30 天</option><option :value="90">近 90 天</option></select></div>
       <div class="signal-cards"><article><span>待处理反馈</span><strong>{{ analytics?.openReports ?? '—' }}</strong></article><article><span>未读通知</span><strong>{{ analytics?.unreadNotifications ?? '—' }}</strong></article><article><span>活跃会话</span><strong>{{ analytics?.activeSessions ?? '—' }}</strong></article><article><span>过期数据</span><strong>{{ analytics?.staleMice ?? '—' }}</strong></article></div>
-      <div class="analytics-grid">
-        <section class="trend-card"><header><h4>每日运营脉冲</h4><small>用户 / 鼠标 / 评价 / 管理操作</small></header><div class="trend-chart"><div v-for="point in analytics?.points || []" :key="point.date" class="trend-column" :title="`${point.date}：用户 ${point.users}，鼠标 ${point.mice}，评价 ${point.reviews}，操作 ${point.adminActions}`"><i :style="{ height: `${Math.max(3, (point.users + point.mice + point.reviews + point.adminActions) / maxTrend * 100)}%` }"></i><span>{{ point.date.slice(5) }}</span></div></div></section>
-        <section class="notification-card"><header><div><h4>通知中心</h4><small>举报、纠错、导入失败和安全事项</small></div><button @click="readAll">全部已读</button></header><div class="notification-list"><button v-for="item in notifications.items" :key="item.id" :class="{ unread: !item.read }" @click="readNotification(item)"><span>{{ item.type }}</span><strong>{{ item.title }}</strong><p>{{ item.message }}</p><small>{{ date(item.createdAt) }}</small></button><p v-if="!notifications.items.length" class="table-empty">暂无通知</p></div></section>
+      <div class="analytics-report">
+        <section v-for="group in analyticsGroups" :key="group.key" class="analytics-report-group">
+          <header class="analytics-group-heading"><div><h4>{{ group.title }}</h4><p>{{ group.description }}</p></div><span>{{ group.charts.length }} 项指标</span></header>
+          <div class="analytics-metric-grid">
+            <section v-for="chart in group.charts" :key="chart.key" class="metric-report-row" :style="{ '--chart-accent': chart.color }">
+              <header class="metric-report-summary">
+                <div class="metric-report-title"><i aria-hidden="true"></i><div><h4>{{ chart.label }}</h4><p>{{ chart.description }}</p></div></div>
+                <div class="metric-total"><span>{{ chart.totalLabel || `${analyticsDays} 天累计` }}</span><strong>{{ chart.total }}</strong></div>
+              </header>
+              <div class="metric-plot" role="img" :aria-label="`${chart.label}每日统计${chart.chartType === 'bar' ? '柱状图' : '折线图'}`">
+                <div class="metric-y-axis" aria-hidden="true"><span v-for="tick in chart.ticks" :key="tick.value" :style="{ top: `${tick.y / 184 * 100}%` }">{{ tick.value }}</span></div>
+                <div class="metric-plot-canvas">
+                  <svg viewBox="0 0 720 184" preserveAspectRatio="none" role="img">
+                    <title>{{ chart.label }}每日统计{{ chart.chartType === 'bar' ? '柱状图' : '折线图' }}</title>
+                    <line v-for="tick in chart.ticks" :key="tick.value" class="metric-grid-line" x1="0" x2="720" :y1="tick.y" :y2="tick.y" />
+                    <template v-if="chart.chartType === 'line'">
+                      <path class="metric-area" :d="chart.areaPath" />
+                      <path class="metric-line" :d="chart.linePath" />
+                      <circle v-for="point in chart.points" v-show="analyticsDays <= 30" :key="point.date" class="metric-line-point" :cx="point.x" :cy="point.y" :r="analyticsDays <= 14 ? 3.5 : 2.5"><title>{{ point.date }}：{{ point.value }}</title></circle>
+                    </template>
+                    <template v-else>
+                      <rect v-for="point in chart.points" :key="point.date" class="metric-bar" :x="point.x - chart.barWidth / 2" :y="point.y" :width="chart.barWidth" :height="Math.max(1, 174 - point.y)" rx="2"><title>{{ point.date }}：{{ point.value }}</title></rect>
+                    </template>
+                  </svg>
+                  <span v-if="chart.peakPoint && chart.peak > 0" class="metric-peak-pin" :class="{ left: chart.peakPoint.x < 100, right: chart.peakPoint.x > 620 }" :style="{ left: `${chart.peakPoint.x / 720 * 100}%`, top: `${chart.peakPoint.y / 184 * 100}%` }">峰值 {{ chart.peak }}</span>
+                </div>
+                <div class="metric-x-axis" aria-hidden="true"><span v-for="point in chart.dates" :key="point.date" :style="{ left: `${point.x / 720 * 100}%` }">{{ dateLabel(point.date) }}</span></div>
+              </div>
+              <footer class="metric-report-meta">
+                <dl><div><dt>今日</dt><dd>{{ chart.latest }}</dd></div><div><dt>日均</dt><dd>{{ chart.average }}</dd></div><div><dt>峰值</dt><dd>{{ chart.peak }}</dd></div></dl>
+                <div class="metric-comparison" :class="`trend-${chart.trend.direction}`"><span>{{ chart.trend.label }}</span><strong>{{ chart.trend.value }}</strong></div>
+              </footer>
+            </section>
+          </div>
+        </section>
       </div>
+      <section class="notification-card analytics-notification-card"><header><div><h4>通知中心</h4><small>举报、纠错、导入失败和安全事项</small></div><button @click="readAll">全部已读</button></header><div class="notification-list"><button v-for="item in notifications.items" :key="item.id" :class="{ unread: !item.read }" @click="readNotification(item)"><span>{{ item.type }}</span><strong>{{ item.title }}</strong><p>{{ item.message }}</p><small>{{ date(item.createdAt) }}</small></button><p v-if="!notifications.items.length" class="table-empty">暂无通知</p></div></section>
     </section>
 
     <section v-else-if="activeTab === 'brands'" class="admin-panel full-panel expansion-panel">
@@ -129,7 +244,7 @@ onBeforeUnmount(() => window.removeEventListener('admin:refresh', refreshListene
         <section class="ops-card"><header><div><h4>数据导出</h4><small>CSV 统一使用 UTF-8 BOM</small></div></header><div class="export-actions"><button @click="exportData('mice')">导出鼠标</button><button @click="exportData('users')">导出用户</button><button @click="exportData('reviews')">导出评价</button><button @click="exportData('audit')">导出审计</button></div></section>
         <section class="ops-card settings-card"><header><div><h4>系统设置</h4><small>保存后立即作用于注册、评价和前台公告</small></div></header><label v-for="item in settings" :key="item.key"><span><strong>{{ settingLabel(item.key) }}</strong><small>{{ item.description }}</small></span><select v-if="item.key.endsWith('.enabled')" v-model="settingDrafts[item.key]"><option value="true">开启</option><option value="false">关闭</option></select><input v-else v-model="settingDrafts[item.key]"><button @click="saveSetting(item)">保存</button></label></section>
         <section class="ops-card wide-card"><header><div><h4>导入历史</h4><small>保留预检结果、错误报告和最终写入数量</small></div></header><table class="admin-table"><thead><tr><th>文件</th><th>状态</th><th>数据量</th><th>操作人</th><th>时间</th><th></th></tr></thead><tbody><tr v-for="item in imports.items" :key="item.checksum"><td><strong>{{ item.filename }}</strong><small class="mono">{{ item.checksum.slice(0, 12) }}</small></td><td><em>{{ statusLabel(item.status) }}</em></td><td>{{ item.totalCount || 0 }} 行 · +{{ item.createdCount || 0 }} / ↻{{ item.updatedCount || 0 }}</td><td>{{ item.actorEmail }}</td><td>{{ date(item.completedAt || item.createdAt) }}</td><td><button v-if="item.hasErrorReport" @click="download(`/admin/mice/imports/${item.checksum}/errors`, `import-errors-${item.checksum}.csv`)">下载错误</button></td></tr></tbody></table></section>
-        <section class="ops-card wide-card"><header><div><h4>登录会话</h4><small>查看最后活动并按设备撤销访问</small></div><div class="session-filter"><input v-model="sessionQuery" placeholder="搜索邮箱" @keyup.enter="loadSessions(1)"><label><input v-model="sessionActiveOnly" type="checkbox" @change="loadSessions(1)"> 仅活跃</label></div></header><table class="admin-table"><thead><tr><th>用户</th><th>设备</th><th>网络</th><th>最后活动</th><th>到期</th><th></th></tr></thead><tbody><tr v-for="session in sessions.items" :key="session.id"><td><strong>{{ session.userEmail }}</strong><small>{{ session.active ? '活跃' : '已失效' }}</small></td><td class="session-agent">{{ session.userAgent || '未知设备' }}</td><td class="mono">{{ session.ipAddress || '—' }}</td><td>{{ date(session.lastUsedAt || session.createdAt) }}</td><td>{{ date(session.expiresAt) }}</td><td><button v-if="session.active" class="danger-link" @click="revokeSession(session)">强制下线</button></td></tr></tbody></table></section>
+        <section class="ops-card wide-card"><header><div><h4>登录会话</h4><small>查看最后活动并按设备撤销访问</small></div><div class="session-filter"><input v-model="sessionQuery" class="session-search" placeholder="搜索邮箱" aria-label="搜索登录会话邮箱" @keyup.enter="loadSessions(1)"><label class="session-active-toggle"><input v-model="sessionActiveOnly" type="checkbox" @change="loadSessions(1)"><span class="session-check-indicator" aria-hidden="true"></span><span>仅活跃</span></label></div></header><table class="admin-table"><thead><tr><th>用户</th><th>设备</th><th>网络</th><th>最后活动</th><th>到期</th><th></th></tr></thead><tbody><tr v-for="session in sessions.items" :key="session.id"><td><strong>{{ session.userEmail }}</strong><small>{{ session.active ? '活跃' : '已失效' }}</small></td><td class="session-agent">{{ session.userAgent || '未知设备' }}</td><td class="mono">{{ session.ipAddress || '—' }}</td><td>{{ date(session.lastUsedAt || session.createdAt) }}</td><td>{{ date(session.expiresAt) }}</td><td><button v-if="session.active" class="danger-link" @click="revokeSession(session)">强制下线</button></td></tr></tbody></table></section>
       </div>
     </section>
     <div v-if="loading" class="expansion-loading">正在同步运营数据…</div>
@@ -140,4 +255,235 @@ onBeforeUnmount(() => window.removeEventListener('admin:refresh', refreshListene
 .expansion-shell{position:relative;color:var(--dv-text)}.expansion-panel{min-height:620px}.expansion-heading{align-items:flex-start}.expansion-heading p{margin:.35rem 0 0;color:var(--dv-muted);max-width:580px}.signal-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.signal-cards article{padding:18px;border-radius:16px;background:var(--dv-surface-high);border:1px solid var(--dv-border)}.signal-cards span{display:block;font-size:12px;color:var(--dv-muted)}.signal-cards strong{color:var(--dv-text);font-size:30px;line-height:1.2}.analytics-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,.75fr);gap:18px}.trend-card,.notification-card,.ops-card{border:1px solid var(--dv-border);border-radius:18px;background:var(--dv-surface);padding:20px;color:var(--dv-text)}.trend-card header,.notification-card header,.ops-card header{display:flex;justify-content:space-between;gap:12px;align-items:center}.trend-card h4,.notification-card h4,.ops-card h4{margin:0}.trend-card header small,.notification-card header small,.ops-card header small{color:var(--dv-muted)}.trend-chart{height:260px;display:flex;align-items:flex-end;gap:4px;margin-top:24px;border-bottom:1px solid var(--dv-outline)}.trend-column{height:100%;flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;min-width:4px}.trend-column i{display:block;width:80%;min-height:3px;background:var(--dv-primary);border-radius:5px 5px 0 0}.trend-column span{font-size:8px;color:var(--dv-muted);writing-mode:vertical-rl;margin-top:4px}.notification-list{display:grid;gap:8px;margin-top:16px;max-height:330px;overflow:auto}.notification-list button{text-align:left;border:1px solid transparent;border-radius:12px;padding:12px;background:var(--dv-surface-high);color:var(--dv-text)}.notification-list button.unread{border-color:var(--dv-primary-line);background:var(--dv-primary-soft)}.notification-list span,.notification-list small{font-size:10px;color:var(--dv-muted)}.notification-list strong,.notification-list p{display:block;margin:3px 0}.brand-layout{display:block}.brand-editor{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:20px;background:var(--dv-surface-high);border-radius:18px}.brand-editor label,.report-workflow label{display:grid;gap:6px;font-size:12px;font-weight:700}.brand-editor .wide,.report-workflow .wide{grid-column:1/-1}.brand-editor textarea{min-height:90px}.brand-editor .form-actions{grid-column:1/-1}.brand-editor-floating{padding:0;border-radius:0;background:transparent}.brand-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:9px;align-content:start}.brand-list>button{display:grid;grid-template-columns:46px 1fr auto;align-items:center;gap:12px;text-align:left;border:1px solid var(--dv-border);border-radius:14px;background:var(--dv-surface);color:var(--dv-text);padding:12px}.brand-list strong,.brand-list small{display:block}.brand-list small,.brand-list em{color:var(--dv-muted)}.brand-mark{width:42px;height:42px;border-radius:12px;background:var(--dv-surface-highest);display:grid;place-items:center;overflow:hidden}.brand-mark img{width:100%;height:100%;object-fit:contain}.report-board{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}.report-board article{border:1px solid var(--dv-border);border-radius:18px;padding:18px;background:var(--dv-surface);color:var(--dv-text)}.report-board article>header{display:flex;justify-content:space-between}.report-board h4{margin:5px 0}.report-board dl{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.report-board dt{font-size:10px;color:var(--dv-muted)}.report-board dd{margin:2px 0;font-size:12px}.report-workflow{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:12px;border-top:1px solid var(--dv-border)}.report-workflow button{justify-self:start}.report-workflow-floating{padding-top:0;border-top:0}.report-open-action{margin-top:14px}.report-original{margin-bottom:18px;padding:14px;border:1px solid var(--dv-border);border-radius:10px;background:var(--dv-surface-high)}.report-original span{color:var(--dv-muted);font-size:11px}.report-original p{margin:6px 0 0;line-height:1.55}.expansion-modal-actions{display:flex;justify-content:flex-end;gap:8px;width:100%}.operations-grid{display:grid;grid-template-columns:1fr 1.5fr;gap:16px}.wide-card{grid-column:1/-1}.export-actions{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:16px}.export-actions button{border:1px solid var(--dv-outline);border-radius:12px;background:var(--dv-surface-high);color:var(--dv-text);padding:16px;font-weight:700}.settings-card label{display:grid;grid-template-columns:1fr minmax(100px,180px) auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--dv-border)}.settings-card strong,.settings-card small{display:block}.settings-card small{color:var(--dv-muted)}.settings-card button,.session-filter button,.danger-link{color:var(--dv-text)}.session-filter{display:flex;align-items:center;gap:10px}.session-filter label{white-space:nowrap}.session-agent{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.danger-link{color:var(--dv-error)}.expansion-loading{position:absolute;inset:0;display:grid;place-items:center;background:rgba(11,11,12,.78);color:var(--dv-text);backdrop-filter:blur(2px);font-weight:700}@media(max-width:900px){.signal-cards{grid-template-columns:1fr 1fr}.analytics-grid,.operations-grid{grid-template-columns:1fr}.report-board{grid-template-columns:1fr}.wide-card{grid-column:auto}.brand-editor{grid-template-columns:1fr}.brand-editor .wide{grid-column:auto}}
 .brand-editor input,.brand-editor select,.brand-editor textarea,.report-workflow input,.report-workflow select,.report-workflow textarea,.settings-card input,.settings-card select,.session-filter input{width:100%;min-height:42px;padding:9px 11px;border:1px solid var(--dv-outline);border-radius:8px;outline:0;background:var(--dv-background);color:var(--dv-text);color-scheme:dark}.brand-editor textarea,.report-workflow textarea{resize:vertical}.brand-editor input:focus,.brand-editor select:focus,.brand-editor textarea:focus,.report-workflow input:focus,.report-workflow select:focus,.report-workflow textarea:focus,.settings-card input:focus,.settings-card select:focus,.session-filter input:focus{border-color:var(--dv-primary);box-shadow:0 0 0 3px var(--dv-primary-soft)}.brand-editor input::placeholder,.report-workflow input::placeholder,.session-filter input::placeholder{color:var(--dv-muted)}.trend-card header button,.notification-card header button,.settings-card label>button,.ops-card .admin-table button{min-height:38px;padding:7px 10px;border:1px solid var(--dv-outline);border-radius:8px;background:var(--dv-surface-high);color:var(--dv-text)}
 @media(max-width:600px){.expansion-panel{min-height:auto}.signal-cards article,.trend-card,.notification-card,.ops-card,.brand-editor,.report-board article{padding:14px;border-radius:12px}.signal-cards strong{font-size:24px}.trend-card,.ops-card{overflow-x:auto}.trend-card header,.notification-card header,.ops-card header{align-items:flex-start;flex-direction:column}.trend-chart{width:520px;height:210px}.brand-list>button{grid-template-columns:42px 1fr}.brand-list>button>em{grid-column:2}.report-board dl{grid-template-columns:1fr 1fr}.report-workflow{grid-template-columns:1fr}.report-workflow .wide{grid-column:auto}.report-workflow button{width:100%}.settings-card label{grid-template-columns:1fr;align-items:stretch}.settings-card label button{width:100%}.session-filter{width:100%;align-items:stretch;flex-wrap:wrap}.session-filter>input{width:100%}.ops-card .admin-table{display:block;width:calc(100% + 28px);margin:0 -14px -14px;padding:0 14px 10px;overflow-x:auto}.export-actions{grid-template-columns:1fr}}
+</style>
+
+<style scoped>
+.signal-cards {
+  display: flex;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--dv-border);
+  border-radius: 12px;
+  background: var(--dv-surface);
+}
+.signal-cards article {
+  flex: 1 1 0;
+  padding: 14px 18px;
+  border: 0;
+  border-right: 1px solid var(--dv-border);
+  border-radius: 0;
+  background: transparent;
+}
+.signal-cards article:last-child { border-right: 0; }
+.signal-cards strong { margin-top: 4px; font: 700 1.35rem/1.2 var(--dv-mono); }
+.session-filter .session-search {
+  flex: 0 1 220px;
+  width: 220px;
+}
+.session-active-toggle {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid var(--dv-outline);
+  border-radius: 8px;
+  background: var(--dv-surface-high);
+  color: var(--dv-text-soft);
+  font-size: .72rem;
+  cursor: pointer;
+  user-select: none;
+}
+.session-filter .session-active-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  opacity: 0;
+  clip-path: inset(50%);
+}
+.session-check-indicator {
+  display: grid;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 1px solid #666;
+  border-radius: 4px;
+  background: #111;
+  color: #111;
+  font: 800 .62rem/1 var(--dv-mono);
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+.session-active-toggle input:checked + .session-check-indicator {
+  border-color: #dedede;
+  background: #dedede;
+  color: #111;
+}
+.session-active-toggle input:checked + .session-check-indicator::after { content: '✓'; }
+.session-active-toggle:hover { border-color: #686868; color: var(--dv-text); }
+.session-active-toggle input:focus-visible + .session-check-indicator {
+  outline: 2px solid var(--dv-primary-bright);
+  outline-offset: 2px;
+}
+.session-active-toggle input:disabled ~ span { opacity: .48; cursor: not-allowed; }
+.analytics-report {
+  display: grid;
+  gap: 20px;
+  margin-top: 18px;
+}
+.analytics-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 2px 9px;
+  border-bottom: 1px solid var(--dv-border);
+}
+.analytics-group-heading h4 { margin: 0; color: var(--dv-text); font-size: .86rem; }
+.analytics-group-heading p { margin: 3px 0 0; color: var(--dv-muted); font-size: .66rem; }
+.analytics-group-heading > span { color: var(--dv-muted); font: 500 .62rem var(--dv-mono); white-space: nowrap; }
+.analytics-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.metric-report-row {
+  --chart-accent: var(--dv-primary);
+  display: grid;
+  grid-template-rows: auto auto auto;
+  min-width: 0;
+  padding: 14px 14px 11px;
+  border: 1px solid var(--dv-border);
+  border-radius: 12px;
+  background: var(--dv-surface);
+  color: var(--dv-text);
+}
+.metric-report-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+}
+.metric-report-title { display: flex; min-width: 0; align-items: flex-start; gap: 8px; }
+.metric-report-title > i { flex: 0 0 7px; width: 7px; height: 7px; margin-top: 5px; border-radius: 2px; background: var(--chart-accent); }
+.metric-report-title h4 { margin: 0; color: var(--dv-text); font-size: .88rem; }
+.metric-report-title p { overflow: hidden; margin: 3px 0 0; color: var(--dv-muted); font-size: .65rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.metric-total { min-width: 86px; text-align: right; }
+.metric-total span { display: block; color: var(--dv-muted); font-size: .58rem; }
+.metric-total strong { display: block; margin-top: 3px; color: var(--chart-accent); font: 700 1.2rem/1 var(--dv-mono); }
+.metric-report-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 7px;
+  padding-top: 9px;
+  border-top: 1px solid var(--dv-border);
+}
+.metric-report-meta dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.metric-report-meta dl > div { display: flex; min-width: 0; align-items: baseline; gap: 5px; }
+.metric-report-meta dt { color: var(--dv-muted); font-size: .58rem; white-space: nowrap; }
+.metric-report-meta dd { overflow: hidden; margin: 0; color: var(--dv-text-soft); font: 650 .7rem var(--dv-mono); text-overflow: ellipsis; }
+.metric-comparison { display: flex; align-items: center; gap: 6px; }
+.metric-comparison span { color: var(--dv-muted); font-size: .65rem; }
+.metric-comparison strong { color: var(--dv-text-soft); font: 650 .72rem var(--dv-mono); }
+.metric-comparison.trend-up strong::before { content: '↑ '; }
+.metric-comparison.trend-down strong::before { content: '↓ '; }
+.metric-plot {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-rows: 124px 20px;
+  min-width: 0;
+  margin-top: 10px;
+}
+.metric-y-axis { position: relative; min-width: 0; }
+.metric-y-axis span {
+  position: absolute;
+  right: 7px;
+  color: var(--dv-muted);
+  font: 500 .54rem/1 var(--dv-mono);
+  transform: translateY(-50%);
+}
+.metric-plot-canvas { position: relative; min-width: 0; height: 124px; }
+.metric-plot-canvas svg { display: block; width: 100%; height: 124px; overflow: visible; }
+.metric-grid-line { stroke: color-mix(in srgb, var(--dv-outline) 24%, transparent); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.metric-area { fill: color-mix(in srgb, var(--chart-accent) 7%, transparent); stroke: none; }
+.metric-line {
+  fill: none;
+  stroke: var(--chart-accent);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.metric-line-point {
+  fill: var(--dv-surface);
+  stroke: var(--chart-accent);
+  stroke-width: 1.75;
+  vector-effect: non-scaling-stroke;
+  transition: fill 180ms cubic-bezier(.22, 1, .36, 1), r 180ms cubic-bezier(.22, 1, .36, 1);
+}
+.metric-line-point:hover { fill: var(--chart-accent); r: 5px; }
+.metric-bar { fill: var(--chart-accent); opacity: .82; transition: opacity 160ms ease; }
+.metric-bar:hover { opacity: 1; }
+.metric-peak-pin {
+  position: absolute;
+  z-index: 1;
+  padding: 2px 5px;
+  border: 1px solid var(--dv-outline);
+  border-radius: 4px;
+  background: var(--dv-surface-high);
+  color: var(--dv-text-soft);
+  font: 600 .53rem/1.2 var(--dv-mono);
+  white-space: nowrap;
+  transform: translate(-50%, 6px);
+  pointer-events: none;
+}
+.metric-peak-pin.left { transform: translate(0, 6px); }
+.metric-peak-pin.right { transform: translate(-100%, 6px); }
+.metric-x-axis { position: relative; grid-column: 2; min-width: 0; border-top: 1px solid var(--dv-outline); }
+.metric-x-axis span {
+  position: absolute;
+  top: 6px;
+  color: var(--dv-muted);
+  font: 500 .53rem/1 var(--dv-mono);
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+.metric-x-axis span:first-child { transform: none; }
+.metric-x-axis span:last-child { transform: translateX(-100%); }
+.analytics-notification-card { margin-top: 18px; }
+.expansion-loading { background: rgba(11, 11, 11, .78); }
+@media (prefers-reduced-motion: reduce) { .metric-line-point, .metric-bar { transition: none; } }
+@media (max-width: 980px) {
+  .analytics-metric-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .signal-cards { display: grid; grid-template-columns: 1fr 1fr; }
+  .signal-cards article:nth-child(2) { border-right: 0; }
+  .signal-cards article:nth-child(-n + 2) { border-bottom: 1px solid var(--dv-border); }
+  .analytics-group-heading { align-items: flex-start; }
+  .metric-report-row { padding: 13px 12px 10px; }
+  .metric-report-meta { grid-template-columns: 1fr; gap: 7px; }
+  .metric-comparison { justify-content: space-between; }
+  .metric-x-axis span:nth-child(even):not(:last-child) { display: none; }
+}
+@media (max-width: 440px) {
+  .metric-report-title p { white-space: normal; }
+  .metric-report-meta dl { gap: 7px; }
+  .metric-report-meta dl > div { display: block; }
+  .metric-report-meta dd { margin-top: 2px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-check-indicator { transition: none; }
+}
 </style>

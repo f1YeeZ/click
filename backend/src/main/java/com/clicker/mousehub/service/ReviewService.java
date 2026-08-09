@@ -7,6 +7,7 @@ import com.clicker.mousehub.dto.ReviewDtos.*;
 import com.clicker.mousehub.entity.*;
 import com.clicker.mousehub.mapper.*;
 import org.springframework.http.HttpStatus;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -275,6 +276,7 @@ public class ReviewService {
 
     public SupportPositionSummary supportSummary(UUID mouseId) { return supportSummary(mouseId, null, null); }
 
+    @Cacheable(cacheNames = "supportSummaries", key = "#mouseId + ':' + (#gripStyle ?: '') + ':' + (#handSize ?: '')", sync = true)
     public SupportPositionSummary supportSummary(UUID mouseId, String gripStyle, String handSize) {
         List<Review> active = reviews.selectList(new LambdaQueryWrapper<Review>()
                 .eq(Review::getMouseId, mouseId).eq(Review::getStatus, "ACTIVE").isNull(Review::getDeletedAt));
@@ -338,6 +340,7 @@ public class ReviewService {
         return new SupportPositionSummary(samples, supportPositionCounts(positionCounts, samples), cells, maxCount);
     }
 
+    @Cacheable(cacheNames = "reviewSummaries", key = "#mouseId + ':' + (#gripStyle ?: '') + ':' + (#handSize ?: '')", sync = true)
     public ReviewSummary summary(UUID mouseId, String gripStyle, String handSize) {
         List<Review> all = reviews.selectList(new LambdaQueryWrapper<Review>().eq(Review::getMouseId, mouseId).eq(Review::getStatus, "ACTIVE").isNull(Review::getDeletedAt));
         if (all.isEmpty()) return empty(gripStyle, handSize);

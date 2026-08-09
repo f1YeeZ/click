@@ -142,7 +142,7 @@ onBeforeUnmount(() => previousFocus?.focus?.())
 .admin-floating-header p {
   margin: 5px 0 0;
   color: #a5a5a5;
-  font-size: 0.68rem;
+  font-size: .75rem;
 }
 .admin-floating-header > button {
   flex: 0 0 auto;

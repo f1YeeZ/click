@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import { readStoredJson } from '../utils/storage'
 import { refreshAccessToken, clearStoredSession } from '../api/client'
+import { trackPageView } from '../services/trafficAnalytics'
 
 const MiceView = () => import('../views/MiceView.vue')
 const MouseDetailView = () => import('../views/MouseDetailView.vue')
@@ -10,7 +11,6 @@ const AuthView = () => import('../views/AuthView.vue')
 const PasswordResetView = () => import('../views/PasswordResetView.vue')
 const AdminView = () => import('../views/AdminView.vue')
 const ProfileView = () => import('../views/ProfileView.vue')
-const LeaderboardView = () => import('../views/LeaderboardView.vue')
 const RecommendationView = () => import('../views/RecommendationView.vue')
 const LegalView = () => import('../views/LegalView.vue')
 const CodeMapView = () => import('../views/CodeMapView.vue')
@@ -22,7 +22,6 @@ const router = createRouter({
     { path: '/mice', component: MiceView },
     { path: '/mice/:id', component: MouseDetailView },
     { path: '/compare', component: CompareView },
-    { path: '/ranking', component: LeaderboardView },
     { path: '/recommend', component: RecommendationView },
     { path: '/privacy', component: LegalView, props: { document: 'privacy' } },
     { path: '/terms', component: LegalView, props: { document: 'terms' } },
@@ -54,6 +53,10 @@ router.beforeEach(async (to) => {
       return '/admin/login'
     }
   }
+})
+
+router.afterEach((to, from, failure) => {
+  if (!failure && to.fullPath !== from.fullPath) trackPageView(to.path)
 })
 
 export default router

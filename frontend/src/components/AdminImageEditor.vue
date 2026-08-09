@@ -387,7 +387,7 @@ onBeforeUnmount(() => {
 .image-editor-header p {
   margin: 0 0 3px;
   color: #9a9a9a;
-  font: 0.66rem var(--mono, monospace);
+  font: .75rem var(--mono, monospace);
 }
 .image-editor-header h2 {
   margin: 0;
@@ -429,13 +429,13 @@ onBeforeUnmount(() => {
 .image-stage-heading { margin-bottom: 12px; }
 .image-stage-heading strong,
 .image-stage-heading span { display: block; }
-.image-stage-heading strong { color: #e3e3e3; font-size: 0.78rem; }
-.image-stage-heading span { margin-top: 4px; color: #969696; font: 0.58rem var(--mono, monospace); }
+.image-stage-heading strong { color: #e3e3e3; font-size: .85rem; }
+.image-stage-heading span { margin-top: 4px; color: #969696; font: .75rem var(--mono, monospace); }
 .image-stage-heading button {
   border: 0;
   background: transparent;
   color: #b9b9b9;
-  font-size: 0.66rem;
+  font-size: .75rem;
   cursor: pointer;
 }
 .image-stage-heading button:hover { color: #fff; }
@@ -472,31 +472,31 @@ onBeforeUnmount(() => {
   gap: 9px;
   background: rgba(10, 10, 10, 0.88);
   color: #d5d5d5;
-  font-size: 0.72rem;
+  font-size: .75rem;
 }
 .image-editor-loading i { width: 16px; height: 16px; border: 2px solid #555; border-top-color: #ddd; border-radius: 50%; animation: image-editor-spin 0.7s linear infinite; }
 .image-editor-loading.error-state { color: #b9b9b9; }
-.image-stage-help { margin: 10px 0 0; color: #929292; font-size: 0.62rem; line-height: 1.55; }
+.image-stage-help { margin: 10px 0 0; color: #929292; font-size: .75rem; line-height: 1.55; }
 .image-editor-sidebar { display: flex; flex-direction: column; gap: 16px; overflow: auto; padding: 18px; background: #151515; }
 .card-effect-preview,
 .image-control-section,
 .image-output-settings { padding-bottom: 16px; border-bottom: 1px solid #393939; }
 .preview-heading strong,
-.image-output-settings > strong { color: #dedede; font-size: 0.7rem; }
-.preview-heading span { color: #929292; font: 0.52rem var(--mono, monospace); }
+.image-output-settings > strong { color: #dedede; font-size: .75rem; }
+.preview-heading span { color: #929292; font: .75rem var(--mono, monospace); }
 .preview-image { margin-top: 10px; overflow: hidden; aspect-ratio: 16 / 9; border-radius: 9px 9px 0 0; background: radial-gradient(circle at 50% 42%, #303030, #181818 70%); }
 .preview-image canvas { display: block; width: 100%; height: 100%; }
 .preview-copy { padding: 10px 11px 11px; border: 1px solid #363636; border-top: 0; border-radius: 0 0 9px 9px; background: #101010; }
 .preview-copy small,
 .preview-copy strong,
 .preview-copy span { display: block; }
-.preview-copy small { color: #9e9e9e; font: 0.51rem var(--mono, monospace); }
-.preview-copy strong { overflow: hidden; margin-top: 3px; color: #ededed; font-size: 0.76rem; text-overflow: ellipsis; white-space: nowrap; }
-.preview-copy span { margin-top: 4px; color: #858585; font-size: 0.55rem; }
+.preview-copy small { color: #9e9e9e; font: .75rem var(--mono, monospace); }
+.preview-copy strong { overflow: hidden; margin-top: 3px; color: #ededed; font-size: .85rem; text-overflow: ellipsis; white-space: nowrap; }
+.preview-copy span { margin-top: 4px; color: #858585; font-size: .75rem; }
 .zoom-control { display: block; }
-.zoom-control strong { color: #d5d5d5; font-size: 0.68rem; }
+.zoom-control strong { color: #d5d5d5; font-size: .75rem; }
 .zoom-control output,
-.quality-control output { color: #bcbcbc; font: 0.58rem var(--mono, monospace); }
+.quality-control output { color: #bcbcbc; font: .75rem var(--mono, monospace); }
 .zoom-control input,
 .quality-control input { width: 100%; margin: 10px 0 0; accent-color: #d7d7d7; }
 .image-tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 13px; }
@@ -506,14 +506,14 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: #1b1b1b;
   color: #c6c6c6;
-  font-size: 0.59rem;
+  font-size: .75rem;
   cursor: pointer;
 }
 .image-tool-grid button:hover,
 .image-tool-grid button.active { border-color: #838383; background: #292929; color: #fff; }
-.image-tool-grid button span { margin-right: 4px; font-size: 0.82rem; }
+.image-tool-grid button span { margin-right: 4px; font-size: .85rem; }
 .image-output-settings > div { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 10px; }
-.image-output-settings label { color: #a8a8a8; font-size: 0.56rem; }
+.image-output-settings label { color: #a8a8a8; font-size: .75rem; }
 .image-output-settings select {
   width: 100%;
   min-height: 36px;
@@ -523,15 +523,15 @@ onBeforeUnmount(() => {
   border-radius: 7px;
   background: #1b1b1b;
   color: #dedede;
-  font-size: 0.58rem;
+  font-size: .75rem;
 }
 .quality-control { display: block; margin-top: 11px; }
 .quality-control.disabled { opacity: 0.55; }
-.image-editor-error { margin: 0; padding: 10px; border: 1px solid #5a4545; border-radius: 8px; background: #241a1a; color: #e2baba; font-size: 0.62rem; line-height: 1.45; }
+.image-editor-error { margin: 0; padding: 10px; border: 1px solid #777777; border-radius: 8px; background: #1d1d1d; color: #f0f0f0; font-size: .75rem; line-height: 1.45; }
 .image-editor-footer { padding: 14px 20px; border-top: 1px solid #353535; }
-.image-editor-footer p { margin: 0; color: #959595; font-size: 0.61rem; }
+.image-editor-footer p { margin: 0; color: #959595; font-size: .75rem; }
 .image-editor-footer > div { display: flex; gap: 8px; }
-.image-editor-footer button { min-height: 39px; padding: 0 15px; border: 1px solid #4a4a4a; border-radius: 9px; background: #1b1b1b; color: #d0d0d0; font-size: 0.66rem; cursor: pointer; }
+.image-editor-footer button { min-height: 39px; padding: 0 15px; border: 1px solid #4a4a4a; border-radius: 9px; background: #1b1b1b; color: #d0d0d0; font-size: .75rem; cursor: pointer; }
 .image-editor-footer button.primary { border-color: #e0e0e0; background: #e0e0e0; color: #111; font-weight: 700; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 @keyframes image-editor-spin { to { transform: rotate(360deg); } }
@@ -551,7 +551,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   .image-editor-workspace { padding: 14px; }
   .image-editor-sidebar { display: flex; padding: 14px; }
   .image-stage-heading { align-items: flex-end; }
-  .image-stage-help { font-size: 0.58rem; }
+  .image-stage-help { font-size: .75rem; }
   .image-editor-footer { align-items: stretch; flex-direction: column; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); }
   .image-editor-footer > div { display: grid; grid-template-columns: 1fr 1.35fr; }
   .image-editor-footer button { padding: 0 10px; }

@@ -2,9 +2,9 @@
   <title id="title">Clicker Index</title>
   <desc id="desc">Clicker Index 横版品牌标志</desc>
   <g transform="translate(8 8)">
-    <path d="M45 14H27C17.6 14 11 21.4 11 32s6.6 18 16 18h18" fill="none" stroke="#ADC6FF" stroke-width="7" stroke-linecap="round"/>
-    <circle cx="45" cy="32" r="4.5" fill="#00DBE9"/>
+    <path d="M45 14H27C17.6 14 11 21.4 11 32s6.6 18 16 18h18" fill="none" stroke="#F2F2F2" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="45" cy="32" r="4.5" fill="#FFFFFF"/>
   </g>
-  <text x="82" y="50" fill="#DAE2FD" font-family="Hanken Grotesk, Noto Sans SC, sans-serif" font-size="34" font-weight="700" letter-spacing="-1.2">Clicker</text>
-  <text x="196" y="50" fill="#8FA4C8" font-family="Hanken Grotesk, Noto Sans SC, sans-serif" font-size="34" font-weight="500" letter-spacing="-1.2">Index</text>
+  <text x="82" y="50" fill="#F2F2F2" font-family="Hanken Grotesk, Noto Sans SC, sans-serif" font-size="34" font-weight="700" letter-spacing="-1.2">Clicker</text>
+  <text x="196" y="50" fill="#A8A8A8" font-family="Hanken Grotesk, Noto Sans SC, sans-serif" font-size="34" font-weight="500" letter-spacing="-1.2">Index</text>
 </svg>

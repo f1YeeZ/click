@@ -99,7 +99,7 @@ const renderHeatTexture = () => {
   for (const rawDab of localDabs) {
     const dab = normalizeSupportDab(rawDab)
     strokeContext.globalCompositeOperation = dab.mode === 'ERASE' ? 'destination-out' : 'source-over'
-    strokeContext.fillStyle = 'rgba(92, 190, 255, 0.9)'
+  strokeContext.fillStyle = 'rgba(242, 242, 242, 0.9)'
     strokeContext.beginPath()
     strokeContext.arc(
       mirrorSupportX(dab.x) / SUPPORT_VIEWBOX_WIDTH * strokeCanvas.width,
@@ -113,7 +113,7 @@ const renderHeatTexture = () => {
   strokeContext.globalCompositeOperation = 'source-over'
   context.save()
   context.filter = 'blur(1.2px)'
-  context.shadowColor = 'rgba(120, 215, 255, 0.72)'
+  context.shadowColor = 'rgba(255, 255, 255, 0.72)'
   context.shadowBlur = 5
   context.drawImage(strokeCanvas, 0, 0)
   context.restore()

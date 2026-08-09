@@ -86,7 +86,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/sessions", "/api/v1/admin-sessions", "/api/v1/users", "/api/v1/registration-verification-codes",
                                 "/api/v1/password-reset-verification-codes", "/api/v1/sessions/refresh",
-                                "/api/v1/admin-sessions/verify", "/api/v1/admin-sessions/refresh").permitAll()
+                                "/api/v1/admin-sessions/verify", "/api/v1/admin-sessions/refresh",
+                                "/api/v1/analytics/page-views").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/api/v1/password-reset").permitAll()
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/sessions/current", "/api/v1/admin-sessions/current").permitAll()
                         .requestMatchers("/api/v1/review-options").permitAll()

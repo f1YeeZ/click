@@ -20,7 +20,7 @@
 }
 .panel-kicker {
   color: var(--acid);
-  font: 600 0.58rem var(--mono);
+  font: 600 .75rem var(--mono);
   letter-spacing: 0.12em;
 }
 .filter-head-actions {
@@ -28,14 +28,14 @@
   align-items: center;
   gap: 18px;
   color: var(--muted);
-  font: 0.62rem var(--mono);
+  font: .75rem var(--mono);
 }
 .filter-head-actions button,
 .advanced-toggle {
   border: 0;
   background: none;
   color: var(--acid);
-  font: 600 0.65rem var(--mono);
+  font: 600 .75rem var(--mono);
   cursor: pointer;
 }
 .filter-primary {
@@ -51,7 +51,7 @@
   padding: 13px 14px;
   background: #151515;
   color: var(--muted);
-  font-size: 0.56rem;
+  font-size: .75rem;
 }
 .filter-studio input,
 .filter-studio select,
@@ -115,14 +115,14 @@
   width: 210px;
   padding: 24px;
   color: var(--ink);
-  font: 700 0.74rem var(--mono);
+  font: 700 .75rem var(--mono);
   letter-spacing: 0.05em;
 }
 .advanced-filters legend small {
   display: block;
   margin-top: 5px;
   color: #6f6f6f;
-  font: 0.54rem var(--mono);
+  font: .75rem var(--mono);
 }
 .filter-fields {
   margin-left: 210px;
@@ -157,16 +157,16 @@
 }
 .source-card span {
   color: var(--acid);
-  font: 0.58rem var(--mono);
+  font: .75rem var(--mono);
 }
 .source-card p {
   margin: 10px 0;
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: .85rem;
 }
 .source-card a {
   color: #d7d7d7;
-  font: 0.65rem var(--mono);
+  font: .75rem var(--mono);
 }
 
 /* SaaS control plane — deliberately separate from the public shell */
@@ -194,7 +194,7 @@
   border-radius: 2px;
   background: transparent;
   color: #c8c8c8;
-  font: 600 0.58rem var(--mono);
+  font: 600 .75rem var(--mono);
   cursor: pointer;
 }
 .admin-saas .admin-logout:hover {
@@ -219,7 +219,7 @@
 }
 .sidebar-kicker {
   color: #7d7d7d;
-  font: 600 0.54rem var(--mono);
+  font: 600 .75rem var(--mono);
   letter-spacing: 0.14em;
 }
 .admin-sidebar h1 {
@@ -230,7 +230,7 @@
 .admin-sidebar > p {
   margin: 0;
   color: #6f6f6f;
-  font: 0.58rem/1.55 var(--mono);
+  font: .75rem/1.55 var(--mono);
   text-transform: uppercase;
 }
 .admin-sidebar nav {
@@ -249,7 +249,7 @@
   background: transparent;
   color: #969696;
   text-align: left;
-  font: 600 0.76rem var(--sans);
+  font: 600 .85rem var(--sans);
   cursor: pointer;
 }
 .admin-sidebar nav button span {
@@ -265,7 +265,7 @@
   background: #96969620;
   color: #b3b3b3;
   text-align: center;
-  font: normal 0.55rem var(--mono);
+  font: normal .75rem var(--mono);
 }
 .admin-sidebar nav button:hover {
   background: #191919;
@@ -282,7 +282,7 @@
   padding-top: 18px;
   border-top: 1px solid #333333;
   color: #c2c2c2;
-  font: 0.55rem/1.8 var(--mono);
+  font: .75rem/1.8 var(--mono);
 }
 .sidebar-foot small {
   color: #676767;
@@ -320,7 +320,7 @@
   border-radius: 2px;
   background: #151515;
   color: #adadad;
-  font: 600 0.6rem var(--mono);
+  font: 600 .75rem var(--mono);
   cursor: pointer;
 }
 .admin-refresh:hover {
@@ -354,7 +354,7 @@
 .metric-grid article small {
   display: block;
   color: #8f8f8f;
-  font: 0.58rem var(--mono);
+  font: .75rem var(--mono);
 }
 .metric-grid article strong {
   display: block;
@@ -397,7 +397,7 @@
   border: 0;
   background: none;
   color: var(--acid);
-  font: 0.6rem var(--mono);
+  font: .75rem var(--mono);
   cursor: pointer;
 }
 .signal-panel {
@@ -428,7 +428,7 @@
 .signal-panel dt,
 .signal-panel dd {
   margin: 0;
-  font: 0.58rem var(--mono);
+  font: .75rem var(--mono);
 }
 .signal-panel dt {
   color: #838383;
@@ -507,11 +507,11 @@
   grid-column: 1/-1;
   padding-top: 18px;
   color: var(--acid);
-  font: 600 0.65rem var(--mono);
+  font: 600 .75rem var(--mono);
 }
 .saas-form label {
   color: #8f8f8f;
-  font-size: 0.54rem;
+  font-size: .75rem;
 }
 .saas-form label.wide {
   grid-column: span 2;
@@ -534,7 +534,7 @@
   background: #141414;
   color: #828282;
   text-align: left;
-  font: 600 0.54rem var(--mono);
+  font: 600 .75rem var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -543,7 +543,7 @@
   border-bottom: 1px solid #2f2f2f;
   color: #c6c6c6;
   vertical-align: middle;
-  font-size: 0.74rem;
+  font-size: .75rem;
 }
 .admin-table tbody tr:hover {
   background: #1a1a1a;
@@ -558,11 +558,11 @@
 .admin-table td small {
   margin-top: 3px;
   color: #757575;
-  font: 0.56rem var(--mono);
+  font: .75rem var(--mono);
 }
 .admin-table .mono {
   color: #a2a2a2;
-  font: 0.6rem/1.8 var(--mono);
+  font: .75rem/1.8 var(--mono);
 }
 .table-empty {
   height: 120px;
@@ -575,7 +575,7 @@
   border: 1px solid #4f4f4f;
   border-radius: 2px;
   color: #aeaeae;
-  font: normal 0.54rem var(--mono);
+  font: normal .75rem var(--mono);
 }
 .admin-table .status-published,
 .admin-table .status-active {
@@ -609,7 +609,7 @@
   border: 1px solid #4f4f4f;
   background: transparent;
   color: #bababa;
-  font: 0.56rem var(--mono);
+  font: .75rem var(--mono);
   cursor: pointer;
 }
 .row-actions button:hover {
@@ -622,7 +622,7 @@
 }
 .score-value {
   color: var(--acid) !important;
-  font: 700 0.72rem var(--mono) !important;
+  font: 700 .75rem var(--mono) !important;
 }
 .admin-pagination {
   display: flex;
@@ -630,7 +630,7 @@
   justify-content: space-between;
   padding: 14px 16px;
   color: #828282;
-  font: 0.58rem var(--mono);
+  font: .75rem var(--mono);
 }
 .admin-pagination div {
   display: flex;
@@ -641,7 +641,7 @@
   border: 1px solid #4c4c4c;
   background: #151515;
   color: #bcbcbc;
-  font: 0.58rem var(--mono);
+  font: .75rem var(--mono);
   cursor: pointer;
 }
 .admin-pagination button:disabled {
@@ -675,9 +675,10 @@
 }
 @media (max-width: 760px) {
   .admin-toast-stack {
-    top: 72px;
+    top: max(12px, env(safe-area-inset-top));
     left: 16px;
     right: 16px;
+    width: auto;
   }
   .filter-studio-head {
     align-items: flex-start;

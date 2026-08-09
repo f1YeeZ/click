@@ -31,14 +31,17 @@ public class AdminOperationsService {
     private final AuditLogService audit;
     private final FeedbackService feedback;
     private final AdminNotificationService notifications;
+    private final TrafficAnalyticsService traffic;
 
     public AdminOperationsService(BrandProfileMapper brands, MouseMapper mice, UserMapper users, ReviewMapper reviews,
                                   AuditLogMapper auditLogs, AuthSessionMapper authSessions, MouseImportJobMapper importJobs,
                                   MouseService mouseService, AdminService adminService, AuditLogService audit,
-                                  FeedbackService feedback, AdminNotificationService notifications) {
+                                  FeedbackService feedback, AdminNotificationService notifications,
+                                  TrafficAnalyticsService traffic) {
         this.brands = brands; this.mice = mice; this.users = users; this.reviews = reviews; this.auditLogs = auditLogs;
         this.authSessions = authSessions; this.importJobs = importJobs; this.mouseService = mouseService;
         this.adminService = adminService; this.audit = audit; this.feedback = feedback; this.notifications = notifications;
+        this.traffic = traffic;
     }
 
     @Transactional
@@ -126,16 +129,28 @@ public class AdminOperationsService {
 
     public AnalyticsResponse analytics(int requestedDays) {
         int days = Set.of(7, 14, 30, 90).contains(requestedDays) ? requestedDays : 30;
-        LocalDate start = LocalDate.now().minusDays(days - 1L); OffsetDateTime from = start.atStartOfDay().atOffset(OffsetDateTime.now().getOffset());
+        ZoneId reportingZone = ZoneId.of("Asia/Shanghai");
+        LocalDate today = LocalDate.now(reportingZone);
+        LocalDate start = today.minusDays(days - 1L);
+        OffsetDateTime from = start.atStartOfDay(reportingZone).toOffsetDateTime();
         Map<LocalDate, Long> userData = countByDate(users.selectList(new LambdaQueryWrapper<UserAccount>().ge(UserAccount::getCreatedAt, from)), UserAccount::getCreatedAt);
         Map<LocalDate, Long> mouseData = countByDate(mice.selectList(new LambdaQueryWrapper<MouseDevice>().ge(MouseDevice::getCreatedAt, from)), MouseDevice::getCreatedAt);
         Map<LocalDate, Long> reviewData = countByDate(reviews.selectList(new LambdaQueryWrapper<Review>().ge(Review::getCreatedAt, from)), Review::getCreatedAt);
         Map<LocalDate, Long> actionData = countByDate(auditLogs.selectList(new LambdaQueryWrapper<AuditLog>().ge(AuditLog::getCreatedAt, from)), AuditLog::getCreatedAt);
-        List<AnalyticsPoint> points = start.datesUntil(LocalDate.now().plusDays(1)).map(date -> new AnalyticsPoint(date,
-                userData.getOrDefault(date, 0L), mouseData.getOrDefault(date, 0L), reviewData.getOrDefault(date, 0L), actionData.getOrDefault(date, 0L))).toList();
+        Map<LocalDate, PageViewEventMapper.TrafficDayRow> trafficData = traffic.daily(start, today);
+        List<AnalyticsPoint> points = start.datesUntil(today.plusDays(1)).map(date -> {
+            PageViewEventMapper.TrafficDayRow trafficPoint = trafficData.get(date);
+            return new AnalyticsPoint(date,
+                    trafficPoint == null ? 0 : trafficPoint.getPageViews(),
+                    trafficPoint == null ? 0 : trafficPoint.getUniqueVisitors(),
+                    userData.getOrDefault(date, 0L), mouseData.getOrDefault(date, 0L),
+                    reviewData.getOrDefault(date, 0L), actionData.getOrDefault(date, 0L));
+        }).toList();
         long activeSessions = authSessions.selectCount(new LambdaQueryWrapper<AuthSession>().isNull(AuthSession::getRevokedAt).gt(AuthSession::getExpiresAt, OffsetDateTime.now()));
         long stale = mice.selectList(null).stream().filter(mouse -> "STALE".equals(com.clicker.mousehub.util.MouseDataQuality.verificationStatus(mouse))).count();
-        return new AnalyticsResponse(days, points, feedback.openCount(), notifications.unreadCount(), activeSessions, stale);
+        TrafficAnalyticsService.TrafficTotals periodTraffic = traffic.totals(start, today);
+        return new AnalyticsResponse(days, points, periodTraffic.pageViews(), periodTraffic.uniqueVisitors(),
+                feedback.openCount(), notifications.unreadCount(), activeSessions, stale);
     }
 
     public PageResponse<ImportJobView> imports(long page) {

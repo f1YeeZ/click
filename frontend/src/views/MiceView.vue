@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api, { errorMessage } from '../api/client'
 import MouseCard from '../components/MouseCard.vue'
@@ -112,21 +112,26 @@ const syncFiltersFromRoute = () => {
   Object.assign(filters, createCatalogFilters(defaults, route.query, multiKeys))
   syncingFromRoute = false
 }
-onActivated(() => {
-  syncFiltersFromRoute()
-  load()
-})
-onMounted(async () => {
-  try { brands.value = (await api.get('/mice/brands')).data } catch (e) { error.value = errorMessage(e) }
+const startViewRealtime = () => {
+  stopRealtime()
   stopRealtime = onRealtime((event) => {
-    if (event.type !== 'mouse.changed') return
+    if (event.type !== 'mouse.changed' && event.type !== 'sync.required') return
     clearTimeout(realtimeTimer)
     realtimeTimer = setTimeout(async () => {
       try { brands.value = (await api.get('/mice/brands')).data } catch (e) { error.value = errorMessage(e) }
       await load()
     }, 250)
   })
+}
+onActivated(() => {
+  syncFiltersFromRoute()
+  load()
+  startViewRealtime()
 })
+onMounted(async () => {
+  try { brands.value = (await api.get('/mice/brands')).data } catch (e) { error.value = errorMessage(e) }
+})
+onDeactivated(() => { stopRealtime(); clearTimeout(realtimeTimer) })
 onBeforeUnmount(() => { stopRealtime(); clearTimeout(filterTimer); clearTimeout(realtimeTimer) })
 </script>
 

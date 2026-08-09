@@ -21,6 +21,7 @@ public final class AdminDtos {
                                     long usersTotal, long usersActive, long usersAdmin, long usersDisabled,
                                     long reviewsTotal, long reviewsActive, long reviewsPending,
                                     int dataQualityPercent, long miceIncomplete, long miceVerificationStale,
+                                    long todayUniqueVisitors, long todayPageViews,
                                     List<AdminUserView> recentUsers, List<AdminReviewView> recentReviews,
                                     List<MouseDtos.MouseView> recentMice) {}
 

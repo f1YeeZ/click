@@ -92,7 +92,7 @@ const renderHeatmap = () => {
     const displayY = dab.y / SUPPORT_VIEWBOX_HEIGHT * height
     const radius = dab.radius / 1000 * Math.min(width, height)
     strokeContext.globalCompositeOperation = dab.mode === 'ERASE' ? 'destination-out' : 'source-over'
-    strokeContext.fillStyle = 'rgba(24, 135, 255, 0.9)'
+  strokeContext.fillStyle = 'rgba(242, 242, 242, 0.9)'
     strokeContext.beginPath()
     strokeContext.arc(displayX, displayY, radius, 0, Math.PI * 2)
     strokeContext.fill()
@@ -100,7 +100,7 @@ const renderHeatmap = () => {
   strokeContext.globalCompositeOperation = 'source-over'
   context.save()
   context.filter = 'blur(1.4px)'
-  context.shadowColor = 'rgba(66, 184, 255, 0.72)'
+  context.shadowColor = 'rgba(255, 255, 255, 0.72)'
   context.shadowBlur = 7
   context.drawImage(strokeCanvas, 0, 0)
   context.restore()

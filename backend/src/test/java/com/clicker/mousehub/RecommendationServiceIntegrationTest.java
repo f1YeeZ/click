@@ -90,10 +90,29 @@ class RecommendationServiceIntegrationTest {
         assertThat(result.items().get(0).mouse().id()).isEqualTo(sameShapeMouse.getId());
         assertThat(result.items().get(0).matchType()).isEqualTo("EXACT");
         assertThat(result.items().get(0).shapeSimilarityPercent()).isEqualTo(100);
+        assertThat(result.items().get(0).matchedSupportCells()).isNotEmpty();
+        assertThat(result.items().get(0).matchedSupportMaxCount()).isEqualTo(1);
+        assertThat(result.items().get(0).matchedSupportSampleCount()).isEqualTo(1);
         assertThat(result.items().get(1).mouse().id()).isEqualTo(oversizedShapeMouse.getId());
         assertThat(result.items().get(1).matchType()).isEqualTo("NEAR");
         assertThat(result.items().get(1).supportCoveragePercent()).isEqualTo(100);
         assertThat(result.items().get(1).shapeSimilarityPercent()).isLessThan(60);
+    }
+
+    @Test void usesTheSubmittedGripForShapeRecommendationsInsteadOfTheUsersProfilePreference() {
+        String user = createUser("recommend-grip-scope@example.com", "CLAW");
+        MouseDevice mouse = mouse("palm-only-painted-shape");
+        mice.insert(mouse);
+
+        SupportDab palmDab = new SupportDab(500, 620, 70, "PAINT");
+        reviews.saveSupportPositions(mouse.getId(), user, "PALM",
+                new SupportPositionRequest(List.of(), List.of(), List.of(palmDab)));
+
+        var palmResult = recommendations.recommendShape("PALM", List.of(palmDab));
+        var clawResult = recommendations.recommendShape("CLAW", List.of(palmDab));
+
+        assertThat(palmResult.items()).extracting(item -> item.mouse().id()).contains(mouse.getId());
+        assertThat(clawResult.items()).extracting(item -> item.mouse().id()).doesNotContain(mouse.getId());
     }
 
     private String createUser(String email, String grip) {

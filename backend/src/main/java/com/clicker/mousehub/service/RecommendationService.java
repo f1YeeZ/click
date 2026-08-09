@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.clicker.mousehub.common.BusinessException;
 import com.clicker.mousehub.dto.MouseDtos.MouseView;
 import com.clicker.mousehub.dto.RecommendationDtos.*;
-import com.clicker.mousehub.dto.ReviewDtos.SupportDab;
+import com.clicker.mousehub.dto.ReviewDtos.*;
 import com.clicker.mousehub.entity.*;
 import com.clicker.mousehub.mapper.*;
 import com.clicker.mousehub.util.SupportMasks;
@@ -82,17 +82,22 @@ public class RecommendationService {
 
         Map<UUID, UserAccount> userById = users.selectBatchIds(activeReviews.stream().map(Review::getUserId).distinct().toList())
                 .stream().collect(Collectors.toMap(UserAccount::getId, user -> user));
-        List<Review> eligible = activeReviews.stream().filter(review -> grip.equals(Optional
-                .ofNullable(userById.get(review.getUserId())).map(UserAccount::getPreferredGripStyle).orElse(null))).toList();
+        Map<UUID, Review> reviewById = activeReviews.stream().collect(Collectors.toMap(Review::getId, review -> review));
+        List<ReviewSupportPosition> supportRows = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
+                .in(ReviewSupportPosition::getReviewId, activeReviews.stream().map(Review::getId).toList()));
+        List<ReviewSupportPosition> gripSupportRows = supportRows.stream().filter(row -> {
+            Review review = reviewById.get(row.getReviewId());
+            UserAccount user = review == null ? null : userById.get(review.getUserId());
+            return grip.equals(effectiveSupportGrip(row, review, user));
+        }).toList();
+        Set<UUID> eligibleIds = gripSupportRows.stream().map(ReviewSupportPosition::getReviewId).collect(Collectors.toSet());
+        List<Review> eligible = activeReviews.stream().filter(review -> eligibleIds.contains(review.getId())).toList();
         if (eligible.isEmpty()) return new RecommendationResponse(grip, List.copyOf(requested), published.size(), List.of());
 
-        List<UUID> eligibleIds = eligible.stream().map(Review::getId).toList();
-        List<ReviewSupportPosition> supportRows = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
-                .in(ReviewSupportPosition::getReviewId, eligibleIds));
-        Map<UUID, Set<String>> positionsByReview = supportRows.stream()
+        Map<UUID, Set<String>> positionsByReview = gripSupportRows.stream()
                 .collect(Collectors.groupingBy(ReviewSupportPosition::getReviewId,
                         Collectors.mapping(ReviewSupportPosition::getPositionCode, Collectors.toSet())));
-        Map<UUID, BitSet> masksByReview = shapeMatching ? supportRows.stream()
+        Map<UUID, BitSet> masksByReview = shapeMatching ? gripSupportRows.stream()
                 .collect(Collectors.groupingBy(ReviewSupportPosition::getReviewId,
                         Collectors.mapping(ReviewSupportPosition::getPositionCode, Collectors.toList())))
                 .entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey,
@@ -144,6 +149,9 @@ public class RecommendationService {
             }
             int coveragePercent = bestScore.coveragePercent();
             int similarityPercent = bestScore.similarityPercent();
+            SupportPreview matchedSupport = shapeMatching
+                    ? matchedSupportPreview(evidenceMatches, masksByReview)
+                    : SupportPreview.empty();
             String explanation = shapeMatching
                     ? "EXACT".equals(matchType)
                         ? exactMatches.size() + " 份同握姿评价达到图形匹配标准：期望范围覆盖 " + coveragePercent
@@ -156,7 +164,8 @@ public class RecommendationService {
                             + " 个期望支撑位置（" + coveragePercent + "%）；当前没有单份评价同时覆盖全部条件。";
             candidates.add(new RecommendationItem(0, MouseView.from(mouse), exactMatches.size(),
                     mouseReviews.size(), comfortAverage, comforts.size(), evidence, evidenceReviews.size() < 5,
-                    matchType, coveragePercent, similarityPercent, explanation));
+                    matchType, coveragePercent, similarityPercent, explanation, matchedSupport.cells(),
+                    matchedSupport.maxCount(), matchedSupport.sampleCount()));
         }
         candidates.sort(Comparator.comparing((RecommendationItem item) -> !"EXACT".equals(item.matchType()))
                 .thenComparing(RecommendationItem::shapeSimilarityPercent, Comparator.reverseOrder())
@@ -170,7 +179,8 @@ public class RecommendationService {
             ranked.add(new RecommendationItem(index + 1, item.mouse(), item.exactMatchCount(),
                     item.eligibleReviewCount(), item.gripComfortAverage(), item.gripComfortSampleCount(),
                     item.positionEvidence(), item.lowSample(), item.matchType(), item.supportCoveragePercent(),
-                    item.shapeSimilarityPercent(), item.explanation()));
+                    item.shapeSimilarityPercent(), item.explanation(), item.matchedSupportCells(),
+                    item.matchedSupportMaxCount(), item.matchedSupportSampleCount()));
         }
         return new RecommendationResponse(grip, List.copyOf(requested), published.size(), ranked);
     }
@@ -202,6 +212,41 @@ public class RecommendationService {
                 && left.similarityPercent() == right.similarityPercent();
     }
 
+    private String effectiveSupportGrip(ReviewSupportPosition row, Review review, UserAccount user) {
+        if (row.getGripStyle() != null && !row.getGripStyle().isBlank()) return normalizedGrip(row.getGripStyle());
+        if (user != null && user.getPreferredGripStyle() != null && !user.getPreferredGripStyle().isBlank()) {
+            return normalizedGrip(user.getPreferredGripStyle());
+        }
+        if (review != null && review.getGripStyle() != null && !review.getGripStyle().isBlank()) {
+            return normalizedGrip(review.getGripStyle());
+        }
+        return "MIXED";
+    }
+
+    private String normalizedGrip(String value) {
+        return value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private SupportPreview matchedSupportPreview(List<ReviewMatch> matches, Map<UUID, BitSet> masksByReview) {
+        Map<Integer, Long> cellCounts = new TreeMap<>();
+        int samples = 0;
+        for (ReviewMatch match : matches) {
+            BitSet mask = masksByReview.getOrDefault(match.review().getId(), new BitSet());
+            if (mask.isEmpty()) continue;
+            samples++;
+            mask.stream().forEach(index -> cellCounts.merge(index, 1L, Long::sum));
+        }
+        int sampleCount = samples;
+        List<SupportHeatCell> cells = cellCounts.entrySet().stream().map(entry -> new SupportHeatCell(
+                entry.getKey() % SupportMasks.COLUMNS,
+                entry.getKey() / SupportMasks.COLUMNS,
+                entry.getValue(),
+                sampleCount == 0 ? 0 : (int) Math.round(entry.getValue() * 100.0 / sampleCount)
+        )).toList();
+        long maxCount = cellCounts.values().stream().mapToLong(Long::longValue).max().orElse(0L);
+        return new SupportPreview(cells, maxCount, sampleCount);
+    }
+
     private static final Comparator<MatchScore> MATCH_SCORE_COMPARATOR =
             Comparator.comparingInt(MatchScore::similarityPercent)
                     .thenComparingInt(MatchScore::coveragePercent);
@@ -209,4 +254,7 @@ public class RecommendationService {
     private record MatchScore(int intersectionCount, int coveragePercent,
                               int similarityPercent, boolean exact) {}
     private record ReviewMatch(Review review, MatchScore score) {}
+    private record SupportPreview(List<SupportHeatCell> cells, long maxCount, int sampleCount) {
+        private static SupportPreview empty() { return new SupportPreview(List.of(), 0, 0); }
+    }
 }

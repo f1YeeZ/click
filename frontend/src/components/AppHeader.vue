@@ -14,7 +14,6 @@ const logout = () => { auth.logout(); router.push('/') }
       <nav class="main-nav" aria-label="主导航">
         <RouterLink exact-active-class="router-link-active" to="/">首页</RouterLink>
         <RouterLink to="/mice">鼠标库</RouterLink>
-        <RouterLink to="/ranking">排行榜</RouterLink>
         <RouterLink to="/recommend">鼠标推荐</RouterLink>
         <RouterLink to="/compare">参数对比</RouterLink>
       </nav>
@@ -30,7 +29,6 @@ const logout = () => { auth.logout(); router.push('/') }
   <nav class="mobile-nav" aria-label="移动主导航">
     <RouterLink exact-active-class="router-link-active" to="/">首页</RouterLink>
     <RouterLink to="/mice">鼠标库</RouterLink>
-    <RouterLink to="/ranking">排行榜</RouterLink>
     <RouterLink to="/recommend">鼠标推荐</RouterLink>
     <RouterLink to="/compare">参数对比</RouterLink>
   </nav>
