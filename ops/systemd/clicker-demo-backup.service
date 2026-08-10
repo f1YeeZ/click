@@ -1,0 +1,9 @@
+[Unit]
+Description=Back up Clicker Demo PostgreSQL and image data
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/clicker_demo
+ExecStart=/opt/clicker_demo/scripts/backup-production.sh

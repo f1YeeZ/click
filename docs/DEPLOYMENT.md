@@ -81,6 +81,37 @@ node scripts/sse-load-test.mjs \
 
 ## 6. 备份与恢复
 
+仓库提供了可重复执行的备份脚本 [scripts/backup-production.sh](../scripts/backup-production.sh)，会同时备份 PostgreSQL 和图片 Docker volume，默认保存到 `/var/backups/clicker_demo` 并保留 14 天。备份目录权限为 `700`，备份文件权限为 `600`。
+
+在服务器首次安装自动备份：
+
+```bash
+cd /opt/clicker_demo
+chmod +x scripts/backup-production.sh
+install -m 0644 ops/systemd/clicker-demo-backup.service /etc/systemd/system/
+install -m 0644 ops/systemd/clicker-demo-backup.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now clicker-demo-backup.timer
+```
+
+定时器每天凌晨 03:30（带最多 10 分钟随机延迟）执行；服务器关机错过时，`Persistent=true` 会在下次启动后补执行一次。先手动执行一次验证：
+
+```bash
+systemctl start clicker-demo-backup.service
+systemctl status clicker-demo-backup.service --no-pager
+ls -lh /var/backups/clicker_demo
+systemctl list-timers clicker-demo-backup.timer
+```
+
+脚本首次运行可能拉取 `alpine:3.20` 镜像，用于只读打包图片 volume。备份成功后，每个时间目录包含 `database.dump`、`mouse-images.tar.gz`、`manifest.txt` 和 `SHA256SUMS`。备份文件还应复制到服务器之外（例如 OSS 或另一台服务器）；仅保存在本机不能抵御磁盘损坏或整机故障。
+
+校验某次备份：
+
+```bash
+cd /var/backups/clicker_demo/某个时间目录
+sha256sum -c SHA256SUMS
+```
+
 上线前和每次升级前备份：
 
 ```bash
