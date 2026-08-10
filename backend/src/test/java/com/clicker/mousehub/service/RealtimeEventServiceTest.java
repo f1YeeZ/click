@@ -2,7 +2,9 @@ package com.clicker.mousehub.service;
 
 import com.clicker.mousehub.common.BusinessException;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -12,6 +14,36 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class RealtimeEventServiceTest {
+    @Test
+    void sendFailureRemovesClientWithoutCompletingTheBrokenEmitterAgain() {
+        FailingSseEmitter emitter = new FailingSseEmitter();
+        RealtimeEventService events = new RealtimeEventService(10, 10) {
+            @Override SseEmitter createEmitter(long timeoutMs) { return emitter; }
+        };
+
+        events.connect("203.0.113.10");
+        events.publishAfterCommit("mouse.changed", UUID.randomUUID());
+        events.flushPendingEvents();
+
+        assertThat(events.connectionCount()).isZero();
+        assertThat(emitter.completeCalled).isFalse();
+    }
+
+    private static final class FailingSseEmitter extends SseEmitter {
+        private int sends;
+        private boolean completeCalled;
+
+        @Override
+        public void send(SseEventBuilder builder) throws IOException {
+            if (++sends > 1) throw new IOException("Broken pipe");
+        }
+
+        @Override
+        public void complete() {
+            completeCalled = true;
+        }
+    }
+
     @Test
     void concurrentAdmissionNeverExceedsThePerAddressLimit() throws Exception {
         RealtimeEventService events = new RealtimeEventService(100, 20);

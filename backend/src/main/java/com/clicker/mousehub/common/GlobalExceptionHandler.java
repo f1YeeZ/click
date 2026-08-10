@@ -1,5 +1,9 @@
 package com.clicker.mousehub.common;
 
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+
+import java.io.IOException;
+
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.*;
 import org.springframework.validation.FieldError;
@@ -61,6 +65,22 @@ public class GlobalExceptionHandler {
                 .body(ApiError.of("METHOD_NOT_ALLOWED", "该资源不支持此请求方法"));
     }
 
+    @ExceptionHandler(IOException.class)
+    ResponseEntity<Void> io(IOException exception) {
+        if (isClientDisconnect(exception)) {
+            log.debug("SSE client disconnected before the response completed");
+            return ResponseEntity.noContent().build();
+        }
+        log.error("Unhandled I/O exception", exception);
+        return ResponseEntity.internalServerError().build();
+    }
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    ResponseEntity<Void> asyncRequestNotUsable(AsyncRequestNotUsableException exception) {
+        log.debug("Async response is no longer usable");
+        return ResponseEntity.noContent().build();
+    }
+
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     ResponseEntity<ApiError> unsupportedMediaType(HttpMediaTypeNotSupportedException exception) {
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
@@ -71,5 +91,12 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiError> unknown(Exception exception) {
         log.error("Unhandled API exception", exception);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ApiError.of("INTERNAL_ERROR", "服务暂时不可用"));
+    }
+
+    private static boolean isClientDisconnect(IOException exception) {
+        String type = exception.getClass().getName().toLowerCase(java.util.Locale.ROOT);
+        String message = String.valueOf(exception.getMessage()).toLowerCase(java.util.Locale.ROOT);
+        return type.contains("clientabort") || message.contains("broken pipe")
+                || message.contains("connection reset") || message.contains("connection aborted");
     }
 }

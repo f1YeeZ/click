@@ -77,7 +77,7 @@ public class RealtimeEventService {
         reserveConnection(address);
 
         String clientId = UUID.randomUUID().toString();
-        SseEmitter emitter = new SseEmitter(emitterTimeoutMs);
+        SseEmitter emitter = createEmitter(emitterTimeoutMs);
         Client client = new Client(address, emitter, new AtomicLong(initialHeartbeatAt()));
         clients.put(clientId, client);
         Runnable cleanup = () -> removeClient(clientId, client);
@@ -92,6 +92,10 @@ public class RealtimeEventService {
             throw new BusinessException("REALTIME_CONNECT_FAILED", "实时连接建立失败", HttpStatus.SERVICE_UNAVAILABLE);
         }
         return emitter;
+    }
+
+    SseEmitter createEmitter(long timeoutMs) {
+        return new SseEmitter(timeoutMs);
     }
 
     public void publishAfterCommit(String type, UUID mouseId) {
@@ -213,11 +217,9 @@ public class RealtimeEventService {
             scheduleNextHeartbeat(client);
         } catch (IOException | IllegalStateException exception) {
             removeClient(clientId, client);
-            try {
-                client.emitter().complete();
-            } catch (RuntimeException ignored) {
-                // The emitter may already have completed on another fan-out worker.
-            }
+            // SseEmitter delegates broken-connection handling to the servlet container.
+            // Calling complete() here triggers a second async dispatch and makes Spring
+            // try to serialize a JSON ApiError into an already-committed event-stream.
         }
     }
 

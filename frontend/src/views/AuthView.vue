@@ -2,11 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAdminAuthStore, useAuthStore } from '../stores/auth'
-import api, { errorMessage } from '../api/client'
+import { usePublicConfigStore } from '../stores/publicConfig'
+import { errorMessage } from '../api/client'
 
 const props = defineProps({ mode: { type: String, required: true }, admin: { type: Boolean, default: false } })
 const router = useRouter()
 const auth = props.admin ? useAdminAuthStore() : useAuthStore()
+const publicConfig = usePublicConfigStore()
 const form = reactive({ email: '', password: '', verificationCode: '', acceptedTerms: false })
 const error = ref('')
 const loading = ref(false)
@@ -17,7 +19,7 @@ const challenge = ref(null)
 const resendSeconds = ref(0)
 let countdownTimer
 const register = computed(() => props.mode === 'register')
-const registrationEnabled = ref(true)
+const registrationEnabled = computed(() => publicConfig.registrationEnabled)
 const startCountdown = (seconds) => {
   resendSeconds.value = seconds
   clearInterval(countdownTimer)
@@ -48,7 +50,7 @@ const submit = async () => {
   } catch (e) { error.value = errorMessage(e) }
   finally { loading.value = false }
 }
-onMounted(() => api.get('/config').then(({ data }) => { registrationEnabled.value = data.registrationEnabled !== false }).catch(() => {}))
+onMounted(() => publicConfig.load().catch(() => {}))
 onBeforeUnmount(() => clearInterval(countdownTimer))
 </script>
 
@@ -61,7 +63,7 @@ onBeforeUnmount(() => clearInterval(countdownTimer))
       <div class="flash error" v-if="register && !registrationEnabled">当前暂停新用户注册，请稍后再试。</div>
       <form @submit.prevent="submit">
         <label>邮箱<input v-model.trim="form.email" type="email" autocomplete="email" required :readonly="secondFactor" placeholder="you@example.com"></label>
-        <label v-if="!secondFactor">密码<input v-model="form.password" type="password" :autocomplete="register ? 'new-password' : 'current-password'" minlength="8" maxlength="72" required placeholder="8–72 位"></label>
+        <label v-if="!secondFactor">密码<input v-model="form.password" type="password" :autocomplete="register ? 'new-password' : 'current-password'" minlength="8" :maxlength="register ? 32 : 72" required :placeholder="register ? '8–32 位' : '8–72 位'"></label>
         <label v-if="register">邮箱验证码 <span class="verification-input"><input v-model.trim="form.verificationCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="\d{6}" maxlength="6" required placeholder="6 位验证码"><button type="button" :disabled="codeLoading || resendSeconds > 0" @click="sendCode">{{ codeLoading ? '发送中…' : (resendSeconds > 0 ? `${resendSeconds}s 后重发` : (codeSent ? '重新发送' : '获取验证码')) }}</button></span></label>
         <label v-if="admin && secondFactor">邮箱验证码<input v-model.trim="form.verificationCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="\d{6}" maxlength="6" required placeholder="请输入 6 位验证码"><small>验证码有效期 {{ challenge?.expiresInSeconds }} 秒。</small></label>
         <label v-if="register" class="legal-consent"><input v-model="form.acceptedTerms" type="checkbox" required><span>我已阅读并同意 <RouterLink to="/terms" target="_blank">用户协议</RouterLink> 和 <RouterLink to="/privacy" target="_blank">隐私政策</RouterLink></span></label>

@@ -3,19 +3,21 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
 import CompareTray from './components/CompareTray.vue'
+import FeedbackWidget from './components/FeedbackWidget.vue'
 import { useAuthStore } from './stores/auth'
-import { startRealtime, stopRealtime } from './services/realtime'
-import api from './api/client'
+import { usePublicConfigStore } from './stores/publicConfig'
+import { onRealtime, startRealtime, stopRealtime } from './services/realtime'
 
 const auth = useAuthStore()
+const publicConfig = usePublicConfigStore()
 const route = useRoute()
 const router = useRouter()
 const year = new Date().getFullYear()
 const isAdminRoute = computed(() => route.path === '/admin' || route.path === '/admin/login')
 const isCodeMapRoute = computed(() => route.path === '/dev/code-map')
 const routeMotion = ref('idle')
-const publicConfig = ref({ maintenanceNotice: '', registrationEnabled: true, reviewSubmissionEnabled: true })
 let routeMotionTimer
+let stopConfigRealtime = () => {}
 
 const shouldAnimateRoute = (to, from) => Boolean(from?.matched?.length) && to.path !== from.path
 const removeMotionGuard = router.beforeEach((to, from) => {
@@ -33,10 +35,14 @@ const removeMotionAfterHook = router.afterEach((to, from) => {
 })
 onMounted(() => {
   startRealtime()
-  api.get('/config').then(({ data }) => { publicConfig.value = data }).catch(() => {})
+  stopConfigRealtime = onRealtime(event => {
+    if (event.type === 'settings.changed' || event.type === 'sync.required') publicConfig.load().catch(() => {})
+  })
+  publicConfig.load().catch(() => {})
   if (!isAdminRoute.value) auth.refresh()
 })
 onBeforeUnmount(() => {
+  stopConfigRealtime()
   stopRealtime()
   clearTimeout(routeMotionTimer)
   removeMotionGuard()
@@ -70,6 +76,7 @@ onBeforeUnmount(() => {
     </div>
   </footer>
   <CompareTray v-if="!isAdminRoute && !isCodeMapRoute && route.path !== '/compare'" />
+  <FeedbackWidget v-if="!isAdminRoute && !isCodeMapRoute" />
   <div class="route-motion-line" :class="`is-${routeMotion}`" aria-hidden="true"></div>
 </template>
 

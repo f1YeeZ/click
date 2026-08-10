@@ -15,15 +15,16 @@ import java.util.UUID;
 public final class AuthDtos {
     private AuthDtos() {}
 
-    public record RegisterRequest(@NotBlank @Email String email,
-                                  @NotBlank @Size(min = 8, max = 72) String password,
+    public record RegisterRequest(@NotBlank @Email @Size(max = 180) String email,
+                                  @NotBlank @Size(min = 8, max = 32) String password,
                                   @NotBlank @Pattern(regexp = "\\d{6}") String verificationCode,
                                   @AssertTrue(message = "请先同意用户协议与隐私政策") boolean acceptedTerms) {}
-    public record LoginRequest(@NotBlank @Email String email, @NotBlank String password) {}
-    public record EmailRequest(@NotBlank @Email String email) {}
+    public record LoginRequest(@NotBlank @Email @Size(max = 180) String email,
+                               @NotBlank @Size(max = 72) String password) {}
+    public record EmailRequest(@NotBlank @Email @Size(max = 180) String email) {}
     public record ChangePasswordRequest(@NotBlank @Pattern(regexp = "\\d{6}") String verificationCode,
                                         @NotBlank @Size(min = 8, max = 72) String newPassword) {}
-    public record PasswordResetRequest(@NotBlank @Email String email,
+    public record PasswordResetRequest(@NotBlank @Email @Size(max = 180) String email,
                                        @NotBlank @Pattern(regexp = "\\d{6}") String verificationCode,
                                        @NotBlank @Size(min = 8, max = 72) String newPassword) {}
     public record MessageResponse(String message) {}
@@ -44,6 +45,6 @@ public final class AuthDtos {
     public record SessionResponse(String token, long accessTokenExpiresInSeconds, UserView user) {}
     public record LoginChallengeResponse(boolean secondFactorRequired, UUID challengeId, long expiresInSeconds) {}
     public record AdminLoginVerificationRequest(UUID challengeId,
-                                                @NotBlank @Email String email,
+                                                 @NotBlank @Email @Size(max = 180) String email,
                                                 @NotBlank @Pattern(regexp = "\\d{6}") String code) {}
 }

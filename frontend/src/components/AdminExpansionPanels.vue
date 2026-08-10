@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api, { errorMessage } from '../api/client'
 import AdminFloatingPanel from './AdminFloatingPanel.vue'
+import { onRealtime } from '../services/realtime'
 
 const props = defineProps({ activeTab: { type: String, required: true } })
 const emit = defineEmits(['toast'])
@@ -18,20 +19,22 @@ const reportType = ref('')
 const reportQuery = ref('')
 const reportDrafts = reactive({})
 const selectedReport = ref(null)
+let stopFeedbackRealtime = () => {}
 const imports = ref({ items: [], page: {} })
 const sessions = ref({ items: [], page: {} })
 const sessionQuery = ref('')
 const sessionActiveOnly = ref(true)
 const settings = ref([])
 const settingDrafts = reactive({})
+const chartHover = reactive({})
 const expansionTabs = new Set(['analytics', 'brands', 'feedback', 'operations'])
 const analyticsMetrics = [
-  { key: 'uniqueVisitors', label: '独立访客 UV', description: '每日访问前台的独立浏览器数', color: '#f2f2f2', chartType: 'line', group: 'traffic', totalField: 'periodUniqueVisitors', totalLabel: '区间独立访客' },
-  { key: 'pageViews', label: '页面浏览 PV', description: '前台页面的每日有效浏览次数', color: '#cfcfcf', chartType: 'line', group: 'traffic', totalField: 'periodPageViews', totalLabel: '区间页面浏览' },
-  { key: 'users', label: '新增用户', description: '新注册账户的每日变化', color: '#f2f2f2', chartType: 'line', group: 'operations' },
-  { key: 'mice', label: '新增鼠标', description: '新建鼠标数据的每日变化', color: '#cfcfcf', chartType: 'line', group: 'operations' },
-  { key: 'reviews', label: '新增评价', description: '新评价包的每日提交量', color: '#a8a8a8', chartType: 'line', group: 'operations' },
-  { key: 'adminActions', label: '管理员操作', description: '后台治理与维护操作次数', color: '#dedede', chartType: 'bar', group: 'operations' },
+  { key: 'uniqueVisitors', label: '独立访客 UV', description: '每日访问前台的独立浏览器数', color: '#7198ff', chartType: 'line', group: 'traffic', totalField: 'periodUniqueVisitors', totalLabel: '区间独立访客' },
+  { key: 'pageViews', label: '页面浏览 PV', description: '前台页面的每日有效浏览次数', color: '#7198ff', chartType: 'line', group: 'traffic', totalField: 'periodPageViews', totalLabel: '区间页面浏览' },
+  { key: 'users', label: '新增用户', description: '新注册账户的每日变化', color: '#7198ff', chartType: 'line', group: 'operations' },
+  { key: 'mice', label: '新增鼠标', description: '新建鼠标数据的每日变化', color: '#7198ff', chartType: 'line', group: 'operations' },
+  { key: 'reviews', label: '新增评价', description: '新评价包的每日提交量', color: '#7198ff', chartType: 'line', group: 'operations' },
+  { key: 'adminActions', label: '管理员操作', description: '后台治理与维护操作次数', color: '#7198ff', chartType: 'bar', group: 'operations' },
 ]
 const metricPoints = key => (analytics.value?.points || []).map(point => Number(point[key] || 0))
 const chartWidth = 720
@@ -97,7 +100,6 @@ const buildChart = metric => {
     latest: values.at(-1) || 0,
     trend: comparison(values),
     linePath: points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' '),
-    areaPath: points.length ? `${points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ')} L ${points.at(-1).x} ${chartBottom} L ${points[0].x} ${chartBottom} Z` : '',
   }
 }
 const analyticsCharts = computed(() => analyticsMetrics.map(buildChart))
@@ -106,6 +108,30 @@ const analyticsGroups = computed(() => [
   { key: 'operations', title: '内容与治理', description: '内容供给和后台维护的每日变化。', charts: analyticsCharts.value.filter(chart => chart.group === 'operations') },
 ])
 const dateLabel = value => String(value || '').slice(5)
+const chartPoint = chart => {
+  const index = chartHover[chart.key]
+  return Number.isInteger(index) ? chart.points[Math.min(index, chart.points.length - 1)] : null
+}
+const updateChartHover = (chart, event) => {
+  if (!chart.points.length) return
+  const bounds = event.currentTarget.getBoundingClientRect()
+  const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left) / Math.max(1, bounds.width)))
+  chartHover[chart.key] = Math.round(ratio * (chart.points.length - 1))
+}
+const moveChartHover = (chart, direction) => {
+  if (!chart.points.length) return
+  const current = Number.isInteger(chartHover[chart.key]) ? chartHover[chart.key] : chart.points.length - 1
+  chartHover[chart.key] = Math.max(0, Math.min(chart.points.length - 1, current + direction))
+}
+const showLatestChartPoint = chart => {
+  if (chart.points.length && !Number.isInteger(chartHover[chart.key])) chartHover[chart.key] = chart.points.length - 1
+}
+const clearChartHover = key => { delete chartHover[key] }
+const formatChartDate = value => {
+  const [year, month, day] = String(value || '').split('-').map(Number)
+  return year && month && day ? `${year}年${month}月${day}日` : String(value || '')
+}
+const formatChartValue = value => Number(value || 0).toLocaleString('zh-CN')
 const showNotice = message => emit('toast', { type: 'success', message })
 const showError = message => emit('toast', { type: 'error', message })
 
@@ -130,10 +156,13 @@ const saveBrand = () => run(async () => {
 })
 const loadReports = (page = 1) => run(async () => {
   reports.value = (await api.get('/admin/reports', { params: { q: reportQuery.value || undefined, status: reportStatus.value || undefined, targetType: reportType.value || undefined, page } })).data
-  reports.value.items.forEach(item => { reportDrafts[item.id] = { status: item.status, assigneeEmail: item.assigneeEmail || '', resolution: item.resolution || '' } })
+  reports.value.items.forEach(item => {
+    if (selectedReport.value?.id === item.id && reportDrafts[item.id]) return
+    reportDrafts[item.id] = { status: item.status, assigneeEmail: item.assigneeEmail || '', resolution: item.resolution || '' }
+  })
 })
 const saveReport = report => run(async () => {
-  await api.patch(`/admin/reports/${report.id}`, reportDrafts[report.id]); await loadReports(reports.value.page.number || 1); selectedReport.value = null; showNotice('反馈工单已更新')
+  await api.patch(`/admin/reports/${report.id}`, reportDrafts[report.id]); selectedReport.value = null; await loadReports(reports.value.page.number || 1); showNotice('反馈工单已更新')
 })
 const openReport = report => { selectedReport.value = report }
 const loadOperations = () => run(async () => {
@@ -163,6 +192,8 @@ const download = async (url, filename) => {
 const exportData = type => download(`/admin/exports/${type}`, `clicker-${type}.csv`)
 const settingLabel = key => ({ 'maintenance.notice': '前台维护公告', 'registration.enabled': '开放用户注册', 'reviews.enabled': '开放评价提交', 'upload.max-mb': '图片上传提示上限（MB）', 'verification.stale-days': '数据核验过期天数', 'security.session-days': '会话有效天数提示' }[key] || key)
 const statusLabel = value => ({ ACTIVE: '正常', ARCHIVED: '已归档', OPEN: '待处理', IN_PROGRESS: '处理中', RESOLVED: '已解决', REJECTED: '已驳回', PREVIEW_READY: '预检通过', PREVIEW_FAILED: '预检失败', COMPLETED: '已导入' }[value] || value)
+const reportTypeLabel = value => ({ SITE: '前台反馈', MOUSE: '数据纠错', REVIEW: '评价举报' }[value] || value)
+const reportCategoryLabel = value => ({ MOUSE_MISSING: '缺失鼠标型号', BUG: '网站 Bug', DATA_ERROR: '数据修正', SUGGESTION: '功能建议', OTHER: '其他反馈' }[value] || value)
 const date = value => value ? new Date(value).toLocaleString('zh-CN') : '—'
 const loadActive = () => ({ analytics: loadAnalytics, brands: loadBrands, feedback: loadReports, operations: loadOperations }[props.activeTab]?.())
 const refreshListener = event => { if (event.detail === props.activeTab) loadActive() }
@@ -172,7 +203,16 @@ watch(() => props.activeTab, value => {
   if (expansionTabs.has(value)) loadActive()
 }, { immediate: true })
 onMounted(() => window.addEventListener('admin:refresh', refreshListener))
-onBeforeUnmount(() => window.removeEventListener('admin:refresh', refreshListener))
+onMounted(() => {
+  stopFeedbackRealtime = onRealtime(event => {
+    if (props.activeTab !== 'feedback') return
+    if (event.type === 'feedback.changed' || event.type === 'sync.required') loadReports(reports.value.page.number || 1)
+  })
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('admin:refresh', refreshListener)
+  stopFeedbackRealtime()
+})
 </script>
 
 <template>
@@ -189,22 +229,27 @@ onBeforeUnmount(() => window.removeEventListener('admin:refresh', refreshListene
                 <div class="metric-report-title"><i aria-hidden="true"></i><div><h4>{{ chart.label }}</h4><p>{{ chart.description }}</p></div></div>
                 <div class="metric-total"><span>{{ chart.totalLabel || `${analyticsDays} 天累计` }}</span><strong>{{ chart.total }}</strong></div>
               </header>
-              <div class="metric-plot" role="img" :aria-label="`${chart.label}每日统计${chart.chartType === 'bar' ? '柱状图' : '折线图'}`">
+              <div class="metric-plot" role="group" :aria-label="`${chart.label}每日统计${chart.chartType === 'bar' ? '柱状图' : '折线图'}`">
                 <div class="metric-y-axis" aria-hidden="true"><span v-for="tick in chart.ticks" :key="tick.value" :style="{ top: `${tick.y / 184 * 100}%` }">{{ tick.value }}</span></div>
-                <div class="metric-plot-canvas">
+                <div class="metric-plot-canvas" tabindex="0" :aria-label="`使用鼠标悬停或左右方向键查看${chart.label}每日数据`" @pointermove="updateChartHover(chart, $event)" @pointerdown="updateChartHover(chart, $event)" @pointerleave="clearChartHover(chart.key)" @focus="showLatestChartPoint(chart)" @blur="clearChartHover(chart.key)" @keydown.left.prevent="moveChartHover(chart, -1)" @keydown.right.prevent="moveChartHover(chart, 1)">
                   <svg viewBox="0 0 720 184" preserveAspectRatio="none" role="img">
                     <title>{{ chart.label }}每日统计{{ chart.chartType === 'bar' ? '柱状图' : '折线图' }}</title>
                     <line v-for="tick in chart.ticks" :key="tick.value" class="metric-grid-line" x1="0" x2="720" :y1="tick.y" :y2="tick.y" />
                     <template v-if="chart.chartType === 'line'">
-                      <path class="metric-area" :d="chart.areaPath" />
                       <path class="metric-line" :d="chart.linePath" />
-                      <circle v-for="point in chart.points" v-show="analyticsDays <= 30" :key="point.date" class="metric-line-point" :cx="point.x" :cy="point.y" :r="analyticsDays <= 14 ? 3.5 : 2.5"><title>{{ point.date }}：{{ point.value }}</title></circle>
                     </template>
                     <template v-else>
                       <rect v-for="point in chart.points" :key="point.date" class="metric-bar" :x="point.x - chart.barWidth / 2" :y="point.y" :width="chart.barWidth" :height="Math.max(1, 174 - point.y)" rx="2"><title>{{ point.date }}：{{ point.value }}</title></rect>
                     </template>
+                    <template v-if="chartPoint(chart)">
+                      <line class="metric-hover-guide" :x1="chartPoint(chart).x" :x2="chartPoint(chart).x" :y1="chartTop" :y2="chartBottom" />
+                      <circle class="metric-hover-point" :cx="chartPoint(chart).x" :cy="chartPoint(chart).y" r="5" />
+                    </template>
                   </svg>
-                  <span v-if="chart.peakPoint && chart.peak > 0" class="metric-peak-pin" :class="{ left: chart.peakPoint.x < 100, right: chart.peakPoint.x > 620 }" :style="{ left: `${chart.peakPoint.x / 720 * 100}%`, top: `${chart.peakPoint.y / 184 * 100}%` }">峰值 {{ chart.peak }}</span>
+                  <div v-if="chartPoint(chart)" class="metric-tooltip" :class="{ left: chartPoint(chart).x < 150, right: chartPoint(chart).x > 570, below: chartPoint(chart).y < 68 }" :style="{ left: `${chartPoint(chart).x / 720 * 100}%`, top: `${chartPoint(chart).y / 184 * 100}%` }">
+                    <time>{{ formatChartDate(chartPoint(chart).date) }}</time>
+                    <p><i aria-hidden="true"></i><span>{{ chart.label }}</span><strong>{{ formatChartValue(chartPoint(chart).value) }}</strong></p>
+                  </div>
                 </div>
                 <div class="metric-x-axis" aria-hidden="true"><span v-for="point in chart.dates" :key="point.date" :style="{ left: `${point.x / 720 * 100}%` }">{{ dateLabel(point.date) }}</span></div>
               </div>
@@ -230,10 +275,10 @@ onBeforeUnmount(() => window.removeEventListener('admin:refresh', refreshListene
 
     <section v-else-if="activeTab === 'feedback'" class="admin-panel full-panel expansion-panel">
       <div class="panel-heading expansion-heading"><div><span class="panel-kicker">TRUST DESK</span><h3>举报与数据纠错</h3><p>从用户反馈到受理、处理和结论的完整工单闭环。</p></div></div>
-      <div class="toolbar"><div class="toolbar-search"><span>⌕</span><input v-model="reportQuery" placeholder="搜索提交人、分类或说明…" @keyup.enter="loadReports(1)"></div><select v-model="reportType" @change="loadReports(1)"><option value="">全部对象</option><option value="MOUSE">数据纠错</option><option value="REVIEW">评价举报</option></select><select v-model="reportStatus" @change="loadReports(1)"><option value="">全部状态</option><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="RESOLVED">已解决</option><option value="REJECTED">已驳回</option></select></div>
-      <div class="report-board"><article v-for="report in reports.items" :key="report.id" :class="`report-${report.status.toLowerCase()}`"><header><div><span>{{ report.targetType === 'MOUSE' ? '数据纠错' : '评价举报' }}</span><h4>{{ report.targetLabel }}</h4></div><em>{{ statusLabel(report.status) }}</em></header><p>{{ report.description }}</p><dl><div><dt>分类</dt><dd>{{ report.category }}</dd></div><div><dt>提交人</dt><dd>{{ report.reporterEmail }}</dd></div><div><dt>提交时间</dt><dd>{{ date(report.createdAt) }}</dd></div></dl><button class="button button-ghost report-open-action" @click="openReport(report)">处理工单</button></article><p v-if="!reports.items.length" class="table-empty">暂无反馈工单</p></div>
+      <div class="toolbar"><div class="toolbar-search"><span>⌕</span><input v-model="reportQuery" placeholder="搜索提交人、分类或说明…" @keyup.enter="loadReports(1)"></div><select v-model="reportType" @change="loadReports(1)"><option value="">全部对象</option><option value="SITE">前台反馈</option><option value="MOUSE">数据纠错</option><option value="REVIEW">评价举报</option></select><select v-model="reportStatus" @change="loadReports(1)"><option value="">全部状态</option><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="RESOLVED">已解决</option><option value="REJECTED">已驳回</option></select></div>
+      <div class="report-board"><article v-for="report in reports.items" :key="report.id" :class="`report-${report.status.toLowerCase()}`"><header><div><span>{{ reportTypeLabel(report.targetType) }}</span><h4>{{ report.targetLabel }}</h4></div><em>{{ statusLabel(report.status) }}</em></header><p>{{ report.description }}</p><dl><div><dt>分类</dt><dd>{{ reportCategoryLabel(report.category) }}</dd></div><div><dt>提交人</dt><dd>{{ report.reporterEmail }}</dd></div><div><dt>提交时间</dt><dd>{{ date(report.createdAt) }}</dd></div></dl><button class="button button-ghost report-open-action" @click="openReport(report)">处理工单</button></article><p v-if="!reports.items.length" class="table-empty">暂无反馈工单</p></div>
       <AdminFloatingPanel :open="Boolean(selectedReport)" title="处理反馈工单" :subtitle="selectedReport ? `${selectedReport.targetLabel} · ${selectedReport.reporterEmail}` : ''" :busy="loading" @close="selectedReport = null">
-        <section v-if="selectedReport" class="report-modal-content"><div class="report-original"><span>{{ selectedReport.targetType === 'MOUSE' ? '数据纠错' : '评价举报' }}</span><p>{{ selectedReport.description }}</p></div><div class="report-workflow report-workflow-floating"><label>处理状态<select v-model="reportDrafts[selectedReport.id].status"><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="RESOLVED">已解决</option><option value="REJECTED">已驳回</option></select></label><label>负责人<input v-model.trim="reportDrafts[selectedReport.id].assigneeEmail" placeholder="默认当前管理员"></label><label class="wide">处理结论<textarea v-model.trim="reportDrafts[selectedReport.id].resolution" maxlength="1000"></textarea></label></div></section>
+        <section v-if="selectedReport" class="report-modal-content"><div class="report-original"><span>{{ reportTypeLabel(selectedReport.targetType) }} · {{ reportCategoryLabel(selectedReport.category) }}</span><p>{{ selectedReport.description }}</p></div><div class="report-workflow report-workflow-floating"><label>处理状态<select v-model="reportDrafts[selectedReport.id].status"><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="RESOLVED">已解决</option><option value="REJECTED">已驳回</option></select></label><label>负责人<input v-model.trim="reportDrafts[selectedReport.id].assigneeEmail" placeholder="默认当前管理员"></label><label class="wide">处理结论<textarea v-model.trim="reportDrafts[selectedReport.id].resolution" maxlength="1000"></textarea></label></div></section>
         <template #footer><div v-if="selectedReport" class="expansion-modal-actions"><button type="button" class="button button-ghost" :disabled="loading" @click="selectedReport = null">取消处理</button><button class="button" :disabled="loading" @click="saveReport(selectedReport)">{{ loading ? '正在保存…' : '保存处理结果' }}</button></div></template>
       </AdminFloatingPanel>
     </section>
@@ -374,7 +419,7 @@ onBeforeUnmount(() => window.removeEventListener('admin:refresh', refreshListene
   min-width: 0;
 }
 .metric-report-title { display: flex; min-width: 0; align-items: flex-start; gap: 8px; }
-.metric-report-title > i { flex: 0 0 7px; width: 7px; height: 7px; margin-top: 5px; border-radius: 2px; background: var(--chart-accent); }
+.metric-report-title > i { flex: 0 0 13px; width: 13px; height: 2px; margin-top: 7px; border-radius: 1px; background: var(--chart-accent); }
 .metric-report-title h4 { margin: 0; color: var(--dv-text); font-size: .88rem; }
 .metric-report-title p { overflow: hidden; margin: 3px 0 0; color: var(--dv-muted); font-size: .65rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .metric-total { min-width: 86px; text-align: right; }
@@ -400,62 +445,82 @@ onBeforeUnmount(() => window.removeEventListener('admin:refresh', refreshListene
 .metric-comparison.trend-down strong::before { content: '↓ '; }
 .metric-plot {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  grid-template-rows: 124px 20px;
+  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-rows: 148px 22px;
   min-width: 0;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 .metric-y-axis { position: relative; min-width: 0; }
 .metric-y-axis span {
   position: absolute;
-  right: 7px;
-  color: var(--dv-muted);
-  font: 500 .54rem/1 var(--dv-mono);
+  right: 9px;
+  color: #8f8f8f;
+  font: 500 .58rem/1 var(--dv-mono);
   transform: translateY(-50%);
 }
-.metric-plot-canvas { position: relative; min-width: 0; height: 124px; }
-.metric-plot-canvas svg { display: block; width: 100%; height: 124px; overflow: visible; }
-.metric-grid-line { stroke: color-mix(in srgb, var(--dv-outline) 24%, transparent); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.metric-area { fill: color-mix(in srgb, var(--chart-accent) 7%, transparent); stroke: none; }
+.metric-plot-canvas {
+  position: relative;
+  min-width: 0;
+  height: 148px;
+  outline: none;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+.metric-plot-canvas:focus-visible { box-shadow: inset 0 0 0 1px #777; }
+.metric-plot-canvas svg { display: block; width: 100%; height: 148px; overflow: visible; }
+.metric-grid-line { stroke: #292929; stroke-width: 1; vector-effect: non-scaling-stroke; }
 .metric-line {
   fill: none;
   stroke: var(--chart-accent);
-  stroke-width: 2.25;
-  stroke-linecap: round;
+  stroke-width: 2.4;
+  stroke-linecap: butt;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
-.metric-line-point {
-  fill: var(--dv-surface);
-  stroke: var(--chart-accent);
-  stroke-width: 1.75;
+.metric-hover-guide {
+  stroke: #6c6c6c;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
   vector-effect: non-scaling-stroke;
-  transition: fill 180ms cubic-bezier(.22, 1, .36, 1), r 180ms cubic-bezier(.22, 1, .36, 1);
 }
-.metric-line-point:hover { fill: var(--chart-accent); r: 5px; }
-.metric-bar { fill: var(--chart-accent); opacity: .82; transition: opacity 160ms ease; }
+.metric-hover-point {
+  fill: var(--chart-accent);
+  stroke: #111;
+  stroke-width: 3;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+.metric-bar { fill: var(--chart-accent); opacity: .74; transition: opacity 160ms ease; }
 .metric-bar:hover { opacity: 1; }
-.metric-peak-pin {
+.metric-tooltip {
   position: absolute;
-  z-index: 1;
-  padding: 2px 5px;
-  border: 1px solid var(--dv-outline);
-  border-radius: 4px;
-  background: var(--dv-surface-high);
-  color: var(--dv-text-soft);
-  font: 600 .53rem/1.2 var(--dv-mono);
-  white-space: nowrap;
-  transform: translate(-50%, 6px);
+  z-index: 4;
+  min-width: 178px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  background: #f0f0f0;
+  box-shadow: 0 6px 8px rgba(0, 0, 0, .46);
+  color: #222;
+  transform: translate(-50%, calc(-100% - 10px));
   pointer-events: none;
 }
-.metric-peak-pin.left { transform: translate(0, 6px); }
-.metric-peak-pin.right { transform: translate(-100%, 6px); }
+.metric-tooltip.left { transform: translate(0, calc(-100% - 10px)); }
+.metric-tooltip.right { transform: translate(-100%, calc(-100% - 10px)); }
+.metric-tooltip.below { transform: translate(-50%, 10px); }
+.metric-tooltip.left.below { transform: translate(0, 10px); }
+.metric-tooltip.right.below { transform: translate(-100%, 10px); }
+.metric-tooltip time { display: block; color: #777; font-size: .65rem; white-space: nowrap; }
+.metric-tooltip p { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: center; gap: 7px; margin: 9px 0 0; }
+.metric-tooltip p i { width: 7px; height: 7px; border-radius: 50%; background: var(--chart-accent); }
+.metric-tooltip p span { color: #3b3b3b; font-size: .68rem; white-space: nowrap; }
+.metric-tooltip p strong { color: #222; font: 700 .72rem/1 var(--dv-mono); }
 .metric-x-axis { position: relative; grid-column: 2; min-width: 0; border-top: 1px solid var(--dv-outline); }
 .metric-x-axis span {
   position: absolute;
-  top: 6px;
-  color: var(--dv-muted);
-  font: 500 .53rem/1 var(--dv-mono);
+  top: 7px;
+  color: #8f8f8f;
+  font: 500 .57rem/1 var(--dv-mono);
   white-space: nowrap;
   transform: translateX(-50%);
 }
@@ -463,7 +528,7 @@ onBeforeUnmount(() => window.removeEventListener('admin:refresh', refreshListene
 .metric-x-axis span:last-child { transform: translateX(-100%); }
 .analytics-notification-card { margin-top: 18px; }
 .expansion-loading { background: rgba(11, 11, 11, .78); }
-@media (prefers-reduced-motion: reduce) { .metric-line-point, .metric-bar { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .metric-bar { transition: none; } }
 @media (max-width: 980px) {
   .analytics-metric-grid { grid-template-columns: 1fr; }
 }

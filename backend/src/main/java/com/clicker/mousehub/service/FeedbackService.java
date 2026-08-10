@@ -21,6 +21,7 @@ import java.util.*;
 
 @Service
 public class FeedbackService {
+    private static final UUID SITE_FEEDBACK_TARGET = new UUID(0L, 0L);
     private static final String SUPPORT_GRID_PREFIX = "GRID_";
     private static final String SUPPORT_DAB_PREFIX = "DAB_";
     private static final Map<String, SupportCell> SUPPORT_POSITION_ANCHORS = Map.of(
@@ -36,11 +37,12 @@ public class FeedbackService {
     private final MouseMapper mice;
     private final AdminNotificationService notifications;
     private final AuditLogService audit;
+    private final RealtimeEventService events;
     public FeedbackService(ContentReportMapper reports, UserMapper users, ReviewMapper reviews,
                            ReviewGripScoreMapper gripScores, ReviewSupportPositionMapper supportPositions, MouseMapper mice,
-                           AdminNotificationService notifications, AuditLogService audit) {
+                           AdminNotificationService notifications, AuditLogService audit, RealtimeEventService events) {
         this.reports = reports; this.users = users; this.reviews = reviews; this.gripScores = gripScores; this.supportPositions = supportPositions; this.mice = mice;
-        this.notifications = notifications; this.audit = audit;
+        this.notifications = notifications; this.audit = audit; this.events = events;
     }
 
     @Transactional
@@ -48,6 +50,15 @@ public class FeedbackService {
         UserAccount user = users.selectOne(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getEmail, UserAccount.normalizeEmail(email)));
         if (user == null) throw new BusinessException("USER_NOT_FOUND", "用户不存在", HttpStatus.NOT_FOUND);
         String targetLabel = requireTarget(request.targetType(), request.targetId());
+        long unresolvedDuplicate = reports.selectCount(new LambdaQueryWrapper<ContentReport>()
+                .eq(ContentReport::getReporterUserId, user.getId())
+                .eq(ContentReport::getTargetType, request.targetType())
+                .eq(ContentReport::getTargetId, request.targetId())
+                .eq(ContentReport::getCategory, request.category().trim())
+                .in(ContentReport::getStatus, "OPEN", "IN_PROGRESS"));
+        if (unresolvedDuplicate > 0) {
+            throw new BusinessException("DUPLICATE_REPORT", "相同问题已经提交，请等待管理员处理", HttpStatus.CONFLICT);
+        }
         ContentReport report = new ContentReport(); OffsetDateTime now = OffsetDateTime.now();
         report.setId(UUID.randomUUID()); report.setReporterUserId(user.getId()); report.setReporterEmail(user.getEmail());
         report.setTargetType(request.targetType()); report.setTargetId(request.targetId()); report.setCategory(request.category().trim());
@@ -55,6 +66,24 @@ public class FeedbackService {
         reports.insert(report);
         notifications.create("NEW_REPORT", "收到新的" + ("MOUSE".equals(report.getTargetType()) ? "数据纠错" : "评价举报"),
                 targetLabel + " · " + report.getCategory(), "REPORT", report.getId());
+        events.publishAfterCommit("feedback.changed", null);
+        return view(report);
+    }
+
+    @Transactional
+    public ContentReportView createGeneral(String authenticatedEmail, GeneralFeedbackRequest request) {
+        UserAccount user = authenticatedEmail == null ? null : users.selectOne(
+                new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getEmail, UserAccount.normalizeEmail(authenticatedEmail)));
+        String contactEmail = blank(request.contactEmail());
+        ContentReport report = new ContentReport(); OffsetDateTime now = OffsetDateTime.now();
+        report.setId(UUID.randomUUID()); report.setReporterUserId(user == null ? null : user.getId());
+        report.setReporterEmail(user != null ? user.getEmail() : contactEmail == null ? "匿名访客" : contactEmail);
+        report.setTargetType("SITE"); report.setTargetId(SITE_FEEDBACK_TARGET); report.setCategory(request.category().trim());
+        report.setDescription(request.description().trim()); report.setStatus("OPEN"); report.setCreatedAt(now); report.setUpdatedAt(now);
+        reports.insert(report);
+        notifications.create("NEW_REPORT", "收到新的前台反馈",
+                categoryLabel(report.getCategory()) + " · " + report.getReporterEmail(), "REPORT", report.getId());
+        events.publishAfterCommit("feedback.changed", null);
         return view(report);
     }
 
@@ -83,11 +112,15 @@ public class FeedbackService {
         reports.updateById(report);
         ContentReportView after = view(report);
         audit.record("REPORT_WORKFLOW_CHANGE", "REPORT", id, "反馈状态变更为 " + request.status(), before, after, request.resolution());
+        events.publishAfterCommit("feedback.changed", null);
         return after;
     }
 
     public PageResponse<PublicReviewView> publicReviews(UUID mouseId, long page) {
-        if (mice.selectById(mouseId) == null) throw new BusinessException("MOUSE_NOT_FOUND", "未找到这款鼠标", HttpStatus.NOT_FOUND);
+        MouseDevice mouse = mice.selectById(mouseId);
+        if (mouse == null || !"PUBLISHED".equals(mouse.getStatus())) {
+            throw new BusinessException("MOUSE_NOT_FOUND", "未找到这款鼠标", HttpStatus.NOT_FOUND);
+        }
         Page<Review> result = reviews.selectPage(new Page<>(Math.max(1, page), 10), new LambdaQueryWrapper<Review>()
                 .eq(Review::getMouseId, mouseId).eq(Review::getStatus, "ACTIVE").isNull(Review::getDeletedAt)
                 .isNotNull(Review::getComfortScore)
@@ -127,6 +160,7 @@ public class FeedbackService {
                 report.getAssigneeEmail(), report.getResolution(), report.getCreatedAt(), report.getUpdatedAt(), report.getResolvedAt());
     }
     private String requireTarget(String type, UUID id) {
+        if ("SITE".equals(type)) return "Clicker Index 前台";
         if ("MOUSE".equals(type)) { MouseDevice mouse = mice.selectById(id); if (mouse != null) return mouse.displayName(); }
         if ("REVIEW".equals(type)) { Review review = reviews.selectById(id); if (review != null) { MouseDevice mouse = mice.selectById(review.getMouseId()); return mouse == null ? "评价 " + id : mouse.displayName() + " 的评价"; } }
         throw new BusinessException("TARGET_NOT_FOUND", "反馈对象不存在", HttpStatus.NOT_FOUND);
@@ -137,6 +171,15 @@ public class FeedbackService {
         return (local.length() <= 2 ? local.substring(0, 1) : local.substring(0, 2)) + "***" + email.substring(at);
     }
     private static String blank(String value) { return value == null || value.isBlank() ? null : value.trim(); }
+    private static String categoryLabel(String value) {
+        return switch (value) {
+            case "MOUSE_MISSING" -> "缺失鼠标型号";
+            case "BUG" -> "网站 Bug";
+            case "DATA_ERROR" -> "数据修正";
+            case "SUGGESTION" -> "功能建议";
+            default -> "其他反馈";
+        };
+    }
     private static SupportDab parseSupportDab(String code) {
         if (code == null || !code.startsWith(SUPPORT_DAB_PREFIX)) return null;
         String[] parts = code.substring(SUPPORT_DAB_PREFIX.length()).split("_");

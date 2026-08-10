@@ -2,6 +2,7 @@ const EVENT_NAME = 'clicker:realtime'
 const IDLE_CLOSE_MS = 5000
 const MAX_RECONNECT_MS = 30000
 const REFRESH_JITTER_MS = 2000
+const CONSISTENCY_REFRESH_MS = 30000
 
 let source = null
 let started = false
@@ -11,6 +12,7 @@ let reconnectAttempt = 0
 let reconnectTimer
 let idleTimer
 let dispatchTimer
+let consistencyTimer
 const pendingEvents = new Map()
 
 const dispatchPending = () => {
@@ -91,6 +93,12 @@ const scheduleIdleClose = () => {
 export const startRealtime = () => {
   if (typeof window === 'undefined') return
   started = true
+  if (!consistencyTimer) {
+    consistencyTimer = window.setInterval(() => {
+      if (subscriberCount === 0 || document.visibilityState === 'hidden') return
+      queueEvent({ type: 'sync.required', mouseId: null, occurredAt: new Date().toISOString() })
+    }, CONSISTENCY_REFRESH_MS)
+  }
   clearTimeout(idleTimer)
   idleTimer = undefined
   connect()
@@ -103,9 +111,11 @@ export const stopRealtime = () => {
   clearTimeout(reconnectTimer)
   clearTimeout(idleTimer)
   clearTimeout(dispatchTimer)
+  clearInterval(consistencyTimer)
   reconnectTimer = undefined
   idleTimer = undefined
   dispatchTimer = undefined
+  consistencyTimer = undefined
   pendingEvents.clear()
   closeSource()
 }

@@ -36,6 +36,10 @@ public final class OperationsDtos {
                                       @NotNull UUID targetId,
                                       @NotBlank @Size(max = 40) String category,
                                       @NotBlank @Size(max = 1000) String description) {}
+    public record GeneralFeedbackRequest(
+            @NotBlank @Pattern(regexp = "MOUSE_MISSING|BUG|DATA_ERROR|SUGGESTION|OTHER") String category,
+            @NotBlank @Size(min = 5, max = 1000) String description,
+            @Email @Size(max = 180) String contactEmail) {}
     public record ReportActionRequest(@NotBlank @Pattern(regexp = "OPEN|IN_PROGRESS|RESOLVED|REJECTED") String status,
                                       @Size(max = 180) String assigneeEmail,
                                       @Size(max = 1000) String resolution) {}

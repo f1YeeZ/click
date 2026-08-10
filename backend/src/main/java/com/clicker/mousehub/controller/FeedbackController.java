@@ -22,4 +22,9 @@ public class FeedbackController {
     public ContentReportView report(Authentication authentication, @Valid @RequestBody ReportCreateRequest request) {
         return feedback.create(authentication.getName(), request);
     }
+    @PostMapping("/feedback") @ResponseStatus(HttpStatus.CREATED)
+    public ContentReportView generalFeedback(Authentication authentication,
+                                             @Valid @RequestBody GeneralFeedbackRequest request) {
+        return feedback.createGeneral(authentication == null ? null : authentication.getName(), request);
+    }
 }

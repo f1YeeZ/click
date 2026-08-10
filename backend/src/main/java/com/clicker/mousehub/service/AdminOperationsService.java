@@ -16,6 +16,7 @@ import java.time.*;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.clicker.mousehub.util.CsvSecurity;
 
 @Service
 public class AdminOperationsService {
@@ -185,8 +186,7 @@ public class AdminOperationsService {
     private long countBrand(String name) { return mice.selectCount(new LambdaQueryWrapper<MouseDevice>().eq(MouseDevice::getBrand, name)); }
     private static <T> Map<LocalDate, Long> countByDate(List<T> values, Function<T, OffsetDateTime> date) { return values.stream().collect(Collectors.groupingBy(value -> date.apply(value).toLocalDate(), Collectors.counting())); }
     private static byte[] utf8Csv(String value) { byte[] content = value.getBytes(StandardCharsets.UTF_8); byte[] output = new byte[content.length + 3]; output[0] = (byte) 0xEF; output[1] = (byte) 0xBB; output[2] = (byte) 0xBF; System.arraycopy(content, 0, output, 3, content.length); return output; }
-    private static String row(Object... cells) { return Arrays.stream(cells).map(AdminOperationsService::cell).collect(Collectors.joining(",")); }
-    private static String cell(Object value) { String text = value == null ? "" : value.toString(); return "\"" + text.replace("\"", "\"\"") + "\""; }
+    private static String row(Object... cells) { return Arrays.stream(cells).map(CsvSecurity::cell).collect(Collectors.joining(",")); }
     private static String blank(String value) { return value == null || value.isBlank() ? null : value.trim(); }
     private static BusinessException notFound(String label) { return new BusinessException("NOT_FOUND", label + "不存在", HttpStatus.NOT_FOUND); }
 }

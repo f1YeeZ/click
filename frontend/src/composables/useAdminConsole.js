@@ -2,6 +2,7 @@ import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, react
 import { useRoute, useRouter } from "vue-router";
 import api, { errorMessage } from "../api/client";
 import { useAdminAuthStore } from "../stores/auth";
+import { onRealtime } from "../services/realtime";
 
 export const useAdminConsole = () => {
 const auth = useAdminAuthStore();
@@ -15,6 +16,7 @@ const notice = ref("");
 let noticeTimer = null;
 let errorTimer = null;
 let reloadOnNextActivation = false;
+let stopAdminRealtime = () => {};
 const dashboard = ref(null);
 const mice = ref({
     items: [],
@@ -668,6 +670,19 @@ const loadAdminConsole = async () => {
 };
 onMounted(() => {
     window.addEventListener("keydown", handleEscape);
+    stopAdminRealtime = onRealtime((event) => {
+        if (!auth.authenticated || !auth.admin) return;
+        if (event.type === "review.changed") {
+            loadDashboard();
+            if (activeTab.value === "reviews") loadReviews(reviewPage.value);
+        } else if (event.type === "mouse.changed") {
+            loadDashboard();
+            if (activeTab.value === "mice") loadMice(mousePage.value);
+        } else if (event.type === "sync.required") {
+            loadDashboard();
+            refreshTab();
+        }
+    });
     loadAdminConsole();
 });
 onActivated(() => {
@@ -680,6 +695,7 @@ onDeactivated(() => {
 });
 onBeforeUnmount(() => {
     window.removeEventListener("keydown", handleEscape);
+    stopAdminRealtime();
     if (noticeTimer) window.clearTimeout(noticeTimer);
     if (errorTimer) window.clearTimeout(errorTimer);
 });

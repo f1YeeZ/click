@@ -84,7 +84,9 @@ class ClickerSmokeTest(unittest.TestCase):
         self.requests = []
         self.review_saved = False
         self.grip_scores = []
-        self.personal_support_dabs = []
+        self.personal_support_dabs_by_grip = {
+            "PALM": [], "CLAW": [], "FINGERTIP": [], "MIXED": [],
+        }
         self.support_summary = {
             "sampleCount": 0, "positions": [], "cells": [], "maxCount": 0,
             "gridColumns": 64, "gridRows": 96,
@@ -138,7 +140,7 @@ class ClickerSmokeTest(unittest.TestCase):
             route.fulfill(
                 status=201,
                 content_type="application/json",
-                body=json.dumps({"message": "验证码已发送", "expiresInSeconds": 600, "resendAfterSeconds": 60}, ensure_ascii=False),
+                body=json.dumps({"message": "验证码已发送", "expiresInSeconds": 60, "resendAfterSeconds": 60}, ensure_ascii=False),
             )
             return
         if path == "/api/v1/users" and method == "POST":
@@ -166,7 +168,7 @@ class ClickerSmokeTest(unittest.TestCase):
             route.fulfill(status=202, content_type="application/json", body=json.dumps({
                 "secondFactorRequired": True,
                 "challengeId": "11111111-1111-1111-1111-111111111111",
-                "expiresInSeconds": 600,
+                "expiresInSeconds": 60,
             }))
             return
         if path == "/api/v1/admin-sessions/verify" and method == "POST":
@@ -252,7 +254,11 @@ class ClickerSmokeTest(unittest.TestCase):
             route.fulfill(content_type="application/json", body=json.dumps({
                 "id": "review-a", "mouseId": "mouse-a", "comfortAverage": 8.0,
                 "gripComforts": self.grip_scores, "supportPositions": [], "supportCells": [],
-                "supportDabs": self.personal_support_dabs,
+                "supportByGrip": [
+                    {"gripStyle": grip_style, "supportDabs": dabs, "supportCells": []}
+                    for grip_style, dabs in self.personal_support_dabs_by_grip.items()
+                    if dabs
+                ],
             }))
             return
         if path == "/api/v1/mice/mouse-a/reviews" and method == "GET":
@@ -268,6 +274,14 @@ class ClickerSmokeTest(unittest.TestCase):
             grip_style = path.rsplit("/", 1)[-1]
             score = json.loads(route.request.post_data or "{}").get("comfortScore", 8)
             self.grip_scores.append({"gripStyle": grip_style, "comfortScore": score})
+            self.review_saved = True
+            route.fulfill(content_type="application/json", body='{}')
+            return
+        if path.startswith("/api/v1/mice/mouse-a/reviews/mine/support-positions/") and method == "PUT":
+            grip_style = path.rsplit("/", 1)[-1]
+            self.personal_support_dabs_by_grip[grip_style] = json.loads(
+                route.request.post_data or "{}"
+            ).get("dabs", [])
             self.review_saved = True
             route.fulfill(content_type="application/json", body='{}')
             return
@@ -426,7 +440,7 @@ class ClickerSmokeTest(unittest.TestCase):
                 content_type="application/json",
                 body=json.dumps({
                     "message": "如果该邮箱已注册，重置验证码将发送至邮箱",
-                    "expiresInSeconds": 600,
+                    "expiresInSeconds": 60,
                     "resendAfterSeconds": 60,
                 }, ensure_ascii=False),
             )
@@ -667,10 +681,20 @@ class ClickerSmokeTest(unittest.TestCase):
         self.page.keyboard.press("Escape")
         expect(dialog).to_be_hidden()
         self.page.get_by_role("button", name="写评价").click()
-        self.page.get_by_role("button", name="提交抓握评分").click()
-        expect(self.page.get_by_text("握持舒适度已提交", exact=True)).to_be_visible()
+        dialog.get_by_role("tab", name=re.compile("抓握")).click()
+        dialog.get_by_label("抓握舒适度评分").press("ArrowRight")
+        support_model = dialog.locator(".hand-support-3d")
+        expect(support_model).to_have_class(re.compile(r"\bis-ready\b"), timeout=10000)
+        support_canvas = support_model.locator('canvas[aria-label="可涂抹的抓握个人支撑位置图"]')
+        bounds = support_canvas.bounding_box()
+        self.assertIsNotNone(bounds)
+        support_canvas.click(position={"x": bounds["width"] * 0.5, "y": bounds["height"] * 0.65})
+        dialog.get_by_role("button", name="提交抓握完整评价").click()
+        expect(dialog.get_by_text("抓握评分与支撑图已一并保存", exact=True)).to_be_visible()
         review_request = next(item for item in self.requests if item[:2] == ("PUT", "/api/v1/mice/mouse-a/reviews/mine/grip-scores/CLAW"))
-        self.assertEqual(json.loads(review_request[2]), {"comfortScore": 8})
+        self.assertEqual(json.loads(review_request[2]), {"comfortScore": 9})
+        support_request = next(item for item in self.requests if item[:2] == ("PUT", "/api/v1/mice/mouse-a/reviews/mine/support-positions/CLAW"))
+        self.assertGreater(len(json.loads(support_request[2])["dabs"]), 0)
 
     def test_completed_grip_scores_remain_readable_on_mobile(self):
         user = {
@@ -691,31 +715,25 @@ class ClickerSmokeTest(unittest.TestCase):
         )
         self.page.goto(f"{BASE_URL}/mice/mouse-a")
         manage_review = self.page.get_by_role("button", name="管理我的评价")
-        manage_review_style = manage_review.evaluate(
-            "element => { const style = getComputedStyle(element); return { background: style.backgroundColor, color: style.color, fontWeight: style.fontWeight }; }"
-        )
-        self.assertEqual(manage_review_style["background"], "rgb(29, 78, 216)")
-        self.assertEqual(manage_review_style["color"], "rgb(255, 255, 255)")
-        self.assertEqual(manage_review_style["fontWeight"], "700")
+        expect(manage_review).to_be_visible()
+        manage_review_box = manage_review.bounding_box()
+        self.assertIsNotNone(manage_review_box)
+        self.assertLessEqual(manage_review_box["x"] + manage_review_box["width"], 390)
         manage_review.click()
 
-        completed_cards = self.page.locator(".grip-score-list article.completed")
-        expect(completed_cards).to_have_count(4)
-        expect(self.page.get_by_text("✓ 已完成该握姿评分", exact=True)).to_have_count(4)
-
-        delete_button = completed_cards.first.locator(".item-delete-button.compact")
-        styles = delete_button.evaluate(
-            "element => { const style = getComputedStyle(element); return { color: style.color, background: style.backgroundColor, fontSize: parseFloat(style.fontSize) }; }"
-        )
-        self.assertEqual(styles["color"], "rgb(229, 226, 227)")
-        self.assertEqual(styles["background"], "rgb(11, 11, 12)")
-        self.assertGreaterEqual(styles["fontSize"], 11.5)
-        self.assertTrue(completed_cards.evaluate_all(
-            "cards => cards.every(card => card.scrollWidth <= card.clientWidth)"
+        grip_tabs = self.page.locator(".support-grip-tabs button")
+        expect(grip_tabs).to_have_count(4)
+        for score in (7, 8, 4, 8):
+            expect(self.page.locator(".support-grip-tabs")).to_contain_text(f"已评分 {score}")
+        self.assertTrue(grip_tabs.evaluate_all(
+            "tabs => tabs.every(tab => tab.scrollWidth <= tab.clientWidth && parseFloat(getComputedStyle(tab.querySelector('small')).fontSize) >= 12)"
         ))
+        dialog_box = self.page.locator(".review-dialog").bounding_box()
+        self.assertIsNotNone(dialog_box)
+        self.assertLessEqual(dialog_box["width"], 390)
         screenshot_path = os.environ.get("E2E_READABILITY_SCREENSHOT")
         if screenshot_path:
-            self.page.locator(".grip-score-list").screenshot(path=screenshot_path)
+            self.page.locator(".support-grip-tabs").screenshot(path=screenshot_path)
 
     def test_public_support_heatmap_is_separate_from_my_editable_map(self):
         user = {
@@ -724,7 +742,7 @@ class ClickerSmokeTest(unittest.TestCase):
         }
         self.allow_user_refresh = True
         self.review_saved = True
-        self.personal_support_dabs = [{"x": 500, "y": 650, "radius": 70, "mode": "PAINT"}]
+        self.personal_support_dabs_by_grip["CLAW"] = [{"x": 500, "y": 650, "radius": 70, "mode": "PAINT"}]
         self.support_summary = {
             "sampleCount": 12,
             "positions": [],
@@ -745,7 +763,8 @@ class ClickerSmokeTest(unittest.TestCase):
         self.page.get_by_role("button", name="管理我的评价").click()
         expect(self.page.locator(".personal-support-editor")).to_be_visible()
         expect(self.page.locator(".hand-support-3d")).to_have_count(2)
-        expect(self.page.locator('.personal-support-editor canvas[aria-label="可涂抹的个人支撑位置图"]')).to_be_visible()
+        self.page.locator(".support-grip-tabs").get_by_role("tab", name=re.compile("抓握")).click()
+        expect(self.page.locator('.personal-support-editor canvas[aria-label="可涂抹的抓握个人支撑位置图"]')).to_be_visible()
         expect(self.page.locator(".personal-support-editor .support-tools")).to_be_visible()
 
         desktop_screenshot = os.environ.get("E2E_SUPPORT_DESKTOP_SCREENSHOT")
@@ -790,7 +809,8 @@ class ClickerSmokeTest(unittest.TestCase):
         self.page.mouse.move(center_x + 24, center_y + 12, steps=4)
         self.page.mouse.up(button="right")
         self.page.wait_for_timeout(150)
-        expect(self.page.locator(".personal-support-editor > header > em")).to_have_text("尚未涂抹")
+        support_status = self.page.locator(".personal-support-editor .support-selection-status > strong")
+        expect(support_status).to_have_text("尚未涂抹支撑区域")
         self.assertTrue(self.page.evaluate("window.__supportRightPointerDefaultPrevented"))
 
         self.page.get_by_role("button", name="旋转查看").click()
@@ -807,10 +827,10 @@ class ClickerSmokeTest(unittest.TestCase):
         self.page.mouse.down(button="middle")
         self.page.mouse.move(center_x, center_y + 16, steps=3)
         self.page.mouse.up(button="middle")
-        expect(self.page.locator(".personal-support-editor > header > em")).to_have_text("尚未涂抹")
+        expect(support_status).to_have_text("尚未涂抹支撑区域")
 
         self.page.mouse.click(center_x, center_y, button="left")
-        expect(self.page.locator(".personal-support-editor > header > em")).to_contain_text("已涂抹约")
+        expect(support_status).to_contain_text("已涂抹约")
 
     def test_admin_can_preview_and_commit_a_csv_import(self):
         admin = {"id": "admin-a", "email": "admin@example.com", "role": "ADMIN"}
@@ -1077,7 +1097,7 @@ class ClickerSmokeTest(unittest.TestCase):
         self.page.goto(f"{BASE_URL}/compare")
         self.page.wait_for_load_state("networkidle")
         expect(self.page.locator(".selected-list .selected-mouse-row")).to_have_count(2)
-        expect(self.page.locator(".comparison-table")).to_contain_text("+11.1%")
+        expect(self.page.locator(".comparison-table")).to_contain_text("+6g")
         self.assertEqual(parse_qs(urlparse(self.page.url).query).get("ids"), ["mouse-a,mouse-b"])
 
     def test_forgotten_password_can_be_reset_from_the_login_page(self):

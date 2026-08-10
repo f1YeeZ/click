@@ -59,9 +59,12 @@ public class AdminService {
         long userActive = users.selectCount(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getStatus, "ACTIVE"));
         long userAdmin = users.selectCount(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getRole, "ADMIN"));
         long userDisabled = users.selectCount(new LambdaQueryWrapper<UserAccount>().eq(UserAccount::getStatus, "DISABLED"));
-        long reviewTotal = reviews.selectCount(null);
-        long reviewActive = reviews.selectCount(new LambdaQueryWrapper<Review>().eq(Review::getStatus, "ACTIVE"));
-        long pending = reviews.selectCount(new LambdaQueryWrapper<Review>().eq(Review::getStatus, "PENDING"));
+        long reviewTotal = reviews.selectCount(new LambdaQueryWrapper<Review>()
+                .and(wrapper -> wrapper.isNull(Review::getDeletedAt).or().eq(Review::getStatus, "DISABLED")));
+        long reviewActive = reviews.selectCount(new LambdaQueryWrapper<Review>()
+                .eq(Review::getStatus, "ACTIVE").isNull(Review::getDeletedAt));
+        long pending = reviews.selectCount(new LambdaQueryWrapper<Review>()
+                .eq(Review::getStatus, "PENDING").isNull(Review::getDeletedAt));
         List<MouseDevice> allMice = mice.selectList(null);
         List<MouseDevice> operationalMice = allMice.stream().filter(mouse -> !"ARCHIVED".equals(mouse.getStatus())).toList();
         int quality = operationalMice.isEmpty() ? 0 : (int) Math.round(operationalMice.stream()
@@ -70,7 +73,9 @@ public class AdminService {
         long stale = operationalMice.stream().filter(mouse -> "STALE".equals(MouseDataQuality.verificationStatus(mouse))).count();
         List<AdminUserView> recentUsers = users.selectList(new LambdaQueryWrapper<UserAccount>().orderByDesc(UserAccount::getCreatedAt).last("LIMIT 5"))
                 .stream().map(AdminUserView::from).toList();
-        List<Review> recentReviewEntities = reviews.selectList(new LambdaQueryWrapper<Review>().orderByDesc(Review::getCreatedAt).last("LIMIT 5"));
+        List<Review> recentReviewEntities = reviews.selectList(new LambdaQueryWrapper<Review>()
+                .and(wrapper -> wrapper.isNull(Review::getDeletedAt).or().eq(Review::getStatus, "DISABLED"))
+                .orderByDesc(Review::getCreatedAt).last("LIMIT 5"));
         List<AdminReviewView> recentReviews = recentReviewEntities.stream().map(this::reviewView).toList();
         List<MouseView> recentMice = mice.selectList(new LambdaQueryWrapper<MouseDevice>().orderByDesc(MouseDevice::getCreatedAt).last("LIMIT 5"))
                 .stream().map(MouseView::from).toList();
@@ -126,6 +131,7 @@ public class AdminService {
                     }
                     if (matchingUserIds.isEmpty() && matchingMouseIds.isEmpty()) wrapper.eq(Review::getId, new UUID(0, 0));
                 })
+                .and(wrapper -> wrapper.isNull(Review::getDeletedAt).or().eq(Review::getStatus, "DISABLED"))
                 .eq(hasText(status), Review::getStatus, status).orderByDesc(Review::getCreatedAt));
         return new PageResponse<>(result.getRecords().stream().map(this::reviewView).toList(), meta(result));
     }
@@ -187,12 +193,19 @@ public class AdminService {
     @Transactional
     public AdminReviewView updateReviewStatus(UUID id, ModerationRequest request) {
         if (!Set.of("ACTIVE", "DISABLED", "PENDING").contains(request.status())) throw invalidStatus();
+        Review candidate = reviews.selectById(id); if (candidate == null) throw notFound("评价");
+        users.selectForUpdate(candidate.getUserId());
         Review review = reviews.selectById(id); if (review == null) throw notFound("评价");
+        if (review.getDeletedAt() != null && !"DISABLED".equals(review.getStatus())) {
+            throw new BusinessException("REVIEW_DELETED_BY_USER", "用户已删除该评价，后台不能重新公开", HttpStatus.CONFLICT);
+        }
         if ("DISABLED".equals(request.status()) && !hasText(request.reason())) {
             throw new BusinessException("MODERATION_REASON_REQUIRED", "停用评价时必须填写处理原因", HttpStatus.BAD_REQUEST);
         }
         AdminReviewView before = reviewView(review);
-        review.setStatus(request.status()); review.setDeletedAt("DISABLED".equals(request.status()) ? OffsetDateTime.now() : null);
+        review.setStatus(request.status());
+        // Moderation state is represented by status. deletedAt is reserved for an author's own deletion.
+        review.setDeletedAt(null);
         review.setModerationReason(hasText(request.reason()) ? request.reason().trim() : null);
         review.setModeratedBy(audit.currentActor());
         review.setModeratedAt(OffsetDateTime.now());

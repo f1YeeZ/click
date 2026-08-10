@@ -5,6 +5,7 @@ import com.clicker.mousehub.entity.UserAccount;
 import com.clicker.mousehub.entity.MouseDevice;
 import com.clicker.mousehub.entity.Review;
 import com.clicker.mousehub.mapper.MouseMapper;
+import com.clicker.mousehub.mapper.ContentReportMapper;
 import com.clicker.mousehub.mapper.UserMapper;
 import com.clicker.mousehub.mapper.ReviewMapper;
 import com.clicker.mousehub.service.EmailVerificationService;
@@ -43,6 +44,7 @@ class ApiIntegrationTest {
     @Autowired RecordingMailService mail;
     @Autowired UserMapper users;
     @Autowired MouseMapper mice;
+    @Autowired ContentReportMapper reports;
     @Autowired ReviewMapper reviews;
     @Autowired PasswordEncoder passwordEncoder;
 
@@ -149,6 +151,29 @@ class ApiIntegrationTest {
 
     @Test
     @Transactional
+    void currentReviewRequiresAuthentication() throws Exception {
+        MouseDevice mouse = publishedMouse();
+        mice.insert(mouse);
+
+        mvc.perform(get("/api/v1/mice/" + mouse.getId() + "/reviews/mine"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code", is("AUTHENTICATION_REQUIRED")));
+    }
+
+    @Test
+    @Transactional
+    void unpublishedMouseReviewsAreNotPublic() throws Exception {
+        MouseDevice mouse = publishedMouse();
+        mouse.setStatus("DRAFT");
+        mice.insert(mouse);
+
+        mvc.perform(get("/api/v1/mice/" + mouse.getId() + "/reviews"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code", is("MOUSE_NOT_FOUND")));
+    }
+
+    @Test
+    @Transactional
     @WithMockUser(username = "admin@example.com", roles = "ADMIN")
     void adminCreationAndStatusChangeUseResourceSemantics() throws Exception {
         String payload = """
@@ -177,6 +202,51 @@ class ApiIntegrationTest {
         mvc.perform(delete("/api/v1/admin/mice/" + id))
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(jsonPath("$.error.code", is("METHOD_NOT_ALLOWED")));
+    }
+
+    @Test
+    @Transactional
+    void publicFeedbackCreatesAnAnonymousAdminWorkItem() throws Exception {
+        mvc.perform(post("/api/v1/feedback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "category":"MOUSE_MISSING",
+                                  "description":"希望加入的鼠标：VAXEE XE Wireless",
+                                  "contactEmail":"visitor@example.com"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.targetType", is("SITE")))
+                .andExpect(jsonPath("$.targetLabel", is("Clicker Index 前台")))
+                .andExpect(jsonPath("$.category", is("MOUSE_MISSING")))
+                .andExpect(jsonPath("$.reporterEmail", is("visitor@example.com")));
+
+        org.assertj.core.api.Assertions.assertThat(reports.selectCount(null)).isEqualTo(1L);
+        mvc.perform(get("/api/v1/admin/reports")
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin@example.com").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].targetType", is("SITE")))
+                .andExpect(jsonPath("$.items[0].category", is("MOUSE_MISSING")));
+    }
+
+    @Test
+    @Transactional
+    @WithMockUser(username = "reporter@example.com")
+    void unresolvedDuplicateReportsAreRejected() throws Exception {
+        users.insert(user("reporter@example.com", "USER"));
+        MouseDevice mouse = publishedMouse();
+        mice.insert(mouse);
+        String payload = """
+                {"targetType":"MOUSE","targetId":"%s","category":"DATA_ERROR","description":"参数来源需要复核"}
+                """.formatted(mouse.getId());
+
+        mvc.perform(post("/api/v1/reports").contentType(MediaType.APPLICATION_JSON).content(payload))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/v1/reports").contentType(MediaType.APPLICATION_JSON).content(payload))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code", is("DUPLICATE_REPORT")));
     }
 
     @Test
@@ -382,13 +452,18 @@ class ApiIntegrationTest {
                         .content("{\"email\":\"USER@example.com\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", "/api/v1/registration-verification-codes/current"))
-                .andExpect(jsonPath("$.expiresInSeconds", is(600)))
+                .andExpect(jsonPath("$.expiresInSeconds", is(60)))
                 .andExpect(jsonPath("$.resendAfterSeconds", is(60)));
         String registrationCode = mail.codeFor(EmailVerificationService.REGISTER);
 
         mvc.perform(post("/api/v1/users").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"USER@example.com\",\"password\":\"password123\",\"verificationCode\":\""
                                 + registrationCode + "\"}"))
+                .andExpect(status().isBadRequest());
+
+        mvc.perform(post("/api/v1/users").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"USER@example.com\",\"password\":\"123456789012345678901234567890123\",\"verificationCode\":\""
+                                + registrationCode + "\",\"acceptedTerms\":true}"))
                 .andExpect(status().isBadRequest());
 
         String body = "{\"email\":\"USER@example.com\",\"password\":\"password123\",\"verificationCode\":\""
@@ -608,7 +683,7 @@ class ApiIntegrationTest {
         RecordingMailService() { super(null, false, ""); }
 
         @Override
-        public void verificationCode(String recipient, String code, long expiresMinutes, String purpose) {
+        public void verificationCode(String recipient, String code, long expiresSeconds, String purpose) {
             sentCodes.put(purpose, code);
         }
 

@@ -63,7 +63,7 @@ public class SessionService {
 
     @Transactional
     public SessionGrant refresh(String rawRefreshToken, boolean adminRequired) {
-        AuthSession session = find(rawRefreshToken);
+        AuthSession session = findForUpdate(rawRefreshToken);
         if (session == null || session.getRevokedAt() != null || !session.getExpiresAt().isAfter(OffsetDateTime.now())) {
             throw unauthorized();
         }
@@ -120,6 +120,11 @@ public class SessionService {
     private AuthSession find(String raw) {
         if (raw == null || raw.isBlank()) return null;
         return sessions.selectOne(Wrappers.<AuthSession>lambdaQuery().eq(AuthSession::getRefreshTokenHash, hash(raw)));
+    }
+
+    private AuthSession findForUpdate(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        return sessions.selectByRefreshTokenHashForUpdate(hash(raw));
     }
 
     private void revoke(AuthSession session) {

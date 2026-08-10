@@ -4,7 +4,9 @@ import com.clicker.mousehub.common.BusinessException;
 import com.clicker.mousehub.entity.UserAccount;
 import com.clicker.mousehub.security.JwtService;
 import com.clicker.mousehub.security.SecurityRateLimitFilter;
+import com.clicker.mousehub.security.ClientAddressResolver;
 import com.clicker.mousehub.service.RealtimeEventService;
+import com.clicker.mousehub.util.CsvSecurity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.JwtException;
 import org.junit.jupiter.api.Test;
@@ -61,6 +63,23 @@ class SecurityComponentsTest {
     }
 
     @Test
+    void reportAndPerGripSupportWritesAreRateLimited() throws Exception {
+        SecurityRateLimitFilter filter = new SecurityRateLimitFilter(new ObjectMapper().findAndRegisterModules());
+        String mouseId = UUID.randomUUID().toString();
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+            assertThat(invoke(filter, "POST", "/api/v1/reports").getStatus()).isEqualTo(204);
+        }
+        assertThat(invoke(filter, "POST", "/api/v1/reports").getStatus()).isEqualTo(429);
+
+        String supportPath = "/api/v1/mice/" + mouseId + "/reviews/mine/support-positions/CLAW";
+        for (int attempt = 0; attempt < 10; attempt++) {
+            assertThat(invoke(filter, "PUT", supportPath).getStatus()).isEqualTo(204);
+        }
+        assertThat(invoke(filter, "PUT", supportPath).getStatus()).isEqualTo(429);
+    }
+
+    @Test
     void realtimePayloadIsLowSensitivityAndConnectionsAreLimitedPerAddress() throws Exception {
         ObjectMapper json = new ObjectMapper().findAndRegisterModules();
         String payload = json.writeValueAsString(new RealtimeEventService.RealtimeEvent(
@@ -76,6 +95,31 @@ class SecurityComponentsTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("连接数量过多");
         first.complete();
+    }
+
+    @Test
+    void forwardedAddressesAreAcceptedOnlyFromTrustedProxyChains() {
+        ClientAddressResolver resolver = new ClientAddressResolver("10.0.0.0/8,127.0.0.1/32");
+        MockHttpServletRequest direct = new MockHttpServletRequest();
+        direct.setRemoteAddr("203.0.113.9");
+        direct.addHeader("X-Forwarded-For", "192.0.2.55");
+        assertThat(resolver.resolve(direct)).isEqualTo("203.0.113.9");
+
+        MockHttpServletRequest proxied = new MockHttpServletRequest();
+        proxied.setRemoteAddr("10.1.0.5");
+        proxied.addHeader("X-Forwarded-For", "192.0.2.55, 198.51.100.7, 10.2.0.8");
+        assertThat(resolver.resolve(proxied)).isEqualTo("198.51.100.7");
+    }
+
+    @Test
+    void spreadsheetCellsNeutralizeFormulaPrefixes() {
+        assertThat(CsvSecurity.cell("=HYPERLINK(\"https://attacker.example\")"))
+                .startsWith("\"'=HYPERLINK(");
+        assertThat(CsvSecurity.cell("  @SUM(1,1)"))
+                .startsWith("\"'  @SUM");
+        assertThat(CsvSecurity.cell("normal@example.com"))
+                .isEqualTo("\"normal@example.com\"");
+        assertThat(CsvSecurity.cell(-12)).isEqualTo("\"-12\"");
     }
 
     private MockHttpServletResponse invokeLogin(SecurityRateLimitFilter filter) throws Exception {

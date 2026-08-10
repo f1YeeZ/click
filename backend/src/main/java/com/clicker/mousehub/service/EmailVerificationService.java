@@ -33,12 +33,12 @@ public class EmailVerificationService {
     private final Duration resendAfter;
 
     public EmailVerificationService(EmailVerificationCodeMapper codes, PasswordEncoder encoder, MailService mail,
-                                    @Value("${app.verification.expires-minutes:10}") long expiresMinutes,
+                                    @Value("${app.verification.expires-seconds:60}") long expiresSeconds,
                                     @Value("${app.verification.resend-seconds:60}") long resendSeconds) {
         this.codes = codes;
         this.encoder = encoder;
         this.mail = mail;
-        this.validFor = Duration.ofMinutes(expiresMinutes);
+        this.validFor = Duration.ofSeconds(expiresSeconds);
         this.resendAfter = Duration.ofSeconds(resendSeconds);
     }
 
@@ -67,12 +67,12 @@ public class EmailVerificationService {
         code.setExpiresAt(now.plus(validFor));
         code.setCreatedAt(now);
         codes.insert(code);
-        mail.verificationCode(email, plainCode, validFor.toMinutes(), purpose);
+        mail.verificationCode(email, plainCode, validFor.toSeconds(), purpose);
         return new VerificationCodeResponse("验证码已发送，请查收邮件", validFor.toSeconds(), resendAfter.toSeconds());
     }
 
     public void verifyAndConsume(String email, String purpose, String plainCode) {
-        EmailVerificationCode code = latest(email, purpose);
+        EmailVerificationCode code = codes.selectLatestForUpdate(email, purpose);
         OffsetDateTime now = OffsetDateTime.now();
         if (code == null || code.getConsumedAt() != null || !code.getExpiresAt().isAfter(now)) {
             throw invalid("验证码无效或已过期，请重新获取");

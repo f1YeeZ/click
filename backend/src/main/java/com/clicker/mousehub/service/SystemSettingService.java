@@ -6,6 +6,7 @@ import com.clicker.mousehub.entity.SystemSetting;
 import com.clicker.mousehub.mapper.SystemSettingMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.*;
 
@@ -27,7 +28,10 @@ public class SystemSettingService {
             "security.session-days", "登录会话有效天数（配置提示）");
     private final SystemSettingMapper settings;
     private final AuditLogService audit;
-    public SystemSettingService(SystemSettingMapper settings, AuditLogService audit) { this.settings = settings; this.audit = audit; }
+    private final RealtimeEventService events;
+    public SystemSettingService(SystemSettingMapper settings, AuditLogService audit, RealtimeEventService events) {
+        this.settings = settings; this.audit = audit; this.events = events;
+    }
 
     public List<SettingView> list() {
         Map<String, SystemSetting> stored = new HashMap<>();
@@ -35,6 +39,7 @@ public class SystemSettingService {
         return DEFAULTS.keySet().stream().sorted().map(key -> view(key, stored.get(key))).toList();
     }
 
+    @Transactional
     public SettingView update(String key, String value) {
         if (!DEFAULTS.containsKey(key)) throw new BusinessException("UNKNOWN_SETTING", "不支持的系统设置", HttpStatus.NOT_FOUND);
         validate(key, value);
@@ -44,6 +49,7 @@ public class SystemSettingService {
         setting.setUpdatedBy(audit.currentActor()); setting.setUpdatedAt(OffsetDateTime.now());
         if (before == null) settings.insert(setting); else settings.updateById(setting);
         audit.record("SYSTEM_SETTING_UPDATE", "SETTING", key, "更新系统设置：" + key, before, setting, null);
+        events.publishAfterCommit("settings.changed", null);
         return view(key, setting);
     }
 

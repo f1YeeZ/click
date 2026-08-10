@@ -320,7 +320,9 @@ public class MouseService {
         return records.stream().map(mouse -> {
             List<Review> mouseReviews = byMouse.getOrDefault(mouse.getId(), List.of());
             BigDecimal average = mouseReviews.isEmpty() ? BigDecimal.ZERO : mouseReviews.stream()
-                    .map(review -> BigDecimal.valueOf(review.getComfortScore())).reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .map(review -> review.getOverallScore() == null || review.getOverallScore().signum() == 0
+                            ? BigDecimal.valueOf(review.getComfortScore()) : review.getOverallScore())
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
                     .divide(BigDecimal.valueOf(mouseReviews.size()), 1, java.math.RoundingMode.HALF_UP);
             return MouseView.from(mouse, average, mouseReviews.size());
         }).toList();

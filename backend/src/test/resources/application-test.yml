@@ -9,6 +9,8 @@ spring:
       mode: never
 
 app:
+  security:
+    rate-limit-dialect: h2
   seed:
     enabled: false
   mail:

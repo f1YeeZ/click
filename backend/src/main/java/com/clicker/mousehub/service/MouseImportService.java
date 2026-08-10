@@ -8,6 +8,7 @@ import com.clicker.mousehub.entity.MouseDevice;
 import com.clicker.mousehub.entity.MouseImportJob;
 import com.clicker.mousehub.mapper.MouseImportJobMapper;
 import com.clicker.mousehub.mapper.MouseMapper;
+import com.clicker.mousehub.util.CsvSecurity;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import org.apache.commons.csv.CSVFormat;
@@ -125,7 +126,7 @@ public class MouseImportService {
         return csv.toString();
     }
 
-    private static String csvCell(Object value) { return "\"" + (value == null ? "" : value.toString()).replace("\"", "\"\"") + "\""; }
+    private static String csvCell(Object value) { return CsvSecurity.cell(value); }
 
     public byte[] template() {
         try {

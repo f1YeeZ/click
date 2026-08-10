@@ -67,13 +67,13 @@ class ReviewServiceIntegrationTest {
         assertThat(reviews.mine(mouse.getId(), email).gripComforts()).hasSize(4);
         assertThatThrownBy(() -> reviews.saveGrip(mouse.getId(), email, "PALM", new GripScoreRequest(9)))
                 .hasMessageContaining("已经评价过");
-        assertThat(reviews.summary(mouse.getId(), null, "MEDIUM").sampleCount()).isEqualTo(4);
+        assertThat(reviews.summary(mouse.getId(), null, "MEDIUM").sampleCount()).isEqualTo(1);
 
         reviews.deleteGrip(mouse.getId(), email, "CLAW");
         assertThat(reviews.mine(mouse.getId(), email).gripComforts()).extracting("gripStyle")
                 .containsExactlyInAnyOrder("PALM", "FINGERTIP", "MIXED");
         assertThat(reviews.summary(mouse.getId()).overallAverage()).isEqualByComparingTo(new BigDecimal("8.0"));
-        assertThat(reviews.summary(mouse.getId()).sampleCount()).isEqualTo(3);
+        assertThat(reviews.summary(mouse.getId()).sampleCount()).isEqualTo(1);
 
         String smallHandEmail = "small-hand-reviewer@example.com";
         createUser(smallHandEmail);
@@ -81,7 +81,7 @@ class ReviewServiceIntegrationTest {
         reviews.saveGrip(mouse.getId(), smallHandEmail, "PALM", new GripScoreRequest(3));
         var mediumGripFilter = reviews.summary(mouse.getId(), null, "MEDIUM");
         assertThat(mediumGripFilter.overallAverage()).isEqualByComparingTo(new BigDecimal("8.0"));
-        assertThat(mediumGripFilter.sampleCount()).isEqualTo(3);
+        assertThat(mediumGripFilter.sampleCount()).isEqualTo(1);
         var unmatchedGripFilter = reviews.summary(mouse.getId(), "PALM", "SMALL");
         assertThat(unmatchedGripFilter.overallAverage()).isEqualByComparingTo(new BigDecimal("3.0"));
         assertThat(unmatchedGripFilter.sampleCount()).isEqualTo(1);
@@ -102,7 +102,7 @@ class ReviewServiceIntegrationTest {
         assertThat(reviews.summary(mouse.getId()).sampleCount()).isEqualTo(1);
     }
 
-    @Test void gripScoresCanStandAloneAndUsePreferredGripWeight() {
+    @Test void gripScoresUseOneConsistentPerReviewAverage() {
         String email = "weighted-grip-reviewer@example.com";
         createUser(email);
         auth.updateProfile(email, new ProfileRequest(new BigDecimal("18.0"), "CLAW"));
@@ -114,8 +114,30 @@ class ReviewServiceIntegrationTest {
 
         var mine = reviews.mine(mouse.getId(), email);
         assertThat(mine.gripComforts()).hasSize(2);
-        assertThat(reviews.summary(mouse.getId()).overallAverage()).isEqualByComparingTo("8.2");
+        assertThat(reviews.summary(mouse.getId()).overallAverage()).isEqualByComparingTo("6.0");
         assertThat(reviews.summary(mouse.getId()).lowSample()).isTrue();
+    }
+
+    @Test void pendingAndAuthorDeletedReviewsCannotBeChangedByModerationRaces() {
+        String pendingEmail = "pending-reviewer@example.com";
+        createUser(pendingEmail);
+        auth.updateProfile(pendingEmail, new ProfileRequest(new BigDecimal("18.0"), "CLAW"));
+        MouseDevice mouse = mouse();
+        mice.insert(mouse);
+
+        UUID pendingId = reviews.saveGrip(mouse.getId(), pendingEmail, "CLAW", new GripScoreRequest(7)).id();
+        admin.updateReviewStatus(pendingId, new com.clicker.mousehub.dto.AdminDtos.ModerationRequest("PENDING", "等待复核"));
+        assertThatThrownBy(() -> reviews.saveGrip(mouse.getId(), pendingEmail, "PALM", new GripScoreRequest(8)))
+                .isInstanceOf(com.clicker.mousehub.common.BusinessException.class)
+                .hasMessageContaining("正在审核中");
+
+        admin.updateReviewStatus(pendingId, new com.clicker.mousehub.dto.AdminDtos.ModerationRequest("ACTIVE", "复核完成"));
+        reviews.delete(mouse.getId(), pendingEmail);
+        assertThat(admin.reviews(pendingEmail, null, 1, 12).items()).isEmpty();
+        assertThatThrownBy(() -> admin.updateReviewStatus(pendingId,
+                new com.clicker.mousehub.dto.AdminDtos.ModerationRequest("ACTIVE", "误恢复")))
+                .isInstanceOf(com.clicker.mousehub.common.BusinessException.class)
+                .hasMessageContaining("用户已删除");
     }
 
     @Test void supportPositionsAreMultiSelectReplaceableAndAggregatedBySelectionRate() {

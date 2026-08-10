@@ -1,6 +1,8 @@
 package com.clicker.mousehub.security;
 
 import com.clicker.mousehub.common.ApiError;
+import com.clicker.mousehub.common.BusinessException;
+import com.clicker.mousehub.service.PersistentRateLimitService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -9,6 +11,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -25,6 +28,8 @@ public class SecurityRateLimitFilter extends OncePerRequestFilter {
     private static final List<Rule> RULES = List.of(
             new Rule("POST", "/api/v1/sessions", "auth-login", 10, Duration.ofMinutes(5)),
             new Rule("POST", "/api/v1/admin-sessions", "auth-admin-login", 10, Duration.ofMinutes(5)),
+            new Rule("POST", "/api/v1/sessions/refresh", "auth-refresh", 30, Duration.ofMinutes(1)),
+            new Rule("POST", "/api/v1/admin-sessions/refresh", "auth-admin-refresh", 20, Duration.ofMinutes(1)),
             new Rule("POST", "/api/v1/registration-verification-codes", "auth-register-code", 5, Duration.ofMinutes(10)),
             new Rule("POST", "/api/v1/users", "auth-register", 10, Duration.ofMinutes(10)),
             new Rule("POST", "/api/v1/password-verification-codes", "auth-password-code", 5, Duration.ofMinutes(10)),
@@ -32,16 +37,29 @@ public class SecurityRateLimitFilter extends OncePerRequestFilter {
             new Rule("POST", "/api/v1/password-reset-verification-codes", "auth-password-reset-code", 5, Duration.ofMinutes(10)),
             new Rule("PUT", "/api/v1/password-reset", "auth-password-reset", 10, Duration.ofMinutes(10)),
             new Rule("POST", "/api/v1/analytics/page-views", "page-view", 240, Duration.ofMinutes(1)),
-            new Rule("*", "/api/v1/mice/[0-9a-fA-F-]{36}/reviews/mine(?:/grip-scores/[A-Z]+|/support-positions)?",
+            new Rule("POST", "/api/v1/feedback", "public-feedback", 5, Duration.ofMinutes(10)),
+            new Rule("POST", "/api/v1/reports", "content-report", 5, Duration.ofMinutes(10)),
+            new Rule("GET", "/api/v1/events", "realtime-connect", 20, Duration.ofMinutes(1)),
+            new Rule("*", "/api/v1/mice/[0-9a-fA-F-]{36}/reviews/mine(?:/grip-scores/[A-Za-z]+|/support-positions(?:/[A-Za-z]+)?)?",
                     "review-write", 10, Duration.ofMinutes(1)),
             new Rule("*", "/api/v1/mouse-recommendations", "recommendations", 30, Duration.ofMinutes(1))
     );
 
     private final Map<String, Window> windows = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper;
+    private final PersistentRateLimitService persistentLimits;
+    private final ClientAddressResolver addresses;
 
     public SecurityRateLimitFilter(ObjectMapper objectMapper) {
+        this(objectMapper, null, null);
+    }
+
+    @Autowired
+    public SecurityRateLimitFilter(ObjectMapper objectMapper, PersistentRateLimitService persistentLimits,
+                                   ClientAddressResolver addresses) {
         this.objectMapper = objectMapper;
+        this.persistentLimits = persistentLimits;
+        this.addresses = addresses;
     }
 
     @Override
@@ -59,7 +77,9 @@ public class SecurityRateLimitFilter extends OncePerRequestFilter {
         }
 
         long now = System.currentTimeMillis();
-        String address = request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
+        String address = addresses == null
+                ? (request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr())
+                : addresses.resolve(request);
         String key = rule.bucket() + ':' + address;
         AtomicReference<Decision> decision = new AtomicReference<>();
         windows.compute(key, (ignored, current) -> {
@@ -77,11 +97,26 @@ public class SecurityRateLimitFilter extends OncePerRequestFilter {
         });
 
         if (decision.get().allowed()) {
+            if (persistentLimits != null) {
+                try {
+                    persistentLimits.check("http-" + rule.bucket(), address, null, rule.limit(), rule.duration());
+                } catch (BusinessException exception) {
+                    if (exception.getStatus() == HttpStatus.TOO_MANY_REQUESTS) {
+                        writeRateLimited(response, decision.get().retryAfterSeconds());
+                        return;
+                    }
+                    throw exception;
+                }
+            }
             chain.doFilter(request, response);
             return;
         }
+        writeRateLimited(response, decision.get().retryAfterSeconds());
+    }
+
+    private void writeRateLimited(HttpServletResponse response, long retryAfterSeconds) throws IOException {
         response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
-        response.setHeader("Retry-After", Long.toString(decision.get().retryAfterSeconds()));
+        response.setHeader("Retry-After", Long.toString(Math.max(1, retryAfterSeconds)));
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         objectMapper.writeValue(response.getOutputStream(), ApiError.of("RATE_LIMITED", "请求过于频繁，请稍后重试"));

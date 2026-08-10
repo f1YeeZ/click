@@ -30,9 +30,9 @@ public class AdminLoginChallengeService {
 
     public AdminLoginChallengeService(AdminLoginChallengeMapper challenges, UserMapper users,
                                       PasswordEncoder encoder, MailService mail,
-                                      @Value("${app.verification.expires-minutes:10}") long expiresMinutes) {
+                                      @Value("${app.verification.expires-seconds:60}") long expiresSeconds) {
         this.challenges = challenges; this.users = users; this.encoder = encoder; this.mail = mail;
-        this.validFor = Duration.ofMinutes(expiresMinutes);
+        this.validFor = Duration.ofSeconds(expiresSeconds);
     }
 
     @Transactional
@@ -44,13 +44,13 @@ public class AdminLoginChallengeService {
         challenge.setId(UUID.randomUUID()); challenge.setUserId(user.getId()); challenge.setCodeHash(encoder.encode(code));
         challenge.setAttempts(0); challenge.setExpiresAt(now.plus(validFor)); challenge.setCreatedAt(now);
         challenges.insert(challenge);
-        mail.verificationCode(user.getEmail(), code, validFor.toMinutes(), "ADMIN_LOGIN");
+        mail.verificationCode(user.getEmail(), code, validFor.toSeconds(), "ADMIN_LOGIN");
         return new Challenge(challenge.getId(), validFor.toSeconds());
     }
 
     @Transactional
     public UserAccount verify(UUID id, String email, String plainCode) {
-        AdminLoginChallenge challenge = challenges.selectById(id);
+        AdminLoginChallenge challenge = challenges.selectForUpdate(id);
         UserAccount user = challenge == null ? null : users.selectById(challenge.getUserId());
         if (user == null || !UserAccount.normalizeEmail(email).equals(user.getEmail())
                 || !"ADMIN".equals(user.getRole()) || !"ACTIVE".equals(user.getStatus())

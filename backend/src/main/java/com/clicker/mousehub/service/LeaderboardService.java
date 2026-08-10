@@ -43,9 +43,9 @@ public class LeaderboardService {
         Map<UUID, List<ReviewGripScore>> scoresByReview = active.isEmpty() ? Map.of() : gripScores.selectList(
                         new LambdaQueryWrapper<ReviewGripScore>().in(ReviewGripScore::getReviewId, active.stream().map(Review::getId).toList()))
                 .stream().collect(Collectors.groupingBy(ReviewGripScore::getReviewId));
-        Map<UUID, Integer> comfortByReview = new HashMap<>();
+        Map<UUID, BigDecimal> comfortByReview = new HashMap<>();
         for (Review review : active) {
-            Integer comfort = comfort(review, scoresByReview.getOrDefault(review.getId(), List.of()), selectedGrip);
+            BigDecimal comfort = comfort(review, scoresByReview.getOrDefault(review.getId(), List.of()), selectedGrip);
             if (comfort != null) comfortByReview.put(review.getId(), comfort);
         }
         BigDecimal prior = average(new ArrayList<>(comfortByReview.values()), BigDecimal.valueOf(7.0));
@@ -64,8 +64,8 @@ public class LeaderboardService {
         return new LeaderboardResponse(items, round(prior), PRIOR_SAMPLE_SIZE, comfortByReview.size(), OffsetDateTime.now());
     }
 
-    private ScoreRow score(MouseDevice mouse, List<Review> mouseReviews, BigDecimal prior, Map<UUID, Integer> comfortByReview) {
-        List<Integer> values = mouseReviews.stream().map(review -> comfortByReview.get(review.getId())).filter(Objects::nonNull).toList();
+    private ScoreRow score(MouseDevice mouse, List<Review> mouseReviews, BigDecimal prior, Map<UUID, BigDecimal> comfortByReview) {
+        List<BigDecimal> values = mouseReviews.stream().map(review -> comfortByReview.get(review.getId())).filter(Objects::nonNull).toList();
         BigDecimal raw = average(values, prior);
         BigDecimal adjusted = BigDecimal.valueOf(values.size()).multiply(raw)
                 .add(BigDecimal.valueOf(PRIOR_SAMPLE_SIZE).multiply(prior))
@@ -73,20 +73,25 @@ public class LeaderboardService {
         return new ScoreRow(mouse, adjusted, raw, values.size());
     }
 
-    private Integer comfort(Review review, List<ReviewGripScore> scores, String selectedGrip) {
+    private BigDecimal comfort(Review review, List<ReviewGripScore> scores, String selectedGrip) {
         List<ReviewGripScore> matching = selectedGrip == null ? scores : scores.stream()
                 .filter(score -> selectedGrip.equals(score.getGripStyle())).toList();
         if (!matching.isEmpty()) {
-            return Math.round((float) matching.stream().mapToInt(ReviewGripScore::getComfortScore).average().orElse(0));
+            return BigDecimal.valueOf(matching.stream().mapToInt(ReviewGripScore::getComfortScore).sum())
+                    .divide(BigDecimal.valueOf(matching.size()), 1, RoundingMode.HALF_UP);
         }
         if (scores.isEmpty() && review.getComfortScore() != null
-                && (selectedGrip == null || selectedGrip.equals(review.getGripStyle()))) return review.getComfortScore();
+                && (selectedGrip == null || selectedGrip.equals(review.getGripStyle()))) {
+            return selectedGrip == null && review.getOverallScore() != null && review.getOverallScore().signum() > 0
+                    ? review.getOverallScore() : BigDecimal.valueOf(review.getComfortScore());
+        }
         return null;
     }
 
-    private BigDecimal average(List<Integer> values, BigDecimal fallback) {
+    private BigDecimal average(List<BigDecimal> values, BigDecimal fallback) {
         if (values.isEmpty()) return fallback;
-        return BigDecimal.valueOf(values.stream().mapToInt(Integer::intValue).average().orElse(fallback.doubleValue()));
+        return values.stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+                .divide(BigDecimal.valueOf(values.size()), 6, RoundingMode.HALF_UP);
     }
 
     private String normalizeDimension(String dimension) {

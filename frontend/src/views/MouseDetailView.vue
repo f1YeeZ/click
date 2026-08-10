@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import api, { errorMessage } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import { useCompareStore } from '../stores/compare'
+import { usePublicConfigStore } from '../stores/publicConfig'
 import { onRealtime } from '../services/realtime'
 import { legacyCellsToDabs, supportCoveragePercentage } from '../utils/supportHeatmap'
 
@@ -12,6 +13,7 @@ const HandSupport3D = defineAsyncComponent(() => import('../components/HandSuppo
 const route = useRoute()
 const auth = useAuthStore()
 const compare = useCompareStore()
+const publicConfig = usePublicConfigStore()
 const mouse = ref(null)
 const summary = ref(null)
 const options = ref(null)
@@ -44,7 +46,7 @@ const reportNotice = ref('')
 const reportLoading = ref(false)
 const objectiveDialogOpen = ref(false)
 const objectiveDialog = ref(null)
-const reviewSubmissionEnabled = ref(true)
+const reviewSubmissionEnabled = computed(() => publicConfig.reviewSubmissionEnabled)
 const gripScores = reactive({ PALM: 8, CLAW: 8, FINGERTIP: 8, MIXED: 8 })
 const gripScoreTouched = reactive({ PALM: false, CLAW: false, FINGERTIP: false, MIXED: false })
 const profileReady = computed(() => Boolean(auth.user?.handLengthCm && auth.user?.preferredGripStyle))
@@ -118,6 +120,7 @@ const connection = computed(() => !mouse.value ? '—' : mouse.value.connectionM
 const dimensions = computed(() => mouse.value ? `${mouse.value.lengthMm ?? '—'} × ${mouse.value.widthMm ?? '—'} × ${mouse.value.heightMm ?? '—'} mm` : '—')
 const yesNo = (value) => value == null ? '—' : value ? '是' : '否'
 const valueLabel = (value) => labels[value] || value || '—'
+const gripLabel = (value) => ({ PALM: '趴握', CLAW: '抓握', FINGERTIP: '指握', MIXED: '混合' }[value] || value || '—')
 
 const loadMine = async () => {
   if (!auth.authenticated || !mouse.value) return
@@ -215,9 +218,8 @@ const initializeReviewFilters = () => {
 const load = async () => {
   error.value = ''
   try {
-    const [{ data }, optionResponse, configResponse] = await Promise.all([api.get(`/mice/${route.params.id}`), api.get('/review-options'), api.get('/config')])
+    const [{ data }, optionResponse] = await Promise.all([api.get(`/mice/${route.params.id}`), api.get('/review-options'), publicConfig.load().catch(() => null)])
     mouse.value = data.mouse; summary.value = data.reviewSummary; options.value = optionResponse.data
-    reviewSubmissionEnabled.value = configResponse.data.reviewSubmissionEnabled !== false
     if (auth.authenticated) await auth.refresh()
     initializeReviewFilters()
     if (selectedGrip.value || selectedHand.value) await filterSummary()
@@ -271,7 +273,7 @@ const saveGripReview = async () => {
       api.put(`/mice/${mouse.value.id}/reviews/mine/grip-scores/${code}`, { comfortScore: gripScores[code] }),
       api.put(`/mice/${mouse.value.id}/reviews/mine/support-positions/${code}`, { dabs: personalSupportDabs.value }),
     ])
-    supportMessage.value = `${valueLabel(code)}评分与支撑图已一并保存`
+    supportMessage.value = `${gripLabel(code)}评分与支撑图已一并保存`
     await refreshReview()
   } catch (e) { supportError.value = errorMessage(e) } finally { supportLoading.value = false }
 }
@@ -423,13 +425,13 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
         <div ref="publicReviewsRail" class="public-review-rail" tabindex="0" aria-label="横向浏览逐条公开评价">
           <article v-for="review in publicReviews.items" :key="review.id" class="public-review-ticket">
             <header class="ticket-header"><div><strong>{{ review.author }}</strong><small>{{ new Date(review.createdAt).toLocaleDateString('zh-CN') }} · {{ valueLabel(review.handSize) }}</small></div><div class="ticket-score"><b>{{ review.comfortAverage || '—' }}</b><small>/ 10</small></div></header>
-            <div class="ticket-grip-row" role="tablist" :aria-label="`${review.author} 的握姿评价`"><button v-for="score in review.gripScores" :key="score.gripStyle" type="button" role="tab" :aria-selected="activePublicSupportGrip(review) === score.gripStyle" :class="{ active: activePublicSupportGrip(review) === score.gripStyle, painted: supportMapForGrip(review, score.gripStyle) }" @click="selectPublicSupportGrip(review, score.gripStyle)"><em>{{ valueLabel(score.gripStyle) }}</em><b>{{ score.comfortScore }}</b><i aria-hidden="true"></i></button><span v-if="!review.gripScores?.length" class="ticket-empty-score">暂无握姿评分</span></div>
+            <div class="ticket-grip-row" role="tablist" :aria-label="`${review.author} 的握姿评价`"><button v-for="score in review.gripScores" :key="score.gripStyle" type="button" role="tab" :aria-selected="activePublicSupportGrip(review) === score.gripStyle" :class="{ active: activePublicSupportGrip(review) === score.gripStyle, painted: supportMapForGrip(review, score.gripStyle) }" @click="selectPublicSupportGrip(review, score.gripStyle)"><em>{{ gripLabel(score.gripStyle) }}</em><b>{{ score.comfortScore }}</b><i aria-hidden="true"></i></button><span v-if="!review.gripScores?.length" class="ticket-empty-score">暂无握姿评分</span></div>
             <div class="ticket-support-map" :class="{ empty: !activePublicSupportMap(review)?.supportDabs?.length && !activePublicSupportMap(review)?.supportCells?.length }">
-              <HandSupport3D v-if="activePublicSupportMap(review)?.supportDabs?.length || activePublicSupportMap(review)?.supportCells?.length" :key="`${review.id}-${activePublicSupportGrip(review)}`" :summary-cells="activePublicSupportMap(review).supportCells || []" :max-count="activePublicSupportMap(review).supportCells?.length ? 1 : 0" :grid-columns="24" :grid-rows="32" :dabs="activePublicSupportMap(review).supportDabs || []" tool="view" :editable="false" :aria-label="`${review.author} 的${valueLabel(activePublicSupportGrip(review))}支撑位置 3D 涂抹`" />
-              <span v-else>{{ valueLabel(activePublicSupportGrip(review)) }}暂未提交支撑位置涂抹</span>
-              <small class="ticket-support-label">{{ valueLabel(activePublicSupportGrip(review)) }} / SUPPORT MAP</small>
+              <HandSupport3D v-if="activePublicSupportMap(review)?.supportDabs?.length || activePublicSupportMap(review)?.supportCells?.length" :key="`${review.id}-${activePublicSupportGrip(review)}`" :summary-cells="activePublicSupportMap(review).supportCells || []" :max-count="activePublicSupportMap(review).supportCells?.length ? 1 : 0" :grid-columns="24" :grid-rows="32" :dabs="activePublicSupportMap(review).supportDabs || []" tool="view" :editable="false" :aria-label="`${review.author} 的${gripLabel(activePublicSupportGrip(review))}支撑位置 3D 涂抹`" />
+              <span v-else>{{ gripLabel(activePublicSupportGrip(review)) }}暂未提交支撑位置涂抹</span>
+              <small class="ticket-support-label">{{ gripLabel(activePublicSupportGrip(review)) }} / SUPPORT MAP</small>
             </div>
-            <footer class="ticket-footer"><span>{{ review.gripScores?.map((score) => valueLabel(score.gripStyle)).join(' / ') || '未填写握姿' }} · {{ publicSupportCount(review) }} 份支撑图</span><button v-if="auth.authenticated" type="button" @click="openReport('REVIEW', review.id)">举报</button></footer>
+            <footer class="ticket-footer"><span>{{ review.gripScores?.map((score) => gripLabel(score.gripStyle)).join(' / ') || '未填写握姿' }} · {{ publicSupportCount(review) }} 份支撑图</span><button v-if="auth.authenticated" type="button" @click="openReport('REVIEW', review.id)">举报</button></footer>
           </article>
           <p v-if="!publicReviews.items.length" class="table-empty">暂无可公开的逐条评价</p>
         </div>
@@ -591,7 +593,7 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
                       <button v-if="activeSubmittedGrip" class="item-delete-button compact support-grip-delete" type="button" @click="deleteGrip(activeGripOption)">删除评分和支撑图</button>
                     </section>
                     <button class="button full support-submit combined-review-submit" type="button" :disabled="!profileReady || !supportHasPaint || !activeGripScoreReady || supportLoading" @click="saveGripReview">
-                      {{ supportLoading ? '提交中…' : activeSubmittedGrip && supportMapForGrip(mine, activeSupportGrip) ? `更新${valueLabel(activeSupportGrip)}完整评价` : `提交${valueLabel(activeSupportGrip)}完整评价` }}
+                      {{ supportLoading ? '提交中…' : activeSubmittedGrip && supportMapForGrip(mine, activeSupportGrip) ? `更新${gripLabel(activeSupportGrip)}完整评价` : `提交${gripLabel(activeSupportGrip)}完整评价` }}
                     </button>
                   </div>
                   <div class="support-editor-canvas">
@@ -603,7 +605,7 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
                         :brush-size="supportBrushSize"
                         :tool="supportTool"
                         :editable="profileReady"
-                        :aria-label="`可涂抹的${valueLabel(activeSupportGrip)}个人支撑位置图`"
+                        :aria-label="`可涂抹的${gripLabel(activeSupportGrip)}个人支撑位置图`"
                         @update:dabs="updateSupportDabs"
                         @error="handlePersonalSupportModelError"
                       />

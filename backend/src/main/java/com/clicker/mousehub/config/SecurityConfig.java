@@ -87,14 +87,17 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/sessions", "/api/v1/admin-sessions", "/api/v1/users", "/api/v1/registration-verification-codes",
                                 "/api/v1/password-reset-verification-codes", "/api/v1/sessions/refresh",
                                 "/api/v1/admin-sessions/verify", "/api/v1/admin-sessions/refresh",
-                                "/api/v1/analytics/page-views").permitAll()
+                                "/api/v1/analytics/page-views", "/api/v1/feedback").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/api/v1/password-reset").permitAll()
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/sessions/current", "/api/v1/admin-sessions/current").permitAll()
                         .requestMatchers("/api/v1/review-options").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/config").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/images/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/mice/**").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/mice", "/api/v1/mice/brands", "/api/v1/mice/*",
+                                "/api/v1/mice/*/review-summary", "/api/v1/mice/*/support-summary",
+                                "/api/v1/mice/*/reviews").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/mouse-rankings", "/api/v1/mouse-recommendations", "/api/v1/mouse-comparisons").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/mouse-recommendations").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
