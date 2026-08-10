@@ -1,4 +1,4 @@
-FROM node:20-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /workspace
 ARG VITE_OPERATOR_NAME
 ARG VITE_LEGAL_CONTACT_EMAIL
