@@ -515,6 +515,10 @@
     font-size: 0.94rem;
   }
 
+  .brand-mark .brand-logo {
+    width: 104px;
+  }
+
   .metric-grid,
   .signal-cards {
     grid-template-columns: 1fr 1fr;

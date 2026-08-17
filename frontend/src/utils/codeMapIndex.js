@@ -107,9 +107,9 @@ const normalizeUrl = (url) => url
   .replace(/\/+/g, '/')
 
 export const learningLevels = {
-  core: { label: '必须理解', short: '必看', summary: '入口、核心业务链与领域模型', order: '第一阶段' },
-  support: { label: '理解后再看', short: '再看', summary: '支撑核心流程的实现与基础设施', order: '第二阶段' },
-  skip: { label: '初读可跳过', short: '跳过', summary: '样板代码、测试与局部交互细节', order: '需要时再看' },
+  core: { label: '必须理解', short: '必看', summary: '启动、鉴权、鼠标、评价、对比、推荐与排行主链', order: '第一阶段' },
+  support: { label: '理解后再看', short: '再看', summary: '后台、反馈、实时、邮件、导入、限流、配置与数据访问', order: '第二阶段' },
+  skip: { label: '初读可跳过', short: '跳过', summary: '测试、访问器、构造器、异常包装、3D / 图片与格式化工具', order: '需要时再看' },
 }
 
 const coreJavaOwners = new Set([
@@ -117,12 +117,19 @@ const coreJavaOwners = new Set([
   'MouseComparisonController', 'MouseRecommendationController', 'MouseRankingController',
   'AuthService', 'MouseService', 'ReviewService', 'ComparisonService', 'RecommendationService',
   'LeaderboardService', 'SessionService', 'MouseDevice', 'UserAccount', 'Review',
-  'ReviewGripScore', 'ReviewSupportPosition', 'SecurityConfig', 'JwtAuthenticationFilter', 'JwtService',
+  'ReviewGripScore', 'ReviewSupportPosition', 'SecurityConfig', 'SecurityRateLimitFilter',
+  'JwtAuthenticationFilter', 'JwtService', 'RefreshCookieService',
+])
+
+const coreJavaMethods = new Set([
+  'FeedbackController.reviews', 'FeedbackService.publicReviews',
+  'PublicConfigController.get', 'SystemSettingService.publicSettings',
 ])
 
 const coreFrontendFiles = [
   'frontend/src/App.vue', 'frontend/src/main.js', 'frontend/src/router/index.js',
   'frontend/src/api/client.js', 'frontend/src/stores/auth.js', 'frontend/src/stores/compare.js',
+  'frontend/src/stores/publicConfig.js',
   'frontend/src/views/HomeView.vue', 'frontend/src/views/MiceView.vue',
   'frontend/src/views/MouseDetailView.vue', 'frontend/src/views/CompareView.vue',
   'frontend/src/views/AuthView.vue', 'frontend/src/views/RecommendationView.vue',
@@ -157,13 +164,18 @@ export const getLearningMeta = (node) => {
   if (/^(format|statusLabel|gripLabel|actionLabel|selectedImageName)/.test(name)) {
     return { level: 'skip', ...learningLevels.skip, reason: '这是展示格式化或标签映射，不参与核心业务决策。' }
   }
+  if (coreJavaMethods.has(`${owner}.${name}`)) {
+    return { level: 'core', ...learningLevels.core, reason: owner.startsWith('PublicConfig') || owner.startsWith('SystemSetting')
+      ? '它把维护公告和功能开关送入前端启动流程，决定注册、评价等功能是否可用。'
+      : '它位于鼠标详情的公开评价展示主链，是用户理解评价数据的关键入口。' }
+  }
   if (coreJavaOwners.has(owner)) {
     if (['MouseDevice', 'UserAccount', 'Review', 'ReviewGripScore', 'ReviewSupportPosition'].includes(owner)) {
       if (!isCallable) return { level: 'core', ...learningLevels.core, reason: '这是核心领域数据模型，理解字段关系才能读懂后续业务流程。' }
       return { level: 'skip', ...learningLevels.skip, reason: '实体方法大多是字段访问；先理解实体字段，不必逐个阅读访问器。' }
     }
-    if (['SecurityConfig', 'JwtAuthenticationFilter', 'JwtService'].includes(owner)) {
-      return { level: 'core', ...learningLevels.core, reason: '它位于请求鉴权主链，决定请求如何获得身份以及能否进入 Controller。' }
+    if (['SecurityConfig', 'SecurityRateLimitFilter', 'JwtAuthenticationFilter', 'JwtService', 'RefreshCookieService'].includes(owner)) {
+      return { level: 'core', ...learningLevels.core, reason: '它位于请求安全主链，负责限流、身份解析、令牌或刷新 Cookie，决定请求能否进入 Controller。' }
     }
     if (node.endpoint || !isCallable || !/^private\b/.test(node.signature || '') || /^(recommendInternal|shapeScore|positionScore)$/.test(name)) {
       return { level: 'core', ...learningLevels.core, reason: owner.endsWith('Controller')
@@ -189,6 +201,97 @@ export const getLearningMeta = (node) => {
   if (['component', 'composable', 'store', 'api', 'service'].includes(node.type)) return { level: 'support', ...learningLevels.support, reason: '这是页面或状态管理的支撑模块，按核心页面调用关系继续阅读。' }
   if (node.type === 'utility' || /\/utils\//.test(file)) return { level: 'skip', ...learningLevels.skip, reason: '这是局部纯函数或工具实现；遇到具体调用时再回来阅读。' }
   return { level: 'support', ...learningLevels.support, reason: '它支撑项目运行，但不需要作为第一批阅读对象。' }
+}
+
+export const getCallabilityMeta = (node) => {
+  const isCallable = ['method', 'function', 'test-method'].includes(node?.type)
+  if (!node || !isCallable) {
+    return {
+      callable: false,
+      kind: 'structure',
+      short: '结构',
+      label: '不能直接调用',
+      detail: '这是类、模块或数据结构；需要继续进入它包含的方法或函数。',
+    }
+  }
+
+  const name = symbolName(node)
+  const owner = ownerName(node)
+  if (node.language === 'java') {
+    if (name === owner) {
+      return {
+        callable: true,
+        kind: 'constructor',
+        short: '构造',
+        label: '由框架或 new 调用',
+        detail: '这是构造器。Spring 管理的类通常在应用启动时由框架调用，用来创建对象并注入依赖。',
+      }
+    }
+    if (node.endpoint) {
+      return {
+        callable: true,
+        kind: 'http',
+        short: 'HTTP',
+        label: '可从前端或客户端调用',
+        detail: `发送 ${node.endpoint} 请求后，Spring 会匹配并调用这个 Controller 方法。`,
+      }
+    }
+    const signature = node.signature || ''
+    if (/\bprivate\b/.test(signature)) {
+      return {
+        callable: true,
+        kind: 'private',
+        short: '内部',
+        label: '仅当前 Java 类内部调用',
+        detail: 'private 方法不能从其他类直接调用，只能由同一个类中的其他方法调用。',
+      }
+    }
+    if (/\bprotected\b/.test(signature)) {
+      return {
+        callable: true,
+        kind: 'protected',
+        short: '受保护',
+        label: '当前包或子类可调用',
+        detail: 'protected 方法主要提供给同包代码或继承它的子类调用。',
+      }
+    }
+    if (/\bpublic\b/.test(signature) || node.type === 'test-method') {
+      return {
+        callable: true,
+        kind: 'public',
+        short: '公开',
+        label: '其他 Java 类可调用',
+        detail: '这是公开 Java 方法；持有该对象的 Controller、Service 或其他协作者都可以直接调用。',
+      }
+    }
+    return {
+      callable: true,
+      kind: 'package',
+      short: '同包',
+      label: '同一 Java 包内可调用',
+      detail: '这个方法没有显式访问修饰符，因此只能由同一 package 中的代码直接调用。',
+    }
+  }
+
+  if (node.exported) {
+    return {
+      callable: true,
+      kind: 'exported',
+      short: '导出',
+      label: '其他前端模块可调用',
+      detail: '这个函数已 export；其他 JavaScript/Vue 文件导入后可以调用它。',
+    }
+  }
+  const pageLocal = node.file?.endsWith('.vue')
+  return {
+    callable: true,
+    kind: pageLocal ? 'page' : 'module',
+    short: pageLocal ? '页面' : '模块',
+    label: pageLocal ? '当前 Vue 页面内部可调用' : '当前前端模块内部可调用',
+    detail: pageLocal
+      ? '这个函数没有导出，可由当前页面的生命周期、事件处理器或其他本地函数调用。'
+      : '这个函数没有导出，只能由当前 JavaScript 模块中的代码直接调用。',
+  }
 }
 
 export const buildCodeMapIndex = (rawSources) => {
@@ -334,10 +437,10 @@ export const buildCodeMapIndex = (rawSources) => {
     for (const imported of script.matchAll(/import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"]/g)) module.imports.push({ names: imported[1], source: imported[2] })
     const { clean, pairs } = scanBraces(script)
     const candidates = []
-    for (const match of clean.matchAll(/\b(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$]\w*)\s*\(([^)]*)\)\s*\{/g)) candidates.push({ name: match[1], start: match.index, open: clean.indexOf('{', match.index), kind: 'function' })
+    for (const match of clean.matchAll(/\b(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$]\w*)\s*\(([^)]*)\)\s*\{/g)) candidates.push({ name: match[1], start: match.index, open: clean.indexOf('{', match.index), kind: 'function', exported: match[0].startsWith('export ') })
     for (const match of clean.matchAll(/\b(?:export\s+)?const\s+([A-Za-z_$]\w*)\s*=\s*(?:async\s*)?(?:\(([^)]*)\)|([A-Za-z_$]\w*))\s*=>\s*/g)) {
       const after = match.index + match[0].length
-      candidates.push({ name: match[1], start: match.index, open: clean[after] === '{' ? after : -1, kind: 'function' })
+      candidates.push({ name: match[1], start: match.index, open: clean[after] === '{' ? after : -1, kind: 'function', exported: match[0].startsWith('export ') })
     }
     for (const match of clean.matchAll(/\bconst\s+([A-Za-z_$]\w*)\s*=\s*(computed|watchEffect)\s*\(/g)) candidates.push({ name: match[1], start: match.index, open: clean.indexOf('{', match.index + match[0].length), kind: match[2] })
     for (const candidate of candidates) {
@@ -355,6 +458,7 @@ export const buildCodeMapIndex = (rawSources) => {
           file,
           line: lineAt(source, source.indexOf(script) + candidate.start),
           endpoint: api.join('、'),
+          exported: Boolean(candidate.exported),
           area: type.startsWith('test') ? 'tests' : 'frontend',
         }),
       }

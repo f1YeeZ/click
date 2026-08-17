@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCodeMapIndex, getLearningMeta } from './codeMapIndex'
+import { buildCodeMapIndex, getCallabilityMeta, getLearningMeta } from './codeMapIndex'
 
 describe('buildCodeMapIndex', () => {
   it('connects frontend API calls to controller and service methods', () => {
@@ -78,6 +78,41 @@ describe('getLearningMeta', () => {
     })).toMatchObject({ level: 'core', label: '必须理解', order: '第一阶段' })
   })
 
+  it('includes the current security, public settings, and review-display chains', () => {
+    const refreshCookie = getLearningMeta({
+      label: 'read()',
+      type: 'method',
+      area: 'backend',
+      file: 'backend/src/main/java/com/example/security/RefreshCookieService.java',
+      signature: 'public String read()',
+    })
+    const publicSettings = getLearningMeta({
+      label: 'publicSettings()',
+      type: 'method',
+      area: 'backend',
+      file: 'backend/src/main/java/com/example/service/SystemSettingService.java',
+      signature: 'public PublicSettings publicSettings()',
+    })
+    const publicReviews = getLearningMeta({
+      label: 'publicReviews()',
+      type: 'method',
+      area: 'backend',
+      file: 'backend/src/main/java/com/example/service/FeedbackService.java',
+      signature: 'public PageResponse publicReviews()',
+    })
+    const publicConfigStore = getLearningMeta({
+      label: 'publicConfig',
+      type: 'store',
+      area: 'frontend',
+      file: 'frontend/src/stores/publicConfig.js',
+    })
+
+    expect(refreshCookie).toMatchObject({ level: 'core', label: '必须理解' })
+    expect(publicSettings).toMatchObject({ level: 'core', label: '必须理解' })
+    expect(publicReviews).toMatchObject({ level: 'core', label: '必须理解' })
+    expect(publicConfigStore).toMatchObject({ level: 'core', label: '必须理解' })
+  })
+
   it('keeps persistence support behind the main business flow', () => {
     expect(getLearningMeta({
       label: 'MouseMapper',
@@ -103,5 +138,34 @@ describe('getLearningMeta', () => {
 
     expect(testMeta).toMatchObject({ level: 'skip', label: '初读可跳过' })
     expect(accessorMeta).toMatchObject({ level: 'skip', label: '初读可跳过' })
+  })
+})
+
+describe('getCallabilityMeta', () => {
+  it('distinguishes HTTP entry points from private and public Java methods', () => {
+    expect(getCallabilityMeta({
+      label: 'detail()', type: 'method', language: 'java', endpoint: 'GET /api/v1/mice/{id}',
+      file: 'backend/src/main/java/com/example/MouseController.java', signature: 'public MouseDetail detail(UUID id)',
+    })).toMatchObject({ callable: true, kind: 'http', label: '可从前端或客户端调用' })
+    expect(getCallabilityMeta({
+      label: 'shapeScore()', type: 'method', language: 'java',
+      file: 'backend/src/main/java/com/example/RecommendationService.java', signature: 'private double shapeScore(MouseDevice mouse)',
+    })).toMatchObject({ callable: true, kind: 'private', label: '仅当前 Java 类内部调用' })
+    expect(getCallabilityMeta({
+      label: 'recommend()', type: 'method', language: 'java',
+      file: 'backend/src/main/java/com/example/RecommendationService.java', signature: 'public Recommendation recommend()',
+    })).toMatchObject({ callable: true, kind: 'public', label: '其他 Java 类可调用' })
+  })
+
+  it('distinguishes exported, page-local, and structural frontend nodes', () => {
+    expect(getCallabilityMeta({
+      label: 'errorMessage()', type: 'function', exported: true, file: 'frontend/src/api/client.js',
+    })).toMatchObject({ callable: true, kind: 'exported', label: '其他前端模块可调用' })
+    expect(getCallabilityMeta({
+      label: 'load()', type: 'function', exported: false, file: 'frontend/src/views/MouseDetailView.vue',
+    })).toMatchObject({ callable: true, kind: 'page', label: '当前 Vue 页面内部可调用' })
+    expect(getCallabilityMeta({
+      label: 'MouseService', type: 'class', file: 'backend/src/main/java/com/example/MouseService.java',
+    })).toMatchObject({ callable: false, kind: 'structure', label: '不能直接调用' })
   })
 })

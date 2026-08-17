@@ -82,6 +82,7 @@ class ClickerSmokeTest(unittest.TestCase):
     def setUp(self):
         self.page = self.browser.new_page()
         self.requests = []
+        self.mice = list(MICE)
         self.review_saved = False
         self.grip_scores = []
         self.personal_support_dabs_by_grip = {
@@ -95,6 +96,12 @@ class ClickerSmokeTest(unittest.TestCase):
         self.import_committed = False
         self.allow_user_refresh = False
         self.allow_admin_refresh = False
+        self.public_config = {
+            "maintenanceNotice": "", "registrationEnabled": True, "reviewSubmissionEnabled": True,
+            "advertisingEnabled": False,
+            "leftAd": {"enabled": True, "imageUrl": "", "targetUrl": "", "altText": ""},
+            "rightAd": {"enabled": True, "imageUrl": "", "targetUrl": "", "altText": ""},
+        }
         self.managed_user = {
             "id": "managed-user", "email": "managed@example.com", "role": "USER", "status": "ACTIVE",
             "handSize": "MEDIUM", "handLengthCm": 18.0, "preferredGripStyle": "CLAW",
@@ -178,9 +185,7 @@ class ClickerSmokeTest(unittest.TestCase):
             }))
             return
         if path == "/api/v1/config" and method == "GET":
-            route.fulfill(content_type="application/json", body=json.dumps({
-                "maintenanceNotice": "", "registrationEnabled": True, "reviewSubmissionEnabled": True,
-            }))
+            route.fulfill(content_type="application/json", body=json.dumps(self.public_config))
             return
         if path == "/api/v1/sessions/refresh" and method == "POST":
             if not self.allow_user_refresh:
@@ -415,7 +420,7 @@ class ClickerSmokeTest(unittest.TestCase):
             return
         if path == "/api/v1/mice":
             query = parse_qs(urlparse(route.request.url).query).get("q", [""])[0].lower()
-            items = [mouse for mouse in MICE if not query or query in mouse["model"].lower()]
+            items = [mouse for mouse in self.mice if not query or query in mouse["model"].lower()]
             body = {"items": items, "page": {"number": 1, "totalPages": 1 if items else 0, "totalItems": len(items)}}
             route.fulfill(content_type="application/json", body=json.dumps(body))
             return
@@ -451,6 +456,9 @@ class ClickerSmokeTest(unittest.TestCase):
                 body=json.dumps({"message": "密码重置成功，请使用新密码登录"}, ensure_ascii=False),
             )
             return
+        if path == "/api/v1/feedback" and method == "POST":
+            route.fulfill(status=201, content_type="application/json", body=json.dumps({"message": "反馈已提交"}, ensure_ascii=False))
+            return
         if path == "/api/v1/mouse-recommendations" and method == "POST":
             exact = {
                 "rank": 1, "mouse": MICE[0], "exactMatchCount": 3, "eligibleReviewCount": 4,
@@ -476,7 +484,7 @@ class ClickerSmokeTest(unittest.TestCase):
     def test_catalog_filter_is_reflected_in_shareable_url(self):
         self.page.goto(f"{BASE_URL}/mice")
         self.page.wait_for_load_state("networkidle")
-        self.page.get_by_placeholder("按型号搜索").fill("Viper")
+        self.page.get_by_label("型号", exact=True).fill("Viper")
         self.page.wait_for_url("**/mice?q=Viper")
         expect(self.page.locator("article.mouse-card")).to_have_count(1)
         expect(self.page.get_by_text("Viper V3 Pro", exact=True)).to_be_visible()
@@ -484,10 +492,67 @@ class ClickerSmokeTest(unittest.TestCase):
     def test_catalog_exposes_reliable_rating_sort_and_sample_context(self):
         self.page.goto(f"{BASE_URL}/mice")
         self.page.wait_for_load_state("networkidle")
-        self.page.locator(".filter-submitbar select").nth(1).select_option("rating_desc")
+        self.page.get_by_label("排序方式").select_option("rating_desc")
         self.page.wait_for_url("**/mice?sort=rating_desc")
         expect(self.page.locator("article.mouse-card").first.get_by_text("8.6", exact=True)).to_be_visible()
         expect(self.page.get_by_text("样本较少", exact=True)).to_be_visible()
+
+    def test_catalog_filter_uses_the_geardb_query_workbench(self):
+        self.mice = [
+            {**MICE[index % len(MICE)], "id": f"filter-mouse-{index}"}
+            for index in range(12)
+        ]
+        self.page.set_viewport_size({"width": 1440, "height": 700})
+        self.page.goto(f"{BASE_URL}/mice")
+        self.page.wait_for_load_state("networkidle")
+
+        active_nav = self.page.get_by_role("navigation", name="主导航").get_by_role("link", name="鼠标库", exact=True)
+        expect(active_nav).to_have_class(re.compile("router-link-active"))
+        active_nav_style = active_nav.evaluate("""element => ({
+            backgroundColor: getComputedStyle(element).backgroundColor,
+            borderRadius: getComputedStyle(element).borderRadius,
+        })""")
+        self.assertNotEqual(active_nav_style["backgroundColor"], "rgba(0, 0, 0, 0)")
+        self.assertEqual(active_nav_style["borderRadius"], "11px")
+
+        workbench = self.page.locator(".filter-workbench")
+        expect(workbench).to_be_visible()
+        self.assertLess(workbench.bounding_box()["height"], 90)
+        expect(self.page.locator(".filter-domain-tabs button")).to_have_count(0)
+        expect(self.page.locator(".filter-accordion-toggle")).to_have_count(0)
+
+        self.page.evaluate("document.documentElement.style.scrollBehavior = 'auto'; window.scrollTo(0, 600)")
+        self.assertGreater(self.page.evaluate("window.scrollY"), 500)
+        sticky_top = self.page.locator(".database-filter-rail").bounding_box()["y"]
+        self.assertAlmostEqual(sticky_top, 72, delta=2)
+
+        screenshot_path = os.environ.get("E2E_FILTER_WORKBENCH_SCREENSHOT")
+        if screenshot_path:
+            workbench.screenshot(path=screenshot_path)
+
+        lightweight = self.page.get_by_role("button", name="≤ 60g")
+        lightweight.click()
+        expect(lightweight).to_have_attribute("aria-pressed", "true")
+        self.page.wait_for_url("**weightMax=60**")
+
+        results_top_before = self.page.locator(".database-results").evaluate("element => element.offsetTop")
+        self.page.get_by_role("button", name=re.compile("更多筛选")).click()
+        expect(self.page.locator(".filter-domain-tabs button")).to_have_count(5)
+        expect(self.page.locator(".filter-advanced-panel")).to_be_visible()
+        self.assertEqual(
+            self.page.locator(".filter-domain-panel").evaluate(
+                "element => getComputedStyle(element).gridTemplateColumns.split(' ').length"
+            ),
+            12,
+        )
+        advanced_screenshot_path = os.environ.get("E2E_FILTER_ADVANCED_SCREENSHOT")
+        if advanced_screenshot_path:
+            self.page.locator(".filter-advanced-panel").screenshot(path=advanced_screenshot_path)
+        results_top_after = self.page.locator(".database-results").evaluate("element => element.offsetTop")
+        self.assertEqual(results_top_after, results_top_before)
+        self.page.get_by_role("button", name=re.compile("外形尺寸")).click()
+        expect(self.page.get_by_role("slider", name="长度最小值")).to_be_visible()
+        self.assertLessEqual(self.page.evaluate("document.documentElement.scrollWidth"), 1440)
 
     def test_mobile_catalog_keeps_navigation_and_filters_touch_friendly(self):
         self.page.set_viewport_size({"width": 390, "height": 844})
@@ -504,6 +569,14 @@ class ClickerSmokeTest(unittest.TestCase):
         trigger.click()
         expect(self.page.locator(".database-filter-rail")).to_be_visible()
         expect(self.page.get_by_role("button", name=re.compile("查看 .* 款结果"))).to_be_visible()
+        self.page.get_by_role("button", name=re.compile("更多筛选")).click()
+        expect(self.page.locator(".filter-advanced-panel")).to_be_visible()
+        self.assertEqual(
+            self.page.locator(".filter-domain-panel").evaluate(
+                "element => getComputedStyle(element).gridTemplateColumns.split(' ').length"
+            ),
+            1,
+        )
 
         metrics = self.page.evaluate("""() => ({
             viewport: document.documentElement.clientWidth,
@@ -540,12 +613,9 @@ class ClickerSmokeTest(unittest.TestCase):
     def test_z_detail_explains_score_distribution_and_update_time(self):
         self.page.goto(f"{BASE_URL}/mice/mouse-a")
         self.page.wait_for_load_state("networkidle")
-        expect(self.page.get_by_role("heading", name="评分分布")).to_be_visible()
-        method_note = self.page.get_by_text("口径说明：评分随上方握姿与手长筛选变化", exact=False)
-        expect(method_note).to_be_hidden()
-        expect(self.page.get_by_text("最后更新：", exact=False)).to_be_visible()
-        self.page.locator("summary.score-distribution-toggle").click()
-        expect(method_note).to_be_visible()
+        expect(self.page.get_by_role("heading", name="3D 手掌支撑热力图")).to_be_visible()
+        expect(self.page.locator(".detail-hand-viewport .heatmap-score")).to_be_visible()
+        expect(self.page.locator(".detail-hand-viewport .heatmap-filter-bar select")).to_have_count(2)
 
     def test_signed_in_user_sees_reviews_matching_their_hand_length_first(self):
         user = {
@@ -560,46 +630,38 @@ class ClickerSmokeTest(unittest.TestCase):
         self.page.goto(f"{BASE_URL}/mice/mouse-a")
         self.page.wait_for_load_state("networkidle")
 
-        hand_filter = self.page.locator(".review-filters select").nth(1)
+        grip_filter = self.page.locator(".heatmap-filter-bar select").nth(0)
+        hand_filter = self.page.locator(".heatmap-filter-bar select").nth(1)
+        expect(grip_filter).to_have_value("CLAW")
         expect(hand_filter).to_have_value("MEDIUM")
-        match_context = self.page.locator(".review-match-context")
-        expect(match_context.get_by_text("已优先展示匹配手长的评价", exact=True)).to_be_visible()
-        expect(match_context.get_by_text("你的手长为 18.2 cm，对应 中手", exact=False)).to_be_visible()
-        expect(self.page.locator(".support-filter-context strong")).to_have_text("全部握姿 · 中手")
+        expect(self.page.locator(".heatmap-score")).to_contain_text("抓握总评")
 
         desktop_screenshot = os.environ.get("E2E_HAND_MATCH_DESKTOP_SCREENSHOT")
         if desktop_screenshot:
-            self.page.locator(".review-panel").screenshot(path=desktop_screenshot)
+            self.page.locator(".detail-hand-viewport").screenshot(path=desktop_screenshot)
         mobile_screenshot = os.environ.get("E2E_HAND_MATCH_MOBILE_SCREENSHOT")
         if mobile_screenshot:
             self.page.set_viewport_size({"width": 390, "height": 844})
-            self.page.locator(".review-panel").screenshot(path=mobile_screenshot)
-
-        match_context.get_by_role("button", name="查看全部").click()
-        expect(hand_filter).to_have_value("")
-        expect(match_context).to_be_hidden()
-        expect(self.page.locator(".support-filter-context strong")).to_have_text("全部握姿 · 全部手长")
+            self.page.locator(".detail-hand-viewport").screenshot(path=mobile_screenshot)
 
         self.page.locator(".breadcrumb").get_by_role("link", name="鼠标库", exact=True).click()
         self.page.wait_for_url(f"{BASE_URL}/mice")
         self.page.get_by_role("link", name="查看 Razer Viper V3 Pro 详情").click()
         self.page.wait_for_url(f"{BASE_URL}/mice/mouse-a")
 
-        expect(self.page.locator(".review-filters select").nth(1)).to_have_value("MEDIUM")
-        expect(self.page.locator(".review-match-context")).to_be_visible()
+        expect(self.page.locator(".heatmap-filter-bar select").nth(0)).to_have_value("CLAW")
+        expect(self.page.locator(".heatmap-filter-bar select").nth(1)).to_have_value("MEDIUM")
         self.assertFalse(any(path == "/api/v1/mice/undefined" for _, path, _ in self.requests))
 
-    def test_home_search_suggests_mice_and_opens_the_selected_detail(self):
+    def test_home_hero_replaces_redundant_search_with_product_paths(self):
         self.page.goto(f"{BASE_URL}/")
         expect(self.page.locator(".quick-filters")).to_have_count(0)
-        search_input = self.page.get_by_label("按型号搜索")
-        expect(search_input).to_have_attribute("placeholder", "按型号搜索")
-        search_input.fill("Viper")
-
-        suggestions = self.page.get_by_role("listbox", name="鼠标搜索建议")
-        expect(suggestions).to_be_visible()
-        expect(suggestions.get_by_text("Viper V3 Pro", exact=True)).to_be_visible()
-        self.assertEqual(self.page.url, f"{BASE_URL}/")
+        expect(self.page.locator(".home-hero [role='search']")).to_have_count(0)
+        expect(self.page.get_by_role("heading", name="找到真正适合你的鼠标", exact=True)).to_be_visible()
+        catalog_link = self.page.get_by_role("link", name="浏览鼠标库")
+        recommendation_link = self.page.get_by_role("link", name="开始鼠标推荐", exact=True)
+        expect(catalog_link).to_be_visible()
+        expect(recommendation_link).to_be_visible()
 
         desktop_screenshot = os.environ.get("E2E_HOME_SEARCH_DESKTOP_SCREENSHOT")
         if desktop_screenshot:
@@ -609,46 +671,77 @@ class ClickerSmokeTest(unittest.TestCase):
             self.page.set_viewport_size({"width": 390, "height": 844})
             self.page.locator(".home-hero").screenshot(path=mobile_screenshot)
 
-        suggestions.get_by_role("option", name="查看 Razer Viper V3 Pro 详情").click()
-        self.page.wait_for_url("**/mice/mouse-a")
+        catalog_link.click()
+        self.page.wait_for_url(f"{BASE_URL}/mice")
         self.page.get_by_role("link", name="首页", exact=True).click()
         self.page.wait_for_url(f"{BASE_URL}/")
-        expect(self.page.get_by_label("按型号搜索")).to_have_value("")
+        self.page.get_by_role("link", name="开始鼠标推荐", exact=True).click()
+        self.page.wait_for_url(f"{BASE_URL}/recommend")
 
-    def test_home_search_button_opens_the_filtered_catalog(self):
+    def test_home_carousel_only_loops_with_more_than_four_mice(self):
+        self.mice = [
+            {**MICE[index % len(MICE)], "id": f"static-mouse-{index}"}
+            for index in range(4)
+        ]
         self.page.goto(f"{BASE_URL}/")
-        search_input = self.page.get_by_label("按型号搜索")
-        search_input.fill("v")
 
-        suggestions = self.page.get_by_role("listbox", name="鼠标搜索建议")
-        option = suggestions.get_by_role("option", name="查看 Razer Viper V3 Pro 详情")
-        expect(option).to_be_visible()
-        option.hover()
-        self.page.get_by_role("button", name="搜索", exact=True).click()
+        cards = self.page.locator(".trending-track .mouse-card")
+        expect(cards).to_have_count(4, timeout=5000)
+        expect(self.page.locator(".trending-track .trending-set")).to_have_count(1)
+        self.assertEqual(
+            self.page.locator(".trending-track").evaluate(
+                "element => getComputedStyle(element).animationName"
+            ),
+            "none",
+        )
 
-        self.page.wait_for_url("**/mice?q=v")
-        expect(self.page.get_by_placeholder("按型号搜索")).to_have_value("v")
-        expect(self.page.locator("article.mouse-card")).to_have_count(1)
-        expect(self.page.get_by_text("Viper V3 Pro", exact=True)).to_be_visible()
+        self.mice = [
+            {**MICE[index % len(MICE)], "id": f"looping-mouse-{index}"}
+            for index in range(5)
+        ]
+        self.page.reload()
 
-        self.page.get_by_role("link", name="首页", exact=True).click()
-        self.page.wait_for_url(f"{BASE_URL}/")
-        expect(self.page.get_by_label("按型号搜索")).to_have_value("")
+        expect(cards).to_have_count(10, timeout=5000)
+        expect(self.page.locator(".trending-track .trending-set")).to_have_count(2)
+        self.assertNotEqual(
+            self.page.locator(".trending-track").evaluate(
+                "element => getComputedStyle(element).animationName"
+            ),
+            "none",
+        )
 
-    def test_home_single_letter_search_filters_the_catalog_on_enter(self):
-        self.page.goto(f"{BASE_URL}/mice")
-        self.page.wait_for_load_state("networkidle")
-        self.page.get_by_role("link", name="首页", exact=True).click()
-        self.page.wait_for_url(f"{BASE_URL}/")
-        search_input = self.page.get_by_label("按型号搜索")
+    def test_header_search_opens_the_filtered_catalog_from_home(self):
+        self.page.goto(f"{BASE_URL}/")
+        search_input = self.page.get_by_label("全站搜索鼠标")
         search_input.fill("v")
         search_input.press("Enter")
 
         self.page.wait_for_url("**/mice?q=v")
-        catalog_search = self.page.get_by_placeholder("按型号搜索")
+        catalog_search = self.page.get_by_placeholder("搜索鼠标", exact=True)
         expect(catalog_search).to_have_value("v")
+        expect(catalog_search.locator("xpath=ancestor::label")).to_contain_text("型号")
         expect(self.page.locator("article.mouse-card")).to_have_count(1)
         expect(self.page.get_by_text("Viper V3 Pro", exact=True)).to_be_visible()
+
+    def test_public_feedback_uses_centered_auto_dismissing_toast(self):
+        self.page.goto(f"{BASE_URL}/")
+        self.page.get_by_role("button", name="反馈").click()
+        dialog = self.page.get_by_role("dialog", name="告诉我们哪里可以更好")
+        dialog.get_by_label("鼠标品牌 / 型号").fill("Test mouse")
+        dialog.get_by_label("详细说明").fill("Visual toast regression test")
+        dialog.get_by_role("button", name="提交反馈").click()
+
+        toast = self.page.locator(".app-toast")
+        expect(toast).to_be_visible(timeout=5000)
+        self.page.wait_for_timeout(300)
+        box = toast.bounding_box()
+        self.assertIsNotNone(box)
+        self.assertAlmostEqual(box["x"] + box["width"] / 2, self.page.viewport_size["width"] / 2, delta=2)
+        self.assertGreaterEqual(box["y"], 12)
+        expect(dialog).to_be_hidden()
+
+        self.page.wait_for_timeout(3000)
+        expect(toast).to_have_count(0)
 
     def test_registration_creates_a_signed_in_user(self):
         self.page.goto(f"{BASE_URL}/register")
@@ -756,9 +849,46 @@ class ClickerSmokeTest(unittest.TestCase):
         )
         self.page.goto(f"{BASE_URL}/mice/mouse-a")
 
-        expect(self.page.locator(".support-panel .public-support-map")).to_have_count(1)
-        expect(self.page.locator(".support-panel .support-tools")).to_have_count(0)
+        expect(self.page.locator(".detail-hand-viewport .public-support-map")).to_have_count(1)
+        expect(self.page.locator(".detail-hand-viewport .support-tools")).to_have_count(0)
+        expect(self.page.locator(".detail-hand-viewport .heatmap-filter-bar")).to_be_visible()
+        expect(self.page.locator(".detail-hand-viewport .heatmap-score")).to_be_visible()
         expect(self.page.locator('.public-support-map canvas[aria-label="所有用户支撑位置热力图"]')).to_be_visible(timeout=10000)
+        self.assertEqual(
+            self.page.locator(".detail-model-stage").evaluate(
+                "element => getComputedStyle(element).gridTemplateColumns.split(' ').length"
+            ),
+            2,
+        )
+        footer_alignment = self.page.evaluate("""() => {
+            const left = document.querySelector('.detail-mouse-viewport .model-panel-footer').getBoundingClientRect()
+            const right = document.querySelector('.detail-hand-viewport .model-panel-footer').getBoundingClientRect()
+            return { topDelta: Math.abs(left.top - right.top), bottomDelta: Math.abs(left.bottom - right.bottom) }
+        }""")
+        self.assertLessEqual(footer_alignment["topDelta"], 1)
+        self.assertLessEqual(footer_alignment["bottomDelta"], 1)
+
+        detail_desktop_screenshot = os.environ.get("E2E_DETAIL_MODEL_DESKTOP_SCREENSHOT")
+        if detail_desktop_screenshot:
+            self.page.locator(".detail-hero").screenshot(path=detail_desktop_screenshot)
+        detail_mobile_screenshot = os.environ.get("E2E_DETAIL_MODEL_MOBILE_SCREENSHOT")
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.assertEqual(
+            self.page.locator(".detail-model-stage").evaluate(
+                "element => getComputedStyle(element).gridTemplateColumns.split(' ').length"
+            ),
+            1,
+        )
+        self.assertLessEqual(
+            self.page.evaluate("document.documentElement.scrollWidth"),
+            390,
+        )
+        if detail_mobile_screenshot:
+            self.page.locator(".detail-hero").screenshot(path=detail_mobile_screenshot)
+        self.page.set_viewport_size({"width": 1280, "height": 720})
+        heatmap_controls_screenshot = os.environ.get("E2E_DETAIL_HEATMAP_SCREENSHOT")
+        if heatmap_controls_screenshot:
+            self.page.locator(".detail-hand-viewport").screenshot(path=heatmap_controls_screenshot)
 
         self.page.get_by_role("button", name="管理我的评价").click()
         expect(self.page.locator(".personal-support-editor")).to_be_visible()
@@ -1134,6 +1264,108 @@ class ClickerSmokeTest(unittest.TestCase):
         payload = json.loads(request[2])
         self.assertGreater(len(payload["dabs"]), 0)
         self.assertNotIn("supportPositions", payload)
+
+    def test_layout_adapts_without_scaling_typography_or_overflowing(self):
+        home_widths = (375, 768, 1024, 1440, 1920, 2560, 3840)
+        screenshot_dir = os.environ.get("E2E_RESPONSIVE_SCREENSHOT_DIR")
+
+        for viewport_width in home_widths:
+            with self.subTest(route="home", viewport_width=viewport_width):
+                self.page.set_viewport_size({"width": viewport_width, "height": 900})
+                self.page.goto(f"{BASE_URL}/")
+                self.page.wait_for_load_state("networkidle")
+
+                client_width = self.page.evaluate("document.documentElement.clientWidth")
+                if viewport_width <= 430:
+                    expected_shell_width = client_width - 24
+                elif viewport_width <= 820:
+                    expected_shell_width = client_width - 28
+                elif viewport_width <= 1180:
+                    expected_shell_width = viewport_width - 40
+                elif viewport_width < 1440:
+                    expected_shell_width = min(1280, viewport_width - 72)
+                else:
+                    expected_shell_width = min(
+                        viewport_width - 96,
+                        740 + (viewport_width * 0.375),
+                        1760,
+                    )
+                shell_width = self.page.locator(".home-page .section-shell").first.evaluate(
+                    "element => element.getBoundingClientRect().width"
+                )
+                self.assertAlmostEqual(shell_width, expected_shell_width, delta=1)
+                self.assertEqual(
+                    self.page.evaluate("getComputedStyle(document.documentElement).fontSize"),
+                    "16px",
+                )
+                self.assertLessEqual(
+                    self.page.evaluate("document.documentElement.scrollWidth"),
+                    viewport_width,
+                )
+
+                if screenshot_dir and viewport_width in (375, 1440, 2560, 3840):
+                    os.makedirs(screenshot_dir, exist_ok=True)
+                    self.page.screenshot(
+                        path=os.path.join(screenshot_dir, f"home-{viewport_width}.png"),
+                        full_page=True,
+                    )
+
+        expected_catalog_columns = {1440: 3, 1920: 4, 2560: 5, 3840: 5}
+        for viewport_width, expected_columns in expected_catalog_columns.items():
+            with self.subTest(route="catalog", viewport_width=viewport_width):
+                self.page.set_viewport_size({"width": viewport_width, "height": 900})
+                self.page.goto(f"{BASE_URL}/mice")
+                self.page.wait_for_load_state("networkidle")
+
+                grid = self.page.locator(".database-results .mouse-grid")
+                expect(grid).to_be_visible()
+                columns = grid.evaluate(
+                    "element => getComputedStyle(element).gridTemplateColumns.split(' ').length"
+                )
+                self.assertEqual(columns, expected_columns)
+                self.assertLessEqual(
+                    self.page.evaluate("document.documentElement.scrollWidth"),
+                    viewport_width,
+                )
+
+                if screenshot_dir and viewport_width in (1440, 2560):
+                    self.page.screenshot(
+                        path=os.path.join(screenshot_dir, f"catalog-{viewport_width}.png"),
+                        full_page=True,
+                    )
+
+    def test_advertising_rails_use_reserved_space_without_moving_content(self):
+        self.public_config["advertisingEnabled"] = True
+        self.page.set_viewport_size({"width": 1920, "height": 900})
+        self.page.goto(f"{BASE_URL}/")
+        self.page.wait_for_load_state("networkidle")
+
+        shell_before = self.page.locator(".home-page .section-shell").first.evaluate(
+            "element => ({ left: element.getBoundingClientRect().left, width: element.getBoundingClientRect().width })"
+        )
+        for side in ("left", "right"):
+            rail = self.page.locator(f'[data-ad-slot="{side}-rail"]')
+            expect(rail).to_be_visible()
+            box = rail.bounding_box()
+            self.assertAlmostEqual(box["width"], 220, delta=1)
+            self.assertAlmostEqual(box["height"], 506, delta=1)
+        self.assertLessEqual(self.page.evaluate("document.documentElement.scrollWidth"), 1920)
+
+        self.public_config["advertisingEnabled"] = False
+        self.page.reload()
+        self.page.wait_for_load_state("networkidle")
+        expect(self.page.locator('[data-ad-slot]')).to_have_count(0)
+        shell_after = self.page.locator(".home-page .section-shell").first.evaluate(
+            "element => ({ left: element.getBoundingClientRect().left, width: element.getBoundingClientRect().width })"
+        )
+        self.assertEqual(shell_after, shell_before)
+
+        self.public_config["advertisingEnabled"] = True
+        self.page.set_viewport_size({"width": 1024, "height": 900})
+        self.page.reload()
+        self.page.wait_for_load_state("networkidle")
+        self.assertFalse(self.page.locator('[data-ad-slot="left-rail"]').is_visible())
+        self.assertFalse(self.page.locator('[data-ad-slot="right-rail"]').is_visible())
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ public class MailService {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(from);
             message.setTo(recipient);
-            message.setSubject("欢迎加入 Clicker Index");
+            message.setSubject("欢迎加入 GearDB");
             message.setText("账号创建成功。现在可以提交结构化鼠标评价并保存对比清单。");
             sender.send(message);
         } catch (RuntimeException exception) {
@@ -48,7 +48,7 @@ public class MailService {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(from);
             message.setTo(recipient);
-            message.setSubject("Clicker Index 邮箱验证码");
+            message.setSubject("GearDB 邮箱验证码");
             message.setText("你正在" + action + "，验证码为：" + code + "\n\n验证码 " + expiresSeconds
                     + " 秒内有效，请勿转发给他人。如非本人操作，请忽略本邮件。");
             sender.send(message);

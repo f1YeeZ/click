@@ -2,7 +2,7 @@
 defineOptions({ name: 'CodeMapView' })
 
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { buildCodeMapIndex, getLearningMeta, learningLevels } from '../utils/codeMapIndex'
+import { buildCodeMapIndex, getCallabilityMeta, getLearningMeta, learningLevels } from '../utils/codeMapIndex'
 
 const frontendSources = import.meta.glob('../**/*.{js,vue}', {
   query: '?raw',
@@ -46,6 +46,7 @@ let copyResetTimer
 const degree = (id) => (incomingById.get(id)?.length || 0) + (outgoingById.get(id)?.length || 0)
 const matchesScope = (node) => scope.value === 'all' || node.area === scope.value
 const learningMeta = getLearningMeta
+const callabilityMeta = getCallabilityMeta
 const learningCounts = Object.fromEntries(Object.keys(learningLevels).map((level) => [
   level,
   index.nodes.filter((node) => typeLabels[node.type] && learningMeta(node).level === level).length,
@@ -73,19 +74,20 @@ const results = computed(() => {
   const term = query.value.trim().toLocaleLowerCase()
   return index.nodes
     .filter((node) => typeLabels[node.type] && matchesScope(node) && (learningFilter.value === 'all' || learningMeta(node).level === learningFilter.value))
-    .map((node) => ({ node, score: searchScore(node, term), learning: learningMeta(node) }))
+    .map((node) => ({ node, score: searchScore(node, term), learning: learningMeta(node), callability: callabilityMeta(node) }))
     .filter((item) => item.score >= 0)
     .sort((left, right) => right.score - left.score || left.node.label.localeCompare(right.node.label, 'zh-CN'))
 })
 const selected = computed(() => nodeById.get(selectedId.value))
 const selectedLearning = computed(() => learningMeta(selected.value))
+const selectedCallability = computed(() => callabilityMeta(selected.value))
 const incoming = computed(() => (incomingById.get(selectedId.value) || []).map((edge) => {
   const node = nodeById.get(edge.from)
-  return { edge, node, learning: learningMeta(node) }
+  return { edge, node, learning: learningMeta(node), callability: callabilityMeta(node) }
 }).filter((item) => item.node))
 const outgoing = computed(() => (outgoingById.get(selectedId.value) || []).map((edge) => {
   const node = nodeById.get(edge.to)
-  return { edge, node, learning: learningMeta(node) }
+  return { edge, node, learning: learningMeta(node), callability: callabilityMeta(node) }
 }).filter((item) => item.node))
 const matchingFlows = computed(() => index.flows.filter((flow) => flow.steps.some((step) => step.node === selectedId.value)))
 const fallbackSteps = computed(() => [
@@ -242,6 +244,9 @@ onBeforeUnmount(() => window.clearTimeout(copyResetTimer))
                 <span class="learning-badge">{{ item.learning.short }}</span>
               </span>
               <strong>{{ item.node.label }}</strong>
+              <span v-if="item.callability.callable" :class="['callability-chip', `call-${item.callability.kind}`]">
+                {{ item.callability.short }} · {{ item.callability.label }}
+              </span>
               <small>{{ item.node.endpoint || item.node.role }}</small>
               <em>{{ item.node.file }}<template v-if="item.node.line">:{{ item.node.line }}</template></em>
             </button>
@@ -270,6 +275,19 @@ onBeforeUnmount(() => window.clearTimeout(copyResetTimer))
             </div>
           </section>
 
+          <section :class="['callability-callout', `call-${selectedCallability.kind}`]" aria-label="当前节点调用方式">
+            <div class="callability-icon" aria-hidden="true">CALL</div>
+            <div>
+              <small>HOW TO CALL / 怎么调用</small>
+              <strong>{{ selectedCallability.label }}</strong>
+              <p>{{ selectedCallability.detail }}</p>
+            </div>
+            <dl>
+              <div><dt>上游调用者</dt><dd>{{ incoming.length }}</dd></div>
+              <div><dt>下游调用项</dt><dd>{{ outgoing.length }}</dd></div>
+            </dl>
+          </section>
+
           <div v-if="selected.signature || selected.endpoint" class="focus-contract">
             <p v-if="selected.endpoint"><span>HTTP</span><code>{{ selected.endpoint }}</code></p>
             <p v-if="selected.signature"><span>SIGNATURE</span><code>{{ selected.signature }}</code></p>
@@ -294,12 +312,14 @@ onBeforeUnmount(() => window.clearTimeout(copyResetTimer))
           </section>
 
           <section class="relation-section" aria-labelledby="relation-heading">
-            <header><div><span>01</span><h3 id="relation-heading">直接关联</h3></div><small>点击任意节点继续追踪</small></header>
+            <header><div><span>01</span><h3 id="relation-heading">直接关联</h3></div><small>上游调用当前节点；当前节点调用下游</small></header>
             <div class="relation-map">
               <div class="relation-side incoming-side">
                 <span>IN / 上游 · {{ incoming.length }}</span>
                 <button v-for="item in incoming" :key="`${item.edge.from}-${item.edge.to}`" type="button" :class="`learning-${item.learning.level}`" @click="selectNode(item.node.id)">
-                  <strong>{{ item.node.label }}</strong><small>{{ item.edge.label }}</small><b class="learning-badge">{{ item.learning.short }}</b>
+                  <strong>{{ item.node.label }}</strong><small>{{ item.edge.label }}</small>
+                  <small v-if="item.callability.callable" class="relation-callability">{{ item.callability.short }} · {{ item.callability.label }}</small>
+                  <b class="learning-badge">{{ item.learning.short }}</b>
                 </button>
                 <p v-if="!incoming.length">没有静态可识别的上游</p>
               </div>
@@ -307,7 +327,9 @@ onBeforeUnmount(() => window.clearTimeout(copyResetTimer))
               <div class="relation-side outgoing-side">
                 <span>OUT / 下游 · {{ outgoing.length }}</span>
                 <button v-for="item in outgoing" :key="`${item.edge.from}-${item.edge.to}`" type="button" :class="`learning-${item.learning.level}`" @click="selectNode(item.node.id)">
-                  <strong>{{ item.node.label }}</strong><small>{{ item.edge.label }}</small><b class="learning-badge">{{ item.learning.short }}</b>
+                  <strong>{{ item.node.label }}</strong><small>{{ item.edge.label }}</small>
+                  <small v-if="item.callability.callable" class="relation-callability">{{ item.callability.short }} · {{ item.callability.label }}</small>
+                  <b class="learning-badge">{{ item.learning.short }}</b>
                 </button>
                 <p v-if="!outgoing.length">没有静态可识别的下游</p>
               </div>
@@ -347,27 +369,27 @@ onBeforeUnmount(() => window.clearTimeout(copyResetTimer))
 
 <style scoped>
 .code-map-page {
-  --cm-bg: #0b0b0b;
-  --cm-panel: #141414;
-  --cm-panel-2: #1b1b1b;
-  --cm-line: #353535;
-  --cm-muted: #909090;
-  --cm-text: #ededed;
-  --cm-blue: #ffffff;
-  --cm-blue-soft: rgba(255, 255, 255, 0.10);
-  --cm-amber: #d0d0d0;
-  --learn-core: #f0f0f0;
-  --learn-core-soft: rgba(240, 240, 240, .11);
-  --learn-support: #bdbdbd;
-  --learn-support-soft: rgba(189, 189, 189, .11);
-  --learn-skip: #929292;
-  --learn-skip-soft: rgba(146, 146, 146, .11);
+  --cm-bg: #0b0d10;
+  --cm-panel: #11151a;
+  --cm-panel-2: #161b21;
+  --cm-line: #29323d;
+  --cm-muted: #7f8b98;
+  --cm-text: #e8edf2;
+  --cm-blue: #78aefc;
+  --cm-blue-soft: rgba(120, 174, 252, 0.11);
+  --cm-amber: #d7b36a;
+  --learn-core: #ff6b6b;
+  --learn-core-soft: rgba(255, 107, 107, .11);
+  --learn-support: #f0a95b;
+  --learn-support-soft: rgba(240, 169, 91, .11);
+  --learn-skip: #8fc7df;
+  --learn-skip-soft: rgba(143, 199, 223, .11);
   min-height: 100vh;
   padding-bottom: 100px;
   color: var(--cm-text);
   background:
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(rgba(120, 174, 252, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120, 174, 252, 0.035) 1px, transparent 1px),
     var(--cm-bg);
   background-size: 64px 64px;
 }
@@ -399,30 +421,30 @@ onBeforeUnmount(() => window.clearTimeout(copyResetTimer))
 .code-map-kicker span { display: inline-block; width: 20px; height: 1px; margin: 0 8px 3px 0; background: var(--cm-blue); }
 .code-map-hero h1 { margin: 18px 0 0; font-size: clamp(3.4rem, 7vw, 7.4rem); font-weight: 600; line-height: .88; letter-spacing: -.075em; }
 .code-map-hero h1 em { color: var(--cm-blue); font-style: normal; }
-.code-map-lead { max-width: 650px; margin: 30px 0 0; color: #b4b4b4; font-size: .96rem; }
+.code-map-lead { max-width: 650px; margin: 30px 0 0; color: #aab4bf; font-size: .96rem; }
 .code-map-stats { display: grid; grid-template-columns: repeat(2, 1fr); margin: 0; border-top: 1px solid var(--cm-line); border-left: 1px solid var(--cm-line); }
-.code-map-stats div { min-height: 126px; padding: 18px; border-right: 1px solid var(--cm-line); border-bottom: 1px solid var(--cm-line); background: rgba(20, 20, 20, .82); }
+.code-map-stats div { min-height: 126px; padding: 18px; border-right: 1px solid var(--cm-line); border-bottom: 1px solid var(--cm-line); background: rgba(17, 21, 26, .82); }
 .code-map-stats dt { color: var(--cm-muted); }
 .code-map-stats dd { margin: 12px 0 2px; color: var(--cm-blue); font: 500 2.2rem/1 var(--mono); }
 .code-map-stats span { color: var(--cm-muted); font-size: .75rem; }
 .code-map-shell { padding-top: 28px; }
 .code-map-toolbar { position: sticky; top: 74px; z-index: 25; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px; padding: 1px; background: var(--cm-line); border: 1px solid var(--cm-line); box-shadow: 0 18px 40px rgba(0, 0, 0, .28); }
-.code-search { position: relative; display: block; padding: 12px 16px; background: rgba(20, 20, 20, .96); }
+.code-search { position: relative; display: block; padding: 12px 16px; background: rgba(17, 21, 26, .96); }
 .code-search > span { display: block; color: var(--cm-muted); }
 .code-search input { width: 100%; margin-top: 7px; padding: 0 40px 0 0; border: 0; outline: 0; background: transparent; color: var(--cm-text); font: 500 .86rem/1.5 var(--mono); }
-.code-search input::placeholder { color: #6a6a6a; }
+.code-search input::placeholder { color: #58636f; }
 .code-search:focus-within { box-shadow: inset 3px 0 var(--cm-blue); }
 .code-search kbd { position: absolute; right: 14px; bottom: 13px; padding: 2px 7px; border: 1px solid var(--cm-line); color: var(--cm-muted); font: .75rem var(--mono); }
-.scope-switch { display: flex; background: rgba(20, 20, 20, .96); }
+.scope-switch { display: flex; background: rgba(17, 21, 26, .96); }
 .scope-switch button { min-width: 84px; padding: 0 14px; border: 0; border-left: 1px solid var(--cm-line); background: transparent; color: var(--cm-muted); cursor: pointer; }
 .scope-switch button:hover, .scope-switch button.active { background: var(--cm-blue-soft); color: var(--cm-blue); }
 .learning-core { --learning-color: var(--learn-core); --learning-soft: var(--learn-core-soft); }
 .learning-support { --learning-color: var(--learn-support); --learning-soft: var(--learn-support-soft); }
 .learning-skip { --learning-color: var(--learn-skip); --learning-soft: var(--learn-skip-soft); }
-.learning-guide { margin-top: 16px; border: 1px solid var(--cm-line); background: rgba(20, 20, 20, .76); }
+.learning-guide { margin-top: 16px; border: 1px solid var(--cm-line); background: rgba(17, 21, 26, .76); }
 .learning-guide > header { display: flex; justify-content: space-between; align-items: end; gap: 20px; padding: 18px 20px; border-bottom: 1px solid var(--cm-line); }
 .learning-guide > header span { color: var(--cm-blue); font: 500 .75rem/1.3 var(--mono); letter-spacing: .13em; }
-.learning-guide h2 { margin: 6px 0 0; color: #d7d7d7; font-size: .9rem; font-weight: 500; }
+.learning-guide h2 { margin: 6px 0 0; color: #cfd7df; font-size: .9rem; font-weight: 500; }
 .learning-guide > header button { flex: 0 0 auto; padding: 7px 11px; border: 1px solid var(--cm-line); background: transparent; color: var(--cm-muted); font-size: .75rem; cursor: pointer; }
 .learning-guide > header button:hover, .learning-guide > header button.active { border-color: var(--cm-blue); color: var(--cm-blue); }
 .learning-levels { display: grid; grid-template-columns: repeat(3, 1fr); }
@@ -437,41 +459,58 @@ onBeforeUnmount(() => window.clearTimeout(copyResetTimer))
 .learning-badge { display: inline-grid; place-items: center; min-width: 34px; padding: 3px 6px; border: 1px solid color-mix(in srgb, var(--learning-color) 62%, transparent); background: var(--learning-soft); color: var(--learning-color); font: 500 .75rem/1 var(--mono); letter-spacing: .08em; white-space: nowrap; }
 .code-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 16px 0 20px; }
 .code-shortcuts > span { margin-right: 6px; color: var(--cm-muted); }
-.code-shortcuts button { padding: 7px 11px; border: 1px solid var(--cm-line); background: var(--cm-panel); color: #c0c0c0; font-size: .75rem; cursor: pointer; }
+.code-shortcuts button { padding: 7px 11px; border: 1px solid var(--cm-line); background: var(--cm-panel); color: #b7c0c9; font-size: .75rem; cursor: pointer; }
 .code-shortcuts button:hover { border-color: var(--cm-blue); color: var(--cm-blue); }
 .code-workbench { display: grid; grid-template-columns: minmax(270px, .72fr) minmax(0, 1.7fr); gap: 16px; align-items: start; }
-.code-index, .code-focus { min-width: 0; border: 1px solid var(--cm-line); background: rgba(11, 11, 11, .88); }
+.code-index, .code-focus { min-width: 0; border: 1px solid var(--cm-line); background: rgba(11, 13, 16, .88); }
 .code-index { position: sticky; top: 168px; }
 .code-index > header { display: flex; justify-content: space-between; align-items: center; min-height: 58px; padding: 12px 14px; border-bottom: 1px solid var(--cm-line); background: var(--cm-panel); }
 .code-index header div { display: flex; align-items: baseline; gap: 10px; }
 .code-index header span, .code-index header small { color: var(--cm-muted); }
 .code-index header strong { color: var(--cm-blue); font: 500 1.15rem var(--mono); }
-.code-result-list { overflow: auto; max-height: calc(100vh - 250px); scrollbar-color: #505050 transparent; }
-.code-result { display: grid; grid-template-columns: 70px minmax(0, 1fr); width: 100%; padding: 13px 14px; border: 0; border-bottom: 1px solid #292929; background: transparent; color: var(--cm-text); text-align: left; cursor: pointer; }
+.code-result-list { overflow: auto; max-height: calc(100vh - 250px); scrollbar-color: #3c4855 transparent; }
+.code-result { display: grid; grid-template-columns: 70px minmax(0, 1fr); width: 100%; padding: 13px 14px; border: 0; border-bottom: 1px solid #202831; background: transparent; color: var(--cm-text); text-align: left; cursor: pointer; }
 .code-result:hover, .code-result.selected { background: var(--learning-soft); }
 .code-result.selected { box-shadow: inset 3px 0 var(--learning-color); }
-.result-identity { grid-row: 1 / 4; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.result-identity { grid-row: 1 / 5; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .result-type { color: var(--cm-muted); font: 500 .75rem/1.45 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
-.code-result strong { overflow: hidden; color: #e3e3e3; font: 500 .85rem/1.35 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
-.code-result small { overflow: hidden; margin-top: 3px; color: #9b9b9b; font-size: .75rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-.code-result em { overflow: hidden; margin-top: 5px; color: #626262; font: normal .75rem/1.3 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.code-result strong { overflow: hidden; color: #e8edf2; font: 500 .85rem/1.35 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.code-result small { overflow: hidden; margin-top: 3px; color: #8f9ba7; font-size: .75rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.code-result em { overflow: hidden; margin-top: 5px; color: #54616d; font: normal .75rem/1.3 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.callability-chip { justify-self: start; overflow: hidden; max-width: 100%; margin-top: 5px; padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--call-color) 55%, transparent); background: color-mix(in srgb, var(--call-color) 9%, transparent); color: var(--call-color); font: 500 .68rem/1.2 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.call-http { --call-color: #76d6b0; }
+.call-public, .call-exported { --call-color: #78aefc; }
+.call-private, .call-package, .call-protected { --call-color: #d7b36a; }
+.call-page, .call-module { --call-color: #9bc6ff; }
+.call-constructor { --call-color: #c3a7ef; }
+.call-structure { --call-color: #7f8b98; }
 .focus-header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, .55fr); gap: 28px; padding: 30px; border-bottom: 1px solid var(--cm-line); background: linear-gradient(135deg, var(--cm-panel-2), var(--cm-panel)); }
 .focus-header > div > span, .focus-location > span { color: var(--cm-blue); }
 .focus-header h2 { margin: 8px 0; overflow-wrap: anywhere; font: 500 clamp(1.8rem, 4vw, 3.6rem)/1 var(--mono); letter-spacing: -.045em; }
-.focus-header p { max-width: 700px; margin: 0; color: #b0b0b0; }
+.focus-header p { max-width: 700px; margin: 0; color: #a6b0ba; }
 .focus-location { min-width: 0; padding-left: 18px; border-left: 1px solid var(--cm-line); }
-.focus-location code { display: block; margin-top: 12px; color: #b4b4b4; font: .75rem/1.6 var(--mono); overflow-wrap: anywhere; }
+.focus-location code { display: block; margin-top: 12px; color: #aab4bf; font: .75rem/1.6 var(--mono); overflow-wrap: anywhere; }
 .learning-callout { display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--cm-line); background: linear-gradient(90deg, var(--learning-soft), transparent 78%); }
 .learning-marker { display: block; min-height: 68px; background: var(--learning-color); box-shadow: 0 0 22px color-mix(in srgb, var(--learning-color) 30%, transparent); }
 .learning-callout div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-content: center; }
 .learning-callout small { grid-column: 1 / 3; color: var(--learning-color); font: 500 .75rem/1.3 var(--mono); letter-spacing: .12em; }
-.learning-callout strong { color: var(--learning-color); font-size: .85rem; }
-.learning-callout p { margin: 0; color: #c0c0c0; font-size: .75rem; }
+.learning-callout strong { color: var(--cm-text); font-size: .85rem; }
+.learning-callout p { margin: 0; color: #b8c0c8; font-size: .75rem; }
+.callability-callout { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 18px 22px; border-bottom: 1px solid var(--cm-line); background: linear-gradient(90deg, color-mix(in srgb, var(--call-color) 8%, transparent), transparent 72%); }
+.callability-icon { display: grid; place-items: center; width: 54px; height: 54px; border: 1px solid var(--call-color); color: var(--call-color); font: 600 .68rem/1 var(--mono); letter-spacing: .12em; }
+.callability-callout > div:nth-child(2) { display: grid; gap: 4px; }
+.callability-callout small { color: var(--call-color); font: 500 .68rem/1.3 var(--mono); letter-spacing: .12em; }
+.callability-callout strong { color: var(--cm-text); font-size: .86rem; }
+.callability-callout p { max-width: 760px; margin: 0; color: #b8c0c8; font-size: .75rem; }
+.callability-callout dl { display: flex; gap: 1px; margin: 0; padding: 1px; background: var(--cm-line); }
+.callability-callout dl div { min-width: 86px; padding: 8px 10px; background: var(--cm-bg); text-align: center; }
+.callability-callout dt { color: var(--cm-muted); font-size: .65rem; }
+.callability-callout dd { margin: 3px 0 0; color: var(--call-color); font: 500 .9rem/1 var(--mono); }
 .focus-contract { display: grid; gap: 1px; padding: 1px; background: var(--cm-line); }
 .focus-contract p { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 14px; margin: 0; padding: 12px 18px; background: var(--cm-bg); }
 .focus-contract span { color: var(--cm-muted); }
 .focus-contract code { color: var(--cm-amber); font: .75rem/1.6 var(--mono); overflow-wrap: anywhere; }
-.source-section { min-width: 0; padding: 26px 30px 34px; border-bottom: 1px solid var(--cm-line); box-shadow: inset 3px 0 var(--learning-color); background: #101010; }
+.source-section { min-width: 0; padding: 26px 30px 34px; border-bottom: 1px solid var(--cm-line); box-shadow: inset 3px 0 var(--learning-color); background: #0d1014; }
 .source-section > header { display: flex; justify-content: space-between; align-items: end; gap: 18px; margin-bottom: 16px; }
 .source-section header > div:first-child { display: flex; align-items: center; gap: 12px; }
 .source-section header span { color: var(--cm-blue); font: 500 .75rem/1.3 var(--mono); letter-spacing: .13em; }
@@ -480,16 +519,16 @@ onBeforeUnmount(() => window.clearTimeout(copyResetTimer))
 .source-actions small { overflow: hidden; max-width: 420px; color: var(--cm-muted); font: .75rem/1.4 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .source-actions button { flex: 0 0 auto; padding: 7px 11px; border: 1px solid var(--cm-blue); background: var(--cm-blue-soft); color: var(--cm-blue); font: 500 .75rem var(--mono); cursor: pointer; }
 .source-actions button:hover { background: var(--cm-blue); color: var(--cm-bg); }
-.source-window { overflow: auto; width: 100%; min-width: 0; max-width: 100%; max-height: 560px; border: 1px solid var(--cm-line); background: #090909; scrollbar-color: #4a4a4a #0b0b0b; }
+.source-window { overflow: auto; width: 100%; min-width: 0; max-width: 100%; max-height: 560px; border: 1px solid var(--cm-line); background: #080a0d; scrollbar-color: #3b4753 #0b0d10; }
 .source-code { min-width: 100%; width: max-content; margin: 0; padding: 10px 0; list-style: none; counter-reset: none; }
 .source-code li { display: grid; grid-template-columns: 62px minmax(max-content, 1fr); min-height: 23px; }
-.source-code li:hover { background: rgba(255, 255, 255, .055); }
-.source-code li > span { position: sticky; left: 0; z-index: 1; display: block; padding: 2px 14px 2px 8px; border-right: 1px solid #242424; background: #0d0d0d; color: #5b5b5b; font: .75rem/1.55 var(--mono); text-align: right; user-select: none; }
-.source-code code { display: block; padding: 2px 20px 2px 14px; color: #d1d1d1; font: .75rem/1.55 var(--mono); white-space: pre; }
-.source-code :deep(.java-keyword) { color: #ffffff; }
-.source-code :deep(.java-string) { color: #d0d0d0; }
-.source-code :deep(.java-number) { color: #b8b8b8; }
-.source-code :deep(.java-comment) { color: #737373; font-style: italic; }
+.source-code li:hover { background: rgba(120, 174, 252, .055); }
+.source-code li > span { position: sticky; left: 0; z-index: 1; display: block; padding: 2px 14px 2px 8px; border-right: 1px solid #1c232b; background: #0b0e12; color: #4f5b67; font: .75rem/1.55 var(--mono); text-align: right; user-select: none; }
+.source-code code { display: block; padding: 2px 20px 2px 14px; color: #c9d1d9; font: .75rem/1.55 var(--mono); white-space: pre; }
+.source-code :deep(.java-keyword) { color: #7fb2ff; }
+.source-code :deep(.java-string) { color: #d9bd7a; }
+.source-code :deep(.java-number) { color: #8ec5a1; }
+.source-code :deep(.java-comment) { color: #65717d; font-style: italic; }
 .relation-section, .sequence-section { padding: 26px 30px 34px; }
 .relation-section { border-bottom: 1px solid var(--cm-line); }
 .relation-section > header, .sequence-section > header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 24px; }
@@ -505,6 +544,7 @@ onBeforeUnmount(() => window.clearTimeout(copyResetTimer))
 .relation-side button .learning-badge { position: absolute; top: 9px; right: 9px; }
 .relation-side button strong { overflow: hidden; font: 500 .75rem/1.35 var(--mono); text-overflow: ellipsis; }
 .relation-side button small, .relation-side p { margin: 0; color: var(--cm-muted); font-size: .75rem; }
+.relation-side button .relation-callability { margin-top: 3px; color: #9bc6ff; font-family: var(--mono); }
 .relation-core { position: relative; display: grid; place-items: center; min-height: 150px; padding: 14px; border: 1px solid var(--learning-color); background: var(--learning-soft); text-align: center; }
 .relation-core::before, .relation-core::after { content: ''; position: absolute; top: 50%; width: 18px; border-top: 1px solid var(--learning-color); }
 .relation-core::before { left: -19px; }.relation-core::after { right: -19px; }
@@ -520,13 +560,13 @@ onBeforeUnmount(() => window.clearTimeout(copyResetTimer))
 .sequence-list li:last-child::before { display: none; }
 .sequence-list li > span { z-index: 1; display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--learning-color); background: var(--cm-bg); color: var(--learning-color); font: .75rem var(--mono); }
 .sequence-list li > small { padding-top: 9px; color: var(--cm-muted); font: .75rem/1.4 var(--mono); }
-.sequence-list button, .sequence-list p { min-width: 0; margin: 0; padding: 8px 50px 8px 10px; border: 0; background: transparent; color: #d0d0d0; overflow-wrap: anywhere; text-align: left; font-size: .75rem; }
+.sequence-list button, .sequence-list p { min-width: 0; margin: 0; padding: 8px 50px 8px 10px; border: 0; background: transparent; color: #c8d0d8; overflow-wrap: anywhere; text-align: left; font-size: .75rem; }
 .sequence-list button { cursor: pointer; }
-.sequence-list button:hover { background: var(--learning-soft); color: var(--learning-color); }
+.sequence-list button:hover { background: var(--learning-soft); color: var(--cm-text); }
 .sequence-list li > .learning-badge { position: absolute; top: 8px; right: 0; }
-.temporary-note { display: flex; gap: 18px; margin-top: 20px; padding: 18px 20px; border: 1px dashed #686868; background: rgba(210, 210, 210, .055); }
+.temporary-note { display: flex; gap: 18px; margin-top: 20px; padding: 18px 20px; border: 1px dashed #685d42; background: rgba(215, 179, 106, .055); }
 .temporary-note > span { flex: 0 0 auto; color: var(--cm-amber); }
-.temporary-note p { margin: 0; color: #999999; font-size: .75rem; }
+.temporary-note p { margin: 0; color: #9f9788; font-size: .75rem; }
 .temporary-note code { color: var(--cm-amber); font-family: var(--mono); }
 @media (max-width: 1040px) {
   .code-map-hero { grid-template-columns: 1fr; }
@@ -554,6 +594,10 @@ onBeforeUnmount(() => window.clearTimeout(copyResetTimer))
   .focus-location { padding: 16px 0 0; border-top: 1px solid var(--cm-line); border-left: 0; }
   .learning-callout div { grid-template-columns: 1fr; }
   .learning-callout small { grid-column: 1; }
+  .callability-callout { grid-template-columns: 52px minmax(0, 1fr); padding: 18px; }
+  .callability-icon { width: 46px; height: 46px; }
+  .callability-callout dl { grid-column: 1 / 3; }
+  .callability-callout dl div { flex: 1; min-width: 0; }
   .focus-contract p { grid-template-columns: 1fr; }
   .source-section, .relation-section, .sequence-section { padding: 22px; }
   .source-section > header { align-items: start; }

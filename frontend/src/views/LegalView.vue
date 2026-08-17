@@ -2,13 +2,13 @@
 import { computed } from 'vue'
 
 const props = defineProps({ document: { type: String, required: true } })
-const operatorName = import.meta.env.VITE_OPERATOR_NAME || 'Clicker Index 运营方'
+const operatorName = import.meta.env.VITE_OPERATOR_NAME || 'GearDB 运营方'
 const contactEmail = import.meta.env.VITE_LEGAL_CONTACT_EMAIL || '请在部署时配置联系邮箱'
 const updatedAt = '2026 年 7 月 21 日'
 
 const documents = {
   privacy: {
-    kicker: 'PRIVACY POLICY', title: '隐私政策', intro: `本政策说明${operatorName}如何处理你在使用 Clicker Index 时提供的数据。`,
+    kicker: 'PRIVACY POLICY', title: '隐私政策', intro: `本政策说明${operatorName}如何处理你在使用 GearDB 时提供的数据。`,
     sections: [
       ['我们收集的信息', ['账号信息：邮箱地址、加密后的密码及协议同意时间。', '个人资料：手长、手型分类和习惯握姿。', '评价数据：评分、支撑位置、关联鼠标及提交时间。', '运行数据：必要的访问日志、IP 地址、错误信息和安全事件记录。']],
       ['使用目的', ['提供注册登录、评价、聚合、推荐和账号管理功能。', '防止重复评价、滥用、攻击和异常登录。', '分析服务稳定性并改进鼠标数据质量。']],
@@ -21,7 +21,7 @@ const documents = {
     ]
   },
   terms: {
-    kicker: 'TERMS OF SERVICE', title: '用户协议', intro: `本协议是你与${operatorName}之间关于使用 Clicker Index 的约定。`,
+    kicker: 'TERMS OF SERVICE', title: '用户协议', intro: `本协议是你与${operatorName}之间关于使用 GearDB 的约定。`,
     sections: [
       ['账号与资格', ['你应提供可接收验证码的邮箱，妥善保管密码，并对账号内发生的操作负责。不得转让、出租账号或冒用他人身份。']],
       ['服务内容', ['本站提供鼠标参数查询、比较、结构化评价聚合与证据型推荐。推荐结果来自有限样本，不构成购买承诺、性能保证或商业担保。']],

@@ -160,7 +160,7 @@ public class FeedbackService {
                 report.getAssigneeEmail(), report.getResolution(), report.getCreatedAt(), report.getUpdatedAt(), report.getResolvedAt());
     }
     private String requireTarget(String type, UUID id) {
-        if ("SITE".equals(type)) return "Clicker Index 前台";
+        if ("SITE".equals(type)) return "GearDB 前台";
         if ("MOUSE".equals(type)) { MouseDevice mouse = mice.selectById(id); if (mouse != null) return mouse.displayName(); }
         if ("REVIEW".equals(type)) { Review review = reviews.selectById(id); if (review != null) { MouseDevice mouse = mice.selectById(review.getMouseId()); return mouse == null ? "评价 " + id : mouse.displayName() + " 的评价"; } }
         throw new BusinessException("TARGET_NOT_FOUND", "反馈对象不存在", HttpStatus.NOT_FOUND);

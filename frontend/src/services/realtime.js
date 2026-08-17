@@ -6,6 +6,7 @@ const CONSISTENCY_REFRESH_MS = 30000
 
 let source = null
 let started = false
+let connected = false
 let connectedOnce = false
 let subscriberCount = 0
 let reconnectAttempt = 0
@@ -33,6 +34,7 @@ const queueEvent = (event) => {
 const closeSource = () => {
   source?.close()
   source = null
+  connected = false
 }
 
 const reconnectDelay = () => {
@@ -60,6 +62,7 @@ const connect = () => {
     if (connectedOnce) {
       queueEvent({ type: 'sync.required', mouseId: null, occurredAt: new Date().toISOString() })
     }
+    connected = true
     connectedOnce = true
   })
 
@@ -95,7 +98,7 @@ export const startRealtime = () => {
   started = true
   if (!consistencyTimer) {
     consistencyTimer = window.setInterval(() => {
-      if (subscriberCount === 0 || document.visibilityState === 'hidden') return
+      if (subscriberCount === 0 || document.visibilityState === 'hidden' || connected) return
       queueEvent({ type: 'sync.required', mouseId: null, occurredAt: new Date().toISOString() })
     }, CONSISTENCY_REFRESH_MS)
   }
@@ -106,6 +109,7 @@ export const startRealtime = () => {
 
 export const stopRealtime = () => {
   started = false
+  connected = false
   connectedOnce = false
   reconnectAttempt = 0
   clearTimeout(reconnectTimer)

@@ -1,84 +1,24 @@
 <script setup>
 defineOptions({ name: 'HomeView' })
-import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import api from '../api/client'
 import MouseCard from '../components/MouseCard.vue'
 import { onRealtime } from '../services/realtime'
 
-const router = useRouter()
-const query = ref('')
-const searchShell = ref(null)
-const suggestions = ref([])
-const suggestionTotal = ref(0)
-const suggestionState = ref('idle')
-const suggestionsOpen = ref(false)
-const activeSuggestion = ref(-1)
 const latest = ref([])
 const total = ref(0)
 const contentReady = ref(false)
+const latestPaused = ref(false)
+const shouldLoopLatest = computed(() => latest.value.length > 4)
 const loadLatest = async () => {
   const { data } = await api.get('/mice', { params: { pageSize: 10, sort: 'newest' } })
   latest.value = data.items.slice(0, 10)
   total.value = data.page.totalItems
 }
-const resetSuggestions = () => {
-  suggestions.value = []
-  suggestionTotal.value = 0
-  suggestionState.value = 'idle'
-  suggestionsOpen.value = false
-  activeSuggestion.value = -1
-}
-const loadSuggestions = async (term, requestId) => {
-  try {
-    const { data } = await api.get('/mice', { params: { q: term, pageSize: 12, sort: 'newest' } })
-    if (requestId !== suggestionRequest || query.value.trim() !== term) return
-    suggestions.value = data.items.slice(0, 6)
-    suggestionTotal.value = data.page.totalItems
-    suggestionState.value = suggestions.value.length ? 'ready' : 'empty'
-  } catch {
-    if (requestId !== suggestionRequest) return
-    suggestions.value = []
-    suggestionTotal.value = 0
-    suggestionState.value = 'error'
-  }
-}
-const searchAll = () => {
-  const term = query.value.trim()
-  suggestionsOpen.value = false
-  const navigation = router.push({ path: '/mice', query: term ? { q: term } : {} })
-  query.value = ''
-  return navigation
-}
-const openSuggestion = (mouse) => {
-  suggestionsOpen.value = false
-  const navigation = router.push(`/mice/${mouse.id}`)
-  query.value = ''
-  return navigation
-}
-const submitSearch = () => searchAll()
-const moveSuggestion = async (direction) => {
-  if (!suggestionsOpen.value || !suggestions.value.length) return
-  activeSuggestion.value = (activeSuggestion.value + direction + suggestions.value.length) % suggestions.value.length
-  await nextTick()
-  document.getElementById(`home-search-option-${activeSuggestion.value}`)?.scrollIntoView({ block: 'nearest' })
-}
-const reopenSuggestions = () => {
-  if (query.value.trim() && suggestionState.value !== 'idle') suggestionsOpen.value = true
-}
-const closeSuggestions = () => {
-  suggestionsOpen.value = false
-  activeSuggestion.value = -1
-}
-const handleOutsidePointer = (event) => {
-  if (!searchShell.value?.contains(event.target)) closeSuggestions()
-}
 let stopRealtime = () => {}
 let realtimeTimer
 let initialLoadTimer
 let contentReadyTimer
-let suggestionTimer
-let suggestionRequest = 0
 const startViewRealtime = () => {
   stopRealtime()
   stopRealtime = onRealtime((event) => {
@@ -87,21 +27,7 @@ const startViewRealtime = () => {
     realtimeTimer = setTimeout(loadLatest, 250)
   })
 }
-watch(query, (value) => {
-  clearTimeout(suggestionTimer)
-  const requestId = ++suggestionRequest
-  const term = value.trim()
-  activeSuggestion.value = -1
-  if (!term) {
-    resetSuggestions()
-    return
-  }
-  suggestionsOpen.value = true
-  suggestionState.value = 'loading'
-  suggestionTimer = window.setTimeout(() => loadSuggestions(term, requestId), 220)
-})
 onMounted(() => {
-  document.addEventListener('pointerdown', handleOutsidePointer)
   contentReadyTimer = window.setTimeout(() => { contentReady.value = true }, 190)
   // Let the route fade finish before inserting the initial card grid.
   initialLoadTimer = window.setTimeout(loadLatest, 220)
@@ -109,87 +35,23 @@ onMounted(() => {
 onActivated(startViewRealtime)
 onDeactivated(() => { stopRealtime(); clearTimeout(realtimeTimer) })
 onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', handleOutsidePointer)
   stopRealtime()
   clearTimeout(realtimeTimer)
   clearTimeout(initialLoadTimer)
   clearTimeout(contentReadyTimer)
-  clearTimeout(suggestionTimer)
-  suggestionRequest++
 })
 </script>
 
 <template>
   <main class="home-page">
     <section class="home-hero section-shell">
-      <div class="hero-copy reveal">
-        <div ref="searchShell" class="home-search-shell" :class="{ open: suggestionsOpen }">
-          <form class="hero-search" role="search" @submit.prevent="submitSearch">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
-            <input
-              v-model="query"
-              type="search"
-              role="combobox"
-              aria-label="按型号搜索"
-              aria-autocomplete="list"
-              aria-controls="home-search-suggestions"
-              :aria-expanded="suggestionsOpen"
-              :aria-activedescendant="activeSuggestion >= 0 ? `home-search-option-${activeSuggestion}` : undefined"
-              placeholder="按型号搜索"
-              autocomplete="off"
-              @focus="reopenSuggestions"
-              @keydown.down.prevent="moveSuggestion(1)"
-              @keydown.up.prevent="moveSuggestion(-1)"
-              @keydown.esc.stop="closeSuggestions"
-            >
-            <button type="submit">搜索</button>
-          </form>
-          <div
-            v-if="suggestionsOpen"
-            id="home-search-suggestions"
-            class="home-search-suggestions"
-            role="listbox"
-            aria-label="鼠标搜索建议"
-          >
-            <div v-if="suggestionState === 'loading'" class="home-search-state" aria-live="polite">
-              <span></span><strong>正在查找匹配鼠标…</strong>
-            </div>
-            <div v-else-if="suggestionState === 'error'" class="home-search-state error">
-              <strong>暂时无法加载搜索建议</strong><button type="button" @click="searchAll">前往鼠标库搜索</button>
-            </div>
-            <div v-else-if="suggestionState === 'empty'" class="home-search-state empty">
-              <strong>没有找到“{{ query.trim() }}”</strong><small>请尝试输入更完整的型号</small>
-            </div>
-            <template v-else>
-              <button
-                v-for="(mouse, index) in suggestions"
-                :id="`home-search-option-${index}`"
-                :key="mouse.id"
-                type="button"
-                class="home-search-option"
-                :class="{ active: activeSuggestion === index }"
-                role="option"
-                :aria-selected="activeSuggestion === index"
-                :aria-label="`查看 ${mouse.displayName} 详情`"
-                @mouseenter="activeSuggestion = index"
-                @click="openSuggestion(mouse)"
-              >
-                <span class="home-search-thumb">
-                  <img v-if="mouse.imageUrl" :src="mouse.imageUrl" :alt="`${mouse.displayName} 产品图`">
-                  <b v-else>{{ mouse.brand.slice(0, 2).toUpperCase() }}</b>
-                </span>
-                <span class="home-search-copy">
-                  <small>{{ mouse.brand }}</small>
-                  <strong>{{ mouse.model }}</strong>
-                  <em>{{ mouse.sensorName || '传感器待补充' }} · {{ mouse.weightG ?? '—' }}g</em>
-                </span>
-                <span class="home-search-arrow" aria-hidden="true">→</span>
-              </button>
-              <button v-if="suggestionState === 'ready'" class="home-search-all" type="button" @click="searchAll">
-                <span>查看全部 {{ suggestionTotal }} 个结果</span><strong>进入鼠标库 →</strong>
-              </button>
-            </template>
-          </div>
+      <div class="hero-copy">
+        <p class="hero-kicker">GEARDB · MOUSE DATABASE</p>
+        <h1>找到真正适合你的鼠标</h1>
+        <p class="hero-summary">按重量、尺寸、外形和传感器筛选，再结合握姿评价与参数对比做出判断。</p>
+        <div class="hero-actions">
+          <RouterLink class="hero-cta hero-cta-primary" to="/mice">浏览鼠标库 <span aria-hidden="true">→</span></RouterLink>
+          <RouterLink class="hero-cta hero-cta-secondary" to="/recommend">开始鼠标推荐</RouterLink>
         </div>
       </div>
     </section>
@@ -197,14 +59,17 @@ onBeforeUnmount(() => {
     <section class="section-shell trending-section">
       <div class="section-heading ruled-heading">
         <div><p class="eyebrow">LATEST ARRIVALS / {{ total }} VERIFIED</p><h2>近期新品</h2></div>
-        <RouterLink class="inline-link" to="/mice">查看全部 <span>→</span></RouterLink>
+        <div class="trending-heading-actions">
+          <button v-if="shouldLoopLatest" class="trending-pause" type="button" :aria-pressed="latestPaused" @click="latestPaused = !latestPaused">{{ latestPaused ? '继续滚动' : '暂停滚动' }}</button>
+          <RouterLink class="inline-link" to="/mice">查看全部 <span>→</span></RouterLink>
+        </div>
       </div>
-      <div class="trending-grid" aria-label="近期新品，无限循环轮播">
-        <div class="trending-track">
+      <div class="trending-grid" :aria-label="shouldLoopLatest ? '近期新品，无限循环轮播' : '近期新品'">
+        <div class="trending-track" :class="{ 'is-static': !shouldLoopLatest, 'is-paused': latestPaused }">
           <div class="trending-set">
             <MouseCard v-for="(mouse, index) in latest" :key="mouse.id" :mouse="mouse" :index="index" />
           </div>
-          <div class="trending-set" aria-hidden="true" inert>
+          <div v-if="shouldLoopLatest" class="trending-set" aria-hidden="true" inert>
             <MouseCard v-for="(mouse, index) in latest" :key="`loop-${mouse.id}`" :mouse="mouse" :index="index" />
           </div>
         </div>
@@ -227,6 +92,79 @@ onBeforeUnmount(() => {
 
 .home-hero .hero-copy {
   max-width: 680px;
+  text-align: center;
+}
+
+.hero-kicker {
+  margin: 0;
+  color: var(--figma-cyan);
+  font-size: 0.76rem;
+  font-weight: 650;
+  letter-spacing: 0.035em;
+}
+
+.hero-copy h1 {
+  margin: 12px 0 0;
+  color: var(--figma-text);
+  font-size: 2.8rem;
+  font-weight: 680;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.hero-summary {
+  max-width: 610px;
+  margin: 16px auto 0;
+  color: var(--figma-text-soft);
+  font-size: 1rem;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.hero-cta {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 19px;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  font-weight: 650;
+  line-height: 1;
+  text-decoration: none;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.hero-cta-primary,
+.hero-cta-primary:visited {
+  background: var(--figma-cyan);
+  color: #071006;
+}
+
+.hero-cta-primary:hover {
+  background: var(--figma-cyan-strong);
+  color: #071006;
+}
+
+.hero-cta-secondary,
+.hero-cta-secondary:visited {
+  background: var(--figma-surface-high);
+  color: var(--figma-text-soft);
+}
+
+.hero-cta-secondary:hover {
+  background: var(--figma-surface-hover);
+  color: var(--figma-text);
 }
 
 .home-page .trending-section {
@@ -246,6 +184,11 @@ onBeforeUnmount(() => {
   animation: trending-loop 48s linear infinite;
 }
 
+.home-page .trending-track.is-static {
+  animation: none;
+  will-change: auto;
+}
+
 .home-page .trending-set {
   display: flex;
   gap: 16px;
@@ -257,7 +200,8 @@ onBeforeUnmount(() => {
 }
 
 .home-page .trending-grid:hover .trending-track,
-.home-page .trending-grid:focus-within .trending-track {
+.home-page .trending-grid:focus-within .trending-track,
+.home-page .trending-track.is-paused {
   animation-play-state: paused;
 }
 
@@ -273,12 +217,49 @@ onBeforeUnmount(() => {
     padding: 64px 0 36px;
   }
 
+  .hero-copy h1 {
+    font-size: 2.05rem;
+  }
+
+  .hero-summary {
+    max-width: 34rem;
+    font-size: 0.94rem;
+  }
+
   .home-page .trending-set .mouse-card {
     flex-basis: min(76vw, 290px);
   }
 }
 
+@media (max-width: 480px) {
+  .home-hero {
+    padding: 44px 0 30px;
+  }
+
+  .hero-kicker {
+    font-size: 0.7rem;
+  }
+
+  .hero-copy h1 {
+    font-size: 1.8rem;
+  }
+
+  .hero-actions {
+    flex-direction: row;
+    margin-top: 20px;
+  }
+
+  .hero-cta {
+    flex: 1 1 150px;
+    padding-inline: 14px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .hero-cta {
+    transition-duration: 1ms;
+  }
+
   .home-page .trending-track {
     animation: none;
   }

@@ -58,7 +58,7 @@ onBeforeUnmount(() => clearInterval(countdownTimer))
   <main :class="['auth-shell', { 'admin-login-shell': admin }]">
     <section class="auth-aside"><p class="eyebrow">{{ admin ? 'PRIVATE ADMIN CONSOLE' : (register ? 'CREATE PROFILE' : 'MEMBER ACCESS') }}</p><h1>{{ admin ? '管理员登录' : (register ? '创建账号' : '账号登录') }}</h1><p class="auth-note">{{ admin ? '管理员登录需要密码和邮箱验证码两步验证。' : '管理你的评价、对比清单与个性化推荐。' }}</p></section>
     <section class="auth-form-card">
-      <div><p class="eyebrow">{{ secondFactor ? 'EMAIL VERIFICATION' : (admin ? 'ADMIN SIGN IN' : (register ? 'REGISTER' : 'SIGN IN')) }}</p><h2>{{ secondFactor ? '验证管理员身份' : (admin ? '登录管理后台' : (register ? '创建账号' : '登录 Clicker Index')) }}</h2><p>{{ secondFactor ? '请输入发送到管理员邮箱的 6 位验证码。' : (admin ? '进入独立的数据管理控制台。' : '继续管理你的评价与对比清单。') }}</p></div>
+      <div><p class="eyebrow">{{ secondFactor ? 'EMAIL VERIFICATION' : (admin ? 'ADMIN SIGN IN' : (register ? 'REGISTER' : 'SIGN IN')) }}</p><h2>{{ secondFactor ? '验证管理员身份' : (admin ? '登录管理后台' : (register ? '创建账号' : '登录 GearDB')) }}</h2><p>{{ secondFactor ? '请输入发送到管理员邮箱的 6 位验证码。' : (admin ? '进入独立的数据管理控制台。' : '继续管理你的评价与对比清单。') }}</p></div>
       <div class="flash error" v-if="error">{{ error }}</div>
       <div class="flash error" v-if="register && !registrationEnabled">当前暂停新用户注册，请稍后再试。</div>
       <form @submit.prevent="submit">

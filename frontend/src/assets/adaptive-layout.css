@@ -1,0 +1,19 @@
+/* Wide screens gain capacity without scaling typography or controls. */
+@media (min-width: 1440px) {
+  :root {
+    /* 1280px at 1440px, then grows gradually and stops well before 4K edges. */
+    --shell: min(calc(100vw - 96px), calc(740px + 37.5vw), 1760px);
+  }
+
+  /* Keep catalog cards near their established reading and pointer size. */
+  .database-results .mouse-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+
+  /* This section only has four items, so extra width should not inflate them. */
+  .trending-grid {
+    width: 100%;
+    max-width: 1280px;
+    margin-inline: auto;
+  }
+}

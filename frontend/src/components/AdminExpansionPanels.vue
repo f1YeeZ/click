@@ -26,6 +26,19 @@ const sessionQuery = ref('')
 const sessionActiveOnly = ref(true)
 const settings = ref([])
 const settingDrafts = reactive({})
+const adPreviewErrors = reactive({ left: false, right: false })
+const advertisingKeys = [
+  'advertising.enabled',
+  'advertising.left.enabled',
+  'advertising.left.image-url',
+  'advertising.left.target-url',
+  'advertising.left.alt',
+  'advertising.right.enabled',
+  'advertising.right.image-url',
+  'advertising.right.target-url',
+  'advertising.right.alt',
+]
+const generalSettings = computed(() => settings.value.filter(item => !item.key.startsWith('advertising.')))
 const chartHover = reactive({})
 const expansionTabs = new Set(['analytics', 'brands', 'feedback', 'operations'])
 const analyticsMetrics = [
@@ -165,12 +178,16 @@ const saveReport = report => run(async () => {
   await api.patch(`/admin/reports/${report.id}`, reportDrafts[report.id]); selectedReport.value = null; await loadReports(reports.value.page.number || 1); showNotice('反馈工单已更新')
 })
 const openReport = report => { selectedReport.value = report }
+const applySettings = values => {
+  settings.value = values
+  settings.value.forEach(item => { settingDrafts[item.key] = item.value })
+}
+const refreshSettings = async () => applySettings((await api.get('/admin/settings')).data)
 const loadOperations = () => run(async () => {
   const [importData, sessionData, settingData] = await Promise.all([
     api.get('/admin/mice/imports'), api.get('/admin/sessions', { params: { activeOnly: sessionActiveOnly.value } }), api.get('/admin/settings')
   ])
-  imports.value = importData.data; sessions.value = sessionData.data; settings.value = settingData.data
-  settings.value.forEach(item => { settingDrafts[item.key] = item.value })
+  imports.value = importData.data; sessions.value = sessionData.data; applySettings(settingData.data)
 })
 const loadSessions = (page = 1) => run(async () => { sessions.value = (await api.get('/admin/sessions', { params: { q: sessionQuery.value || undefined, activeOnly: sessionActiveOnly.value, page } })).data })
 const revokeSession = session => run(async () => {
@@ -180,8 +197,15 @@ const revokeSession = session => run(async () => {
 const saveSetting = item => run(async () => {
   const value = String(settingDrafts[item.key] ?? '')
   await api.put(`/admin/settings/${encodeURIComponent(item.key)}`, { value })
-  await loadOperations()
+  await refreshSettings()
   showNotice(item.key === 'maintenance.notice' && !value.trim() ? '前台维护公告已关闭' : '系统设置已生效')
+})
+const saveAdvertising = () => run(async () => {
+  await Promise.all(advertisingKeys.map(key => api.put(`/admin/settings/${encodeURIComponent(key)}`, {
+    value: String(settingDrafts[key] ?? ''),
+  })))
+  await refreshSettings()
+  showNotice(settingDrafts['advertising.enabled'] === 'true' ? '广告设置已保存并在宽屏前台生效' : '广告已关闭，页面内容位置保持不变')
 })
 const readNotification = item => run(async () => { await api.patch(`/admin/notifications/${item.id}/read`); await loadAnalytics(); showNotice('通知已标记为已读') })
 const readAll = () => run(async () => { await api.post('/admin/notifications/read-all'); await loadAnalytics(); showNotice('全部通知已标记为已读') })
@@ -195,6 +219,8 @@ const statusLabel = value => ({ ACTIVE: '正常', ARCHIVED: '已归档', OPEN: '
 const reportTypeLabel = value => ({ SITE: '前台反馈', MOUSE: '数据纠错', REVIEW: '评价举报' }[value] || value)
 const reportCategoryLabel = value => ({ MOUSE_MISSING: '缺失鼠标型号', BUG: '网站 Bug', DATA_ERROR: '数据修正', SUGGESTION: '功能建议', OTHER: '其他反馈' }[value] || value)
 const date = value => value ? new Date(value).toLocaleString('zh-CN') : '—'
+watch(() => settingDrafts['advertising.left.image-url'], () => { adPreviewErrors.left = false })
+watch(() => settingDrafts['advertising.right.image-url'], () => { adPreviewErrors.right = false })
 const loadActive = () => ({ analytics: loadAnalytics, brands: loadBrands, feedback: loadReports, operations: loadOperations }[props.activeTab]?.())
 const refreshListener = event => { if (event.detail === props.activeTab) loadActive() }
 watch(() => props.activeTab, value => {
@@ -287,7 +313,26 @@ onBeforeUnmount(() => {
       <div class="panel-heading expansion-heading"><div><span class="panel-kicker">SYSTEM OPERATIONS</span><h3>系统运营</h3><p>数据流转、账号会话和运行开关集中管理。</p></div></div>
       <div class="operations-grid">
         <section class="ops-card"><header><div><h4>数据导出</h4><small>CSV 统一使用 UTF-8 BOM</small></div></header><div class="export-actions"><button @click="exportData('mice')">导出鼠标</button><button @click="exportData('users')">导出用户</button><button @click="exportData('reviews')">导出评价</button><button @click="exportData('audit')">导出审计</button></div></section>
-        <section class="ops-card settings-card"><header><div><h4>系统设置</h4><small>保存后立即作用于注册、评价和前台公告</small></div></header><label v-for="item in settings" :key="item.key"><span><strong>{{ settingLabel(item.key) }}</strong><small>{{ item.description }}</small></span><select v-if="item.key.endsWith('.enabled')" v-model="settingDrafts[item.key]"><option value="true">开启</option><option value="false">关闭</option></select><input v-else v-model="settingDrafts[item.key]"><button @click="saveSetting(item)">保存</button></label></section>
+        <section class="ops-card settings-card"><header><div><h4>系统设置</h4><small>保存后立即作用于注册、评价和前台公告</small></div></header><label v-for="item in generalSettings" :key="item.key"><span><strong>{{ settingLabel(item.key) }}</strong><small>{{ item.description }}</small></span><select v-if="item.key.endsWith('.enabled')" v-model="settingDrafts[item.key]"><option value="true">开启</option><option value="false">关闭</option></select><input v-else v-model="settingDrafts[item.key]"><button @click="saveSetting(item)">保存</button></label></section>
+        <section class="ops-card wide-card advertising-card">
+          <header><div><h4>广告位设置</h4><small>仅在宽度不小于 1440px 的前台页面展示；关闭后主内容宽度和位置不会变化</small></div><label class="advertising-master-toggle"><span>全局广告</span><select v-model="settingDrafts['advertising.enabled']"><option value="true">开启</option><option value="false">关闭</option></select></label></header>
+          <form class="advertising-form" @submit.prevent="saveAdvertising">
+            <fieldset v-for="side in ['left', 'right']" :key="side" class="advertising-placement">
+              <legend>{{ side === 'left' ? '左侧广告' : '右侧广告' }}</legend>
+              <div class="advertising-preview" :class="{ 'is-muted': settingDrafts[`advertising.${side}.enabled`] !== 'true' }">
+                <img v-if="settingDrafts[`advertising.${side}.image-url`] && !adPreviewErrors[side]" :src="settingDrafts[`advertising.${side}.image-url`]" :alt="settingDrafts[`advertising.${side}.alt`] || `${side === 'left' ? '左侧' : '右侧'}广告预览`" width="220" height="506" @error="adPreviewErrors[side] = true">
+                <span v-else><small>ADVERTISEMENT</small><strong>220 × 506</strong><em>{{ adPreviewErrors[side] ? '图片无法加载，请检查地址' : '输入图片地址后在此预览' }}</em></span>
+              </div>
+              <div class="advertising-fields">
+                <label><span>显示此广告位</span><select v-model="settingDrafts[`advertising.${side}.enabled`]" :aria-label="`${side === 'left' ? '左侧' : '右侧'}广告位开关`"><option value="true">开启</option><option value="false">关闭</option></select></label>
+                <label><span>广告图片地址</span><input v-model.trim="settingDrafts[`advertising.${side}.image-url`]" type="url" maxlength="2000" placeholder="https://example.com/ad.webp"></label>
+                <label><span>点击跳转地址</span><input v-model.trim="settingDrafts[`advertising.${side}.target-url`]" type="url" maxlength="2000" placeholder="https://example.com"></label>
+                <label><span>图片替代文本</span><input v-model.trim="settingDrafts[`advertising.${side}.alt`]" maxlength="160" placeholder="简要说明广告内容"><small>供图片加载失败和屏幕阅读器使用，最多 160 字</small></label>
+              </div>
+            </fieldset>
+            <div class="advertising-actions"><span>建议上传 220 × 506 或相同比例的 WebP / AVIF 图片。</span><button class="button" type="submit" :disabled="loading">{{ loading ? '正在保存…' : '保存广告设置' }}</button></div>
+          </form>
+        </section>
         <section class="ops-card wide-card"><header><div><h4>导入历史</h4><small>保留预检结果、错误报告和最终写入数量</small></div></header><table class="admin-table"><thead><tr><th>文件</th><th>状态</th><th>数据量</th><th>操作人</th><th>时间</th><th></th></tr></thead><tbody><tr v-for="item in imports.items" :key="item.checksum"><td><strong>{{ item.filename }}</strong><small class="mono">{{ item.checksum.slice(0, 12) }}</small></td><td><em>{{ statusLabel(item.status) }}</em></td><td>{{ item.totalCount || 0 }} 行 · +{{ item.createdCount || 0 }} / ↻{{ item.updatedCount || 0 }}</td><td>{{ item.actorEmail }}</td><td>{{ date(item.completedAt || item.createdAt) }}</td><td><button v-if="item.hasErrorReport" @click="download(`/admin/mice/imports/${item.checksum}/errors`, `import-errors-${item.checksum}.csv`)">下载错误</button></td></tr></tbody></table></section>
         <section class="ops-card wide-card"><header><div><h4>登录会话</h4><small>查看最后活动并按设备撤销访问</small></div><div class="session-filter"><input v-model="sessionQuery" class="session-search" placeholder="搜索邮箱" aria-label="搜索登录会话邮箱" @keyup.enter="loadSessions(1)"><label class="session-active-toggle"><input v-model="sessionActiveOnly" type="checkbox" @change="loadSessions(1)"><span class="session-check-indicator" aria-hidden="true"></span><span>仅活跃</span></label></div></header><table class="admin-table"><thead><tr><th>用户</th><th>设备</th><th>网络</th><th>最后活动</th><th>到期</th><th></th></tr></thead><tbody><tr v-for="session in sessions.items" :key="session.id"><td><strong>{{ session.userEmail }}</strong><small>{{ session.active ? '活跃' : '已失效' }}</small></td><td class="session-agent">{{ session.userAgent || '未知设备' }}</td><td class="mono">{{ session.ipAddress || '—' }}</td><td>{{ date(session.lastUsedAt || session.createdAt) }}</td><td>{{ date(session.expiresAt) }}</td><td><button v-if="session.active" class="danger-link" @click="revokeSession(session)">强制下线</button></td></tr></tbody></table></section>
       </div>
@@ -528,9 +573,63 @@ onBeforeUnmount(() => {
 .metric-x-axis span:last-child { transform: translateX(-100%); }
 .analytics-notification-card { margin-top: 18px; }
 .expansion-loading { background: rgba(11, 11, 11, .78); }
+.advertising-card { overflow: hidden; }
+.advertising-card > header { align-items: flex-end; padding-bottom: 16px; border-bottom: 1px solid var(--dv-border); }
+.advertising-master-toggle { display: grid; flex: 0 0 150px; gap: 6px; color: var(--dv-text-soft); font-size: .72rem; font-weight: 700; }
+.advertising-master-toggle select,
+.advertising-fields input,
+.advertising-fields select {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--dv-outline);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--dv-background);
+  color: var(--dv-text);
+  color-scheme: dark;
+}
+.advertising-master-toggle select:focus,
+.advertising-fields input:focus,
+.advertising-fields select:focus { border-color: var(--dv-primary); box-shadow: 0 0 0 3px var(--dv-primary-soft); }
+.advertising-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
+.advertising-placement {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  gap: 18px;
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--dv-border);
+  border-radius: 12px;
+  background: var(--dv-surface-high);
+}
+.advertising-placement legend { padding: 0 7px; color: var(--dv-text); font-size: .78rem; font-weight: 750; }
+.advertising-preview {
+  width: min(220px, 100%);
+  aspect-ratio: 220 / 506;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--dv-background);
+  transition: opacity 180ms ease;
+}
+.advertising-preview.is-muted { opacity: .42; }
+.advertising-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.advertising-preview > span { display: grid; width: 100%; height: 100%; place-content: center; gap: 7px; border: 1px solid var(--dv-outline); border-radius: inherit; text-align: center; }
+.advertising-preview small { color: var(--dv-muted); font: .57rem var(--dv-mono); letter-spacing: .1em; }
+.advertising-preview strong { color: var(--dv-text); font: 700 .82rem var(--dv-mono); }
+.advertising-preview em { max-width: 150px; color: var(--dv-muted); font-size: .64rem; font-style: normal; line-height: 1.45; }
+.advertising-fields { display: grid; align-content: start; gap: 12px; }
+.advertising-fields label { display: grid; gap: 6px; color: var(--dv-text-soft); font-size: .7rem; font-weight: 700; }
+.advertising-fields label > small { color: var(--dv-muted); font-size: .61rem; font-weight: 400; line-height: 1.45; }
+.advertising-fields input::placeholder { color: var(--dv-muted); }
+.advertising-actions { display: flex; grid-column: 1 / -1; align-items: center; justify-content: flex-end; gap: 16px; padding-top: 2px; }
+.advertising-actions > span { color: var(--dv-muted); font-size: .67rem; }
+.advertising-actions .button { min-width: 138px; }
 @media (prefers-reduced-motion: reduce) { .metric-bar { transition: none; } }
 @media (max-width: 980px) {
   .analytics-metric-grid { grid-template-columns: 1fr; }
+  .advertising-form { grid-template-columns: 1fr; }
 }
 @media (max-width: 700px) {
   .signal-cards { display: grid; grid-template-columns: 1fr 1fr; }
@@ -541,14 +640,22 @@ onBeforeUnmount(() => {
   .metric-report-meta { grid-template-columns: 1fr; gap: 7px; }
   .metric-comparison { justify-content: space-between; }
   .metric-x-axis span:nth-child(even):not(:last-child) { display: none; }
+  .advertising-card > header { align-items: stretch; }
+  .advertising-master-toggle { width: 100%; }
+  .advertising-placement { grid-template-columns: minmax(130px, 180px) minmax(0, 1fr); }
+  .advertising-actions { align-items: stretch; flex-direction: column; }
+  .advertising-actions .button { width: 100%; }
 }
 @media (max-width: 440px) {
   .metric-report-title p { white-space: normal; }
   .metric-report-meta dl { gap: 7px; }
   .metric-report-meta dl > div { display: block; }
   .metric-report-meta dd { margin-top: 2px; }
+  .advertising-placement { grid-template-columns: 1fr; }
+  .advertising-preview { width: 150px; justify-self: center; }
 }
 @media (prefers-reduced-motion: reduce) {
   .session-check-indicator { transition: none; }
+  .advertising-preview { transition: none; }
 }
 </style>

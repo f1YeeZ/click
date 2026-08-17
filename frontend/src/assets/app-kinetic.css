@@ -89,6 +89,10 @@ body:before {
   height: 25px;
   display: block;
 }
+.brand-mark .brand-logo {
+  width: 118px;
+  height: auto;
+}
 .brand-mark span {
   color: var(--ink);
 }
@@ -591,6 +595,11 @@ body:before {
 .footer-brand {
   color: var(--acid);
   font: 700 1.1rem var(--sans);
+}
+.footer-brand img {
+  display: block;
+  width: 112px;
+  height: auto;
 }
 .footer-shell p {
   margin: 0;

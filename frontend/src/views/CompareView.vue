@@ -138,8 +138,9 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(searchTimer); clearTimeout(
 <template>
   <main class="section-shell compare-page compare-workbench">
     <section class="compare-intro">
-      <div class="compare-search-panel" :class="{ open: searchOpen }">
-        <div class="compare-search-meta"><span>ADD A MOUSE</span><kbd>⌘ K</kbd></div>
+      <div class="compare-page-heading"><div><p class="page-label">COMPARE / UP TO FOUR</p><h1>并排参数对比</h1><span>对照规格差异、尺寸变化和握姿评价，快速找到更适合的一款。</span></div><button class="button button-ghost" type="button" @click="focusSearch">＋ 添加鼠标</button></div>
+      <div v-if="searchOpen" class="compare-search-panel open">
+        <div class="compare-search-meta"><span>ADD A MOUSE</span><button type="button" aria-label="关闭添加鼠标搜索" @click="searchOpen = false">×</button></div>
         <div class="compare-search-box">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
           <input ref="searchInput" v-model="searchQuery" type="search" placeholder="搜索品牌或型号，例如 Viper V3 Pro" autocomplete="off" aria-label="搜索要对比的鼠标" @focus="openSearch" @keydown.esc="searchOpen = false">

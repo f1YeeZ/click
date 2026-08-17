@@ -1,0 +1,16 @@
+{
+  "name": "GearDB",
+  "short_name": "GearDB",
+  "description": "鼠标参数查询、多选对比与结构化用户评价平台",
+  "icons": [
+    {
+      "src": "/geardb-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "theme_color": "#0a0b0d",
+  "background_color": "#0a0b0d",
+  "display": "standalone"
+}

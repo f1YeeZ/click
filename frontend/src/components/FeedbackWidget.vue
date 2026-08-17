@@ -3,13 +3,13 @@ import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import api, { errorMessage } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import { useCompareStore } from '../stores/compare'
+import { showToast } from '../services/toast'
 
 const auth = useAuthStore()
 const compare = useCompareStore()
 const dialog = ref(null)
 const open = ref(false)
 const loading = ref(false)
-const notice = ref('')
 const error = ref('')
 const category = ref('MOUSE_MISSING')
 const mouseModel = ref('')
@@ -31,7 +31,6 @@ const reset = () => {
   mouseModel.value = ''
   description.value = ''
   contactEmail.value = auth.user?.email || ''
-  notice.value = ''
   error.value = ''
 }
 const openDialog = async () => {
@@ -40,8 +39,8 @@ const openDialog = async () => {
   await nextTick()
   if (dialog.value && !dialog.value.open) dialog.value.showModal()
 }
-const closeDialog = () => {
-  if (loading.value) return
+const closeDialog = ({ force = false } = {}) => {
+  if (loading.value && !force) return
   if (dialog.value?.open) dialog.value.close()
   open.value = false
 }
@@ -51,7 +50,6 @@ const closeFromBackdrop = event => {
 const submit = async () => {
   if (!canSubmit.value || loading.value) return
   loading.value = true
-  notice.value = ''
   error.value = ''
   const page = typeof window !== 'undefined' ? window.location.pathname : '/'
   const details = [
@@ -65,9 +63,10 @@ const submit = async () => {
     description: details.slice(0, 1000),
       contactEmail: contactEmail.value.trim() || null,
     })
-    notice.value = '已收到，谢谢你的反馈。我们会在后台尽快查看。'
+    showToast('已收到，谢谢你的反馈。我们会在后台尽快查看。')
     description.value = ''
     mouseModel.value = ''
+    closeDialog({ force: true })
   } catch (e) {
     error.value = errorMessage(e)
   } finally {
@@ -110,7 +109,6 @@ onBeforeUnmount(() => {
           <button class="site-feedback-close" type="button" aria-label="关闭反馈窗口" @click="closeDialog">×</button>
         </header>
         <div class="site-feedback-body">
-          <div v-if="notice" class="site-feedback-notice success" role="status">{{ notice }}</div>
           <div v-if="error" class="site-feedback-notice error" role="alert">{{ error }}</div>
           <fieldset class="site-feedback-types">
             <legend>你想反馈什么？</legend>
@@ -134,7 +132,7 @@ onBeforeUnmount(() => {
           </label>
         </div>
         <footer class="site-feedback-footer">
-          <span>反馈会匿名展示给运营团队，仅用于改进 Clicker Index。</span>
+          <span>反馈会匿名展示给运营团队，仅用于改进 GearDB。</span>
           <div><button class="button button-ghost" type="button" :disabled="loading" @click="closeDialog">取消</button><button class="button feedback-submit" type="submit" :disabled="loading || !canSubmit">{{ loading ? '提交中…' : '提交反馈' }}<span aria-hidden="true">→</span></button></div>
         </footer>
       </form>

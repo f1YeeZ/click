@@ -218,7 +218,7 @@ class ApiIntegrationTest {
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.targetType", is("SITE")))
-                .andExpect(jsonPath("$.targetLabel", is("Clicker Index 前台")))
+                .andExpect(jsonPath("$.targetLabel", is("GearDB 前台")))
                 .andExpect(jsonPath("$.category", is("MOUSE_MISSING")))
                 .andExpect(jsonPath("$.reporterEmail", is("visitor@example.com")));
 

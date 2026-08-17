@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import api, { errorMessage } from '../api/client'
 import { useAuthStore } from '../stores/auth'
+import { showToast } from '../services/toast'
 
 const auth = useAuthStore()
 const handLengthCm = ref(null)
@@ -22,16 +23,13 @@ const handLocked = computed(() => profileLocked.value)
 const gripLocked = computed(() => profileLocked.value)
 const selectedGrip = computed(() => gripOptions.find((item) => item.code === preferredGripStyle.value))
 const loading = ref(false)
-const message = ref('')
 const error = ref('')
 const passwordForm = reactive({ verificationCode: '', newPassword: '', confirmPassword: '' })
 const passwordLoading = ref(false)
 const codeLoading = ref(false)
-const passwordMessage = ref('')
 const passwordError = ref('')
 const resendSeconds = ref(0)
 let countdownTimer
-let messageTimer
 const handRange = computed(() => {
   const value = Number(handLengthCm.value)
   if (!value) return '尚未填写'
@@ -89,7 +87,7 @@ const save = async () => {
     error.value = '请填写个人手长并选择习惯握姿'
     return
   }
-  loading.value = true; clearTimeout(messageTimer); message.value = ''; error.value = ''
+  loading.value = true; error.value = ''
   try {
     const { data } = await api.patch('/users/me', {
       handLengthCm: Number(handLengthCm.value),
@@ -97,8 +95,7 @@ const save = async () => {
     })
     auth.user = data
     sessionStorage.setItem('clicker.user', JSON.stringify(data))
-    message.value = '个人资料已保存'
-    messageTimer = setTimeout(() => { message.value = '' }, 3200)
+    showToast('个人资料已保存')
   } catch (e) { error.value = errorMessage(e) }
   finally { loading.value = false }
 }
@@ -111,16 +108,16 @@ const startCountdown = (seconds) => {
   }, 1000)
 }
 const sendPasswordCode = async () => {
-  codeLoading.value = true; passwordMessage.value = ''; passwordError.value = ''
+  codeLoading.value = true; passwordError.value = ''
   try {
     const { data } = await api.post('/password-verification-codes')
-    passwordMessage.value = data.message
+    showToast(data.message)
     startCountdown(data.resendAfterSeconds)
   } catch (e) { passwordError.value = errorMessage(e) }
   finally { codeLoading.value = false }
 }
 const changePassword = async () => {
-  passwordMessage.value = ''; passwordError.value = ''
+  passwordError.value = ''
   if (passwordForm.newPassword !== passwordForm.confirmPassword) {
     passwordError.value = '两次输入的新密码不一致'
     return
@@ -131,7 +128,7 @@ const changePassword = async () => {
       verificationCode: passwordForm.verificationCode,
       newPassword: passwordForm.newPassword
     })
-    passwordMessage.value = data.message
+    showToast(data.message)
     passwordForm.verificationCode = ''; passwordForm.newPassword = ''; passwordForm.confirmPassword = ''
   } catch (e) { passwordError.value = errorMessage(e) }
   finally { passwordLoading.value = false }
@@ -142,7 +139,6 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   clearInterval(countdownTimer)
-  clearTimeout(messageTimer)
   document.removeEventListener('pointerdown', handleOutsidePointer)
 })
 </script>
@@ -174,7 +170,6 @@ onBeforeUnmount(() => {
           </div>
         </label>
         <p class="profile-tip">个人手长和习惯握姿保存后均不可更改。习惯握姿权重为 1，其他握姿权重为 0.3。</p>
-        <Transition name="profile-flash"><div v-if="message" class="flash success">{{ message }}</div></Transition>
         <div v-if="error" class="flash error">{{ error }}</div>
         <button v-if="!profileLocked" class="button" :disabled="loading || !handLengthCm || !preferredGripStyle">{{ loading ? '保存中…' : '保存并锁定个人资料 →' }}</button>
         <div v-else class="profile-tip">✓ 个人资料已锁定</div>
@@ -188,7 +183,7 @@ onBeforeUnmount(() => {
         </label>
         <label>新密码<input v-model="passwordForm.newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="72" required placeholder="8～72 位"></label>
         <label>确认新密码<input v-model="passwordForm.confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="72" required placeholder="再次输入新密码"></label>
-        <div v-if="passwordMessage" class="flash success">{{ passwordMessage }}</div><div v-if="passwordError" class="flash error">{{ passwordError }}</div>
+        <div v-if="passwordError" class="flash error">{{ passwordError }}</div>
         <button class="button" :disabled="passwordLoading">{{ passwordLoading ? '修改中…' : '验证并修改密码 →' }}</button>
       </form>
     </section>

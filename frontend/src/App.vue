@@ -2,8 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
+import AdRail from './components/AdRail.vue'
 import CompareTray from './components/CompareTray.vue'
 import FeedbackWidget from './components/FeedbackWidget.vue'
+import ToastViewport from './components/ToastViewport.vue'
+import brandLogo from './assets/geardb-logo.svg'
 import { useAuthStore } from './stores/auth'
 import { usePublicConfigStore } from './stores/publicConfig'
 import { onRealtime, startRealtime, stopRealtime } from './services/realtime'
@@ -52,9 +55,14 @@ onBeforeUnmount(() => {
 
 <template>
   <AppHeader v-if="!isAdminRoute" />
+  <ToastViewport />
   <div v-if="!isAdminRoute && publicConfig.maintenanceNotice" class="maintenance-banner" role="status">
     <strong>运营公告</strong><span>{{ publicConfig.maintenanceNotice }}</span>
   </div>
+  <template v-if="!isAdminRoute && !isCodeMapRoute && publicConfig.advertisingEnabled">
+    <AdRail v-if="publicConfig.leftAd.enabled" side="left" :ad="publicConfig.leftAd" />
+    <AdRail v-if="publicConfig.rightAd.enabled" side="right" :ad="publicConfig.rightAd" />
+  </template>
   <RouterView v-slot="{ Component, route: viewRoute }">
     <KeepAlive :max="8">
       <component :is="Component" :key="viewRoute.path" />
@@ -62,8 +70,8 @@ onBeforeUnmount(() => {
   </RouterView>
   <footer v-if="!isAdminRoute" class="site-footer">
     <div class="footer-shell">
-      <RouterLink class="footer-brand" to="/">Clicker Index</RouterLink>
-      <p>© {{ year }} Clicker Index · 技术鼠标数据库</p>
+      <RouterLink class="footer-brand" to="/" aria-label="GearDB 首页"><img :src="brandLogo" alt="GearDB"></RouterLink>
+      <p>© {{ year }} GearDB · 技术鼠标数据库</p>
       <nav aria-label="页脚导航">
         <RouterLink to="/mice">鼠标库</RouterLink>
         <RouterLink to="/recommend">鼠标推荐</RouterLink>

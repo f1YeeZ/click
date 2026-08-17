@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/auth'
 import { useCompareStore } from '../stores/compare'
 import { usePublicConfigStore } from '../stores/publicConfig'
 import { onRealtime } from '../services/realtime'
+import { showToast } from '../services/toast'
 import { legacyCellsToDabs, supportCoveragePercentage } from '../utils/supportHeatmap'
 
 const HandSupport3D = defineAsyncComponent(() => import('../components/HandSupport3D.vue'))
@@ -31,9 +32,7 @@ const supportLoading = ref(false)
 const reviewEditorOpen = ref(false)
 const reviewDialog = ref(null)
 const publicSupportError = ref('')
-const supportMessage = ref('')
 const supportError = ref('')
-const message = ref('')
 const error = ref('')
 const publicReviews = ref({ items: [], page: { number: 1, totalPages: 1, totalItems: 0 } })
 const publicReviewsRail = ref(null)
@@ -42,7 +41,6 @@ const reportScope = ref('MOUSE_DATA')
 const reportDialog = ref(null)
 const reportCategory = ref('DATA_ERROR')
 const reportDescription = ref('')
-const reportNotice = ref('')
 const reportLoading = ref(false)
 const objectiveDialogOpen = ref(false)
 const objectiveDialog = ref(null)
@@ -67,21 +65,10 @@ const hasSubmittedSupport = computed(() => supportGripCount.value > 0)
 const completedGripCount = computed(() => mine.value?.gripComforts?.length || 0)
 const gripSummaryLabel = computed(() => selectedGrip.value
   ? `${options.value?.gripStyles?.find((item) => item.code === selectedGrip.value)?.label || '当前握姿'}总评`
-  : '全部握姿总评')
-const distributionRows = (distribution) => Object.entries(distribution || {}).map(([score, count]) => ({
-  score: Number(score), count: Number(count),
-})).sort((a, b) => b.score - a.score)
-const gripDistribution = computed(() => distributionRows(summary.value?.scoreDistribution))
-const gripDistributionMax = computed(() => Math.max(1, ...gripDistribution.value.map((item) => item.count)))
-const reviewUpdatedLabel = computed(() => summary.value?.lastUpdatedAt
-  ? new Date(summary.value.lastUpdatedAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
-  : '暂无评价更新')
+  : '暂无握姿')
 const matchingHandOption = computed(() => options.value?.handSizes?.find((item) => item.code === auth.user?.handSize))
-const handMatchActive = computed(() => Boolean(
-  auth.authenticated && auth.user?.handLengthCm && matchingHandOption.value && selectedHand.value === auth.user.handSize
-))
 const supportFilterLabel = computed(() => {
-  const grip = options.value?.gripStyles?.find((item) => item.code === selectedGrip.value)?.label || '全部握姿'
+  const grip = options.value?.gripStyles?.find((item) => item.code === selectedGrip.value)?.label || '当前握姿'
   const hand = options.value?.handSizes?.find((item) => item.code === selectedHand.value)?.label || '全部手长'
   return `${grip} · ${hand}`
 })
@@ -177,7 +164,7 @@ const openReport = (targetType, targetId, scope = targetType === 'REVIEW' ? 'REV
   reportTarget.value = { targetType, targetId }
   reportScope.value = scope
   reportCategory.value = scope === 'REVIEW_AGGREGATE' ? 'SUSPICIOUS' : targetType === 'MOUSE' ? 'DATA_ERROR' : 'INAPPROPRIATE'
-  reportDescription.value = ''; reportNotice.value = ''
+  reportDescription.value = ''
   nextTick(() => { if (reportDialog.value && !reportDialog.value.open) reportDialog.value.showModal() })
 }
 const scrollPublicReviews = (direction) => {
@@ -206,12 +193,14 @@ const submitReport = async () => {
   reportLoading.value = true
   try {
     await api.post('/reports', { ...reportTarget.value, category: reportCategory.value, description: reportDescription.value.trim() })
-    reportNotice.value = '反馈已提交，管理员处理后会保留完整记录'
+    showToast('反馈已提交，管理员处理后会保留完整记录')
     reportDescription.value = ''; closeReport()
   } catch (e) { error.value = errorMessage(e) } finally { reportLoading.value = false }
 }
 const initializeReviewFilters = () => {
   if (reviewFiltersInitialized.value) return
+  const preferredGrip = options.value?.gripStyles?.find((item) => item.code === auth.user?.preferredGripStyle)?.code
+  selectedGrip.value = preferredGrip || options.value?.gripStyles?.[0]?.code || 'PALM'
   if (matchingHandOption.value) selectedHand.value = matchingHandOption.value.code
   reviewFiltersInitialized.value = true
 }
@@ -238,27 +227,22 @@ const filterSummary = async () => {
     summary.value = reviewResponse.data
   } catch (e) { error.value = errorMessage(e) }
 }
-const showAllHandReviews = async () => {
-  selectedHand.value = ''
-  await filterSummary()
-}
 const toggleCompare = () => { try { compare.toggle(mouse.value) } catch (e) { error.value = e.message } }
 const refreshReview = async () => { await Promise.all([loadMine(), filterSummary()]) }
 const deleteGrip = async (item) => {
   if (!window.confirm(`确定删除${item.label}的舒适度评分及对应支撑涂抹吗？`)) return
-  message.value = ''; error.value = ''
-  try { await api.delete(`/mice/${mouse.value.id}/reviews/mine/grip-scores/${item.code}`); message.value = `${item.label}评分及支撑涂抹已删除`; await refreshReview() }
+  error.value = ''
+  try { await api.delete(`/mice/${mouse.value.id}/reviews/mine/grip-scores/${item.code}`); showToast(`${item.label}评分及支撑涂抹已删除`); await refreshReview() }
   catch (e) { error.value = errorMessage(e) }
 }
 const updateSupportDabs = (dabs) => {
   personalSupportDabsByGrip[activeSupportGrip.value] = dabs
-  supportMessage.value = ''; supportError.value = ''
+  supportError.value = ''
 }
 const handlePublicSupportModelError = () => { publicSupportError.value = '支撑位置热力图加载失败，请刷新页面后重试' }
 const handlePersonalSupportModelError = () => { supportError.value = '个人支撑位置画布加载失败，请刷新页面后重试' }
 const clearSupportSelection = () => {
   personalSupportDabsByGrip[activeSupportGrip.value] = []
-  supportMessage.value = ''
   supportError.value = ''
 }
 const saveGripReview = async () => {
@@ -267,21 +251,19 @@ const saveGripReview = async () => {
     supportError.value = '请先完成当前握姿评分和支撑位置涂抹'
     return
   }
-  supportLoading.value = true; supportMessage.value = ''; supportError.value = ''
+  supportLoading.value = true; supportError.value = ''
   try {
     await Promise.all([
       api.put(`/mice/${mouse.value.id}/reviews/mine/grip-scores/${code}`, { comfortScore: gripScores[code] }),
       api.put(`/mice/${mouse.value.id}/reviews/mine/support-positions/${code}`, { dabs: personalSupportDabs.value }),
     ])
-    supportMessage.value = `${gripLabel(code)}评分与支撑图已一并保存`
+    showToast(`${gripLabel(code)}评分与支撑图已一并保存`)
     await refreshReview()
   } catch (e) { supportError.value = errorMessage(e) } finally { supportLoading.value = false }
 }
 const openReviewEditor = async () => {
-  message.value = ''
   error.value = ''
   activeSupportGrip.value = 'PALM'
-  supportMessage.value = ''
   supportError.value = ''
   reviewEditorOpen.value = true
   await nextTick()
@@ -327,6 +309,7 @@ onActivated(() => {
   if (!resetFiltersOnNextActivation) return
   resetFiltersOnNextActivation = false
   reviewFiltersInitialized.value = false
+  selectedGrip.value = ''
   selectedHand.value = ''
   load()
 })
@@ -344,74 +327,75 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
   <main v-if="mouse">
     <section class="detail-hero section-shell">
       <div class="breadcrumb"><RouterLink to="/mice">鼠标库</RouterLink><span>/</span><span>{{ mouse.brand }}</span><span>/</span><strong>{{ mouse.model }}</strong></div>
-      <div class="detail-title"><div><p class="eyebrow">{{ mouse.brand }} / SPEC SHEET</p><h1 class="visually-hidden">{{ mouse.model }}</h1><p class="detail-variant">{{ mouse.variant || 'STANDARD EDITION' }}</p></div><button class="button" @click="toggleCompare">{{ compare.contains(mouse.id) ? '✓ 已加入对比' : '+ 加入对比清单' }}</button></div>
-      <div class="hero-statline"><div><span>DIMENSIONS</span><strong>{{ dimensions }}</strong></div><div><span>WEIGHT</span><strong>{{ mouse.weightG ?? '—' }} g</strong></div><div><span>SENSOR</span><strong>{{ mouse.sensorName || '—' }}</strong></div><div class="hero-polling-stat"><span>POLLING</span><strong>{{ mouse.maxPollingRateHz ?? '—' }} Hz</strong><button class="objective-trigger hero-objective-trigger" type="button" aria-haspopup="dialog" aria-controls="objective-data-dialog" @click="openObjectiveData"><span aria-hidden="true">＋</span> 客观参数</button></div></div>
-    </section>
-    <div class="section-shell detail-experience-grid">
-      <section class="review-panel"><div class="section-heading compact"><div><p class="eyebrow">SUBJECTIVE INDEX</p><h2>用户评价</h2></div><span class="sample-badge" :class="{ low: summary.lowSample }">{{ summary.sampleCount }} 份握姿评价</span></div>
-        <div class="review-filters"><label><span>握持方式</span><select v-model="selectedGrip" @change="filterSummary"><option value="">全部握持方式</option><option v-for="item in options?.gripStyles || []" :key="item.code" :value="item.code">{{ item.label }}</option></select></label><label><span>手长范围</span><select v-model="selectedHand" @change="filterSummary"><option value="">全部手长</option><option v-for="item in options?.handSizes || []" :key="item.code" :value="item.code">{{ item.label }}</option></select></label></div>
-        <div v-if="handMatchActive" class="review-match-context">
-          <span aria-hidden="true">✓</span>
-          <p><strong>已优先展示匹配手长的评价</strong><small>你的手长为 {{ auth.user.handLengthCm }} cm，对应 {{ matchingHandOption.label }}。</small></p>
-          <button type="button" @click="showAllHandReviews">查看全部</button>
+      <div class="detail-product-header">
+        <div class="detail-product-identity">
+          <p class="page-label">{{ mouse.brand }} / SPEC SHEET</p>
+          <div><h1>{{ mouse.model }}</h1><span>{{ mouse.variant || 'STANDARD EDITION' }}</span></div>
+          <div class="detail-tags"><span>{{ connection }}</span><span>{{ mouse.weightG ?? '—' }} g</span><span>{{ valueLabel(mouse.shapeType) }}</span></div>
         </div>
-        <div class="split-score-overview single"><article class="score-summary-card grip-summary"><div class="score-dial"><strong>{{ summary.sampleCount ? summary.overallAverage : '—' }}</strong><span>/ 10.0</span></div><div><small>GRIP COMFORT</small><h3>{{ gripSummaryLabel }}</h3><p>{{ summary.sampleCount ? `${summary.sampleCount} 份握姿评分` : '暂无对应握姿评分' }}</p></div></article></div>
-        <details class="score-distribution-section" v-if="summary.sampleCount">
-          <summary class="score-distribution-toggle">
-            <span class="score-distribution-title"><small>SCORE DISTRIBUTION</small><h3>评分分布</h3></span>
-            <span class="score-distribution-meta"><small>最后更新：{{ reviewUpdatedLabel }}</small><em><span class="collapsed-label">展开</span><span class="expanded-label">收起</span><i aria-hidden="true"></i></em></span>
-          </summary>
-          <div class="score-distribution-content">
-            <div class="score-distribution-grid single">
-              <article><h4>{{ gripSummaryLabel }}</h4><p>按当前握姿与手长筛选统计；一位用户评价多种握姿时分别计入对应样本。</p><div class="distribution-bars"><div v-for="item in gripDistribution" :key="`grip-${item.score}`"><span>{{ item.score }}</span><i><b :style="{ width: `${item.count / gripDistributionMax * 100}%` }"></b></i><strong>{{ item.count }}</strong></div></div></article>
-            </div>
-            <p class="score-method-note">口径说明：评分随上方握姿与手长筛选变化。样本少于 5 份时仅供参考，排序时会自动置于充足样本之后。</p>
-          </div>
-        </details>
-        <div class="review-action-bar">
-          <div class="review-action-copy">
-            <small>MY REVIEW</small>
-            <strong>{{ auth.authenticated ? reviewProgressLabel : '分享你的真实使用感受' }}</strong>
-            <p>{{ auth.authenticated ? '握持舒适度和支撑位置可以分别提交。' : '登录后使用固定模板评价，结果会匿名计入汇总。' }}</p>
-          </div>
-          <RouterLink v-if="!auth.authenticated" class="button primary-action-button review-write-button" to="/login">登录后写评价</RouterLink>
-          <button v-else-if="options && reviewSubmissionEnabled" class="button primary-action-button review-write-button" type="button" @click="openReviewEditor">
-            {{ mine ? '管理我的评价' : '写评价' }}<span aria-hidden="true">→</span>
-          </button>
-          <span v-else class="sample-badge low">评价提交暂时关闭</span>
+        <div class="detail-product-actions">
+          <button class="button primary-action-button" type="button" @click="toggleCompare">{{ compare.contains(mouse.id) ? '✓ 已加入对比' : '+ 加入对比' }}</button>
+          <button class="button button-ghost objective-trigger" type="button" aria-haspopup="dialog" aria-controls="objective-data-dialog" @click="openObjectiveData">查看完整参数</button>
+          <a v-if="mouse.primarySourceUrl" class="detail-source-link" :href="mouse.primarySourceUrl" target="_blank" rel="noopener noreferrer">数据来源 ↗</a>
         </div>
-      </section>
+      </div>
+      <div class="detail-model-stage">
+        <section class="detail-visual-panel detail-mouse-viewport" aria-labelledby="mouse-model-title">
+          <header class="model-panel-heading">
+            <div><span>MOUSE MODEL</span><h2 id="mouse-model-title">鼠标三维模型</h2></div>
+            <em>模型待接入</em>
+          </header>
+          <div class="mouse-model-placeholder" role="img" :aria-label="`${mouse.brand} ${mouse.model} 三维模型暂未接入`">
+            <span class="model-axis" aria-hidden="true"><i>X</i><i>Y</i><i>Z</i></span>
+            <div class="mouse-model-slot"><strong>3D</strong><small>MODEL SLOT</small></div>
+            <p><strong>{{ mouse.brand }} {{ mouse.model }}</strong><span>模型资源接入后，可在此旋转查看外形与尺寸比例</span></p>
+          </div>
+          <footer class="model-panel-footer"><span>VIEWPORT / LEFT</span><small>当前仅预留模型视口</small></footer>
+        </section>
 
-      <aside class="support-panel">
-        <div class="section-heading compact support-heading">
-          <div><p class="eyebrow">CONTACT HEATMAP</p><h2>支撑位置评价</h2></div>
-          <span class="sample-badge" :class="{ low: supportSummary.sampleCount < 5 }">{{ supportSummary.sampleCount }} 份握姿标记</span>
-        </div>
-        <p class="support-intro">这里仅展示全部用户提交后的匿名汇总结果。被更多用户标记的区域颜色更深，不会叠加你尚未保存的个人笔迹。</p>
-        <div class="support-filter-context"><span>同步筛选</span><strong>{{ supportFilterLabel }}</strong><small>握姿按用户资料中的习惯握姿归类</small></div>
-        <div class="support-map public-support-map readonly" :class="{ empty: !supportSummary.cells?.length }">
-          <HandSupport3D
-            :summary-cells="supportSummary.cells || []"
-            :max-count="supportSummary.maxCount || 0"
-            :grid-columns="supportSummary.gridColumns || 64"
-            :grid-rows="supportSummary.gridRows || 96"
-            :dabs="[]"
-            tool="view"
-            :editable="false"
-            aria-label="所有用户支撑位置热力图"
-            @error="handlePublicSupportModelError"
-          />
-          <span class="support-mode-hint">{{ supportSummary.cells?.length ? `当前展示 ${supportSummary.sampleCount} 份握姿涂抹的汇总结果，可用左键拖动旋转` : '当前筛选下暂无支撑位置评价，可用左键拖动旋转模型' }}</span>
-        </div>
-        <div class="heat-legend" v-if="supportSummary.cells?.length"><span>覆盖较少</span><i></i><span>覆盖较多</span></div>
-        <div class="flash error" v-if="publicSupportError">{{ publicSupportError }}</div>
-        <div class="support-feedback-row">
-          <p class="public-support-note">想添加或修改自己的支撑位置，请点击左侧的“写评价”按钮。</p>
-          <button v-if="auth.authenticated" type="button" class="support-report-button" @click="openReport('MOUSE', mouse.id, 'REVIEW_AGGREGATE')">反馈汇总异常</button>
-          <RouterLink v-else class="support-report-button" to="/login">登录后反馈异常</RouterLink>
-        </div>
-      </aside>
-    </div>
+        <section class="detail-visual-panel detail-hand-viewport" aria-labelledby="hand-heatmap-title">
+          <header class="model-panel-heading">
+            <div><span>CONTACT HEATMAP</span><h2 id="hand-heatmap-title">3D 手掌支撑热力图</h2></div>
+            <div class="heatmap-heading-meta">
+              <div class="heatmap-score"><strong>{{ summary.sampleCount ? summary.overallAverage : '—' }}</strong><span>/ 10</span><small>{{ gripSummaryLabel }} · {{ summary.sampleCount }} 份评价</small></div>
+              <em :class="{ low: supportSummary.sampleCount < 5 }">{{ supportSummary.sampleCount }} 份标记</em>
+            </div>
+          </header>
+          <div class="support-map public-support-map readonly" :class="{ empty: !supportSummary.cells?.length }">
+            <HandSupport3D
+              :summary-cells="supportSummary.cells || []"
+              :max-count="supportSummary.maxCount || 0"
+              :grid-columns="supportSummary.gridColumns || 64"
+              :grid-rows="supportSummary.gridRows || 96"
+              :dabs="[]"
+              tool="view"
+              :editable="false"
+              aria-label="所有用户支撑位置热力图"
+              @error="handlePublicSupportModelError"
+            />
+            <span class="support-mode-hint">{{ supportSummary.cells?.length ? `汇总 ${supportSummary.sampleCount} 份握姿标记，左键拖动旋转` : '当前筛选暂无支撑标记，左键拖动旋转模型' }}</span>
+          </div>
+          <div v-if="publicSupportError" class="flash error model-panel-error">{{ publicSupportError }}</div>
+          <footer class="model-panel-footer hand-heatmap-footer">
+            <div class="heatmap-filter-bar">
+              <label><span>握姿</span><select v-model="selectedGrip" @change="filterSummary"><option v-for="item in options?.gripStyles || []" :key="item.code" :value="item.code">{{ item.label }}</option></select></label>
+              <label><span>手长</span><select v-model="selectedHand" @change="filterSummary"><option value="">全部</option><option v-for="item in options?.handSizes || []" :key="item.code" :value="item.code">{{ item.label }}</option></select></label>
+            </div>
+            <div class="heat-legend" v-if="supportSummary.cells?.length"><span>较少</span><i></i><span>较多</span></div>
+            <div class="heatmap-footer-actions">
+              <RouterLink v-if="!auth.authenticated" class="button primary-action-button review-write-button heatmap-write-button" to="/login">登录后写评价</RouterLink>
+              <button v-else-if="options && reviewSubmissionEnabled" class="button primary-action-button review-write-button heatmap-write-button" type="button" @click="openReviewEditor">
+                {{ mine ? '管理我的评价' : '写评价' }}<span aria-hidden="true">→</span>
+              </button>
+              <span v-else class="sample-badge low heatmap-review-disabled">评价提交暂时关闭</span>
+              <button v-if="auth.authenticated" type="button" class="support-report-button" @click="openReport('MOUSE', mouse.id, 'REVIEW_AGGREGATE')">反馈异常</button>
+              <RouterLink v-else class="support-report-button" to="/login">登录后反馈</RouterLink>
+            </div>
+          </footer>
+        </section>
+      </div>
+      <div class="hero-statline"><div><span>DIMENSIONS</span><strong>{{ dimensions }}</strong></div><div><span>WEIGHT</span><strong>{{ mouse.weightG ?? '—' }} g</strong></div><div><span>SENSOR</span><strong>{{ mouse.sensorName || '—' }}</strong></div><div class="hero-polling-stat"><span>POLLING</span><strong>{{ mouse.maxPollingRateHz ?? '—' }} Hz</strong></div></div>
+    </section>
 
     <section class="section-shell community-review-section">
       <div class="section-heading compact">
@@ -419,7 +403,6 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
         <button v-if="auth.authenticated" class="button button-ghost" type="button" @click="openReport('MOUSE', mouse.id)">提交参数纠错</button>
         <RouterLink v-else class="button button-ghost" to="/login">登录后纠错</RouterLink>
       </div>
-      <div v-if="reportNotice" class="flash success">{{ reportNotice }}</div>
       <div class="public-review-rail-shell" :class="{ single: publicReviews.items.length <= 1 }">
         <button v-if="publicReviews.items.length > 1" class="public-review-rail-arrow previous" type="button" aria-label="查看上一组评价" @click="scrollPublicReviews(-1)">←</button>
         <div ref="publicReviewsRail" class="public-review-rail" tabindex="0" aria-label="横向浏览逐条公开评价">
@@ -549,7 +532,6 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
             <i><b :style="{ width: `${reviewProgressPercent}%` }"></b></i>
           </div>
           <div class="review-dialog-body">
-            <div class="flash success" v-if="message">{{ message }}</div>
             <div class="flash error" v-if="error">{{ error }}</div>
             <div class="profile-required" v-if="!profileReady"><span>PROFILE REQUIRED</span><p>评分时会自动读取个人资料中的手长和习惯握姿，请先填写后再回来提交。</p><RouterLink class="button button-ghost" to="/profile" @click="closeReviewEditor">完善个人资料 →</RouterLink></div>
             <div class="review-entry-stack">
@@ -560,7 +542,7 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
                 </header>
                 <p class="review-hint">先选择握姿，再标记鼠标实际托住手部的位置并填写该握姿的舒适度评分。</p>
                 <div class="support-grip-tabs" role="tablist" aria-label="选择要编辑的握姿支撑图">
-                  <button v-for="item in options.gripStyles" :key="item.code" type="button" role="tab" :aria-selected="activeSupportGrip === item.code" :class="{ active: activeSupportGrip === item.code, completed: personalSupportDabsByGrip[item.code]?.length }" @click="activeSupportGrip = item.code; supportMessage = ''; supportError = ''">
+                  <button v-for="item in options.gripStyles" :key="item.code" type="button" role="tab" :aria-selected="activeSupportGrip === item.code" :class="{ active: activeSupportGrip === item.code, completed: personalSupportDabsByGrip[item.code]?.length }" @click="activeSupportGrip = item.code; supportError = ''">
                     <span>{{ item.label }}</span><small>{{ submittedGrip(item.code) ? `已评分 ${submittedGrip(item.code).comfortScore}` : '未评分' }} · {{ personalSupportDabsByGrip[item.code]?.length ? '已涂抹' : '未涂抹' }}</small>
                   </button>
                 </div>
@@ -580,7 +562,6 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
                       <strong>{{ supportHasPaint ? `已涂抹约 ${supportCoverage}% 的掌面画布` : '尚未涂抹支撑区域' }}</strong>
                       <span>{{ supportHasPaint ? '可以继续涂抹或擦除，保存后才会更新公共热力图' : '按住鼠标或用手指，在掌面连续涂抹鼠标实际托住的位置' }}</span>
                     </div>
-                    <div class="flash success" v-if="supportMessage">{{ supportMessage }}</div>
                     <div class="flash error" v-if="supportError">{{ supportError }}</div>
                     <div class="support-profile-required" v-if="!profileReady"><span>需要先填写手长与习惯握姿</span><RouterLink to="/profile" @click="closeReviewEditor">完善个人资料 →</RouterLink></div>
                     <section v-if="activeGripOption" class="support-grip-score" :class="{ completed: activeSubmittedGrip }" aria-labelledby="active-grip-score-title">

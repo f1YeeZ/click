@@ -1,12 +1,12 @@
 <script setup>
 import { onBeforeUnmount, reactive, ref } from 'vue'
 import api, { errorMessage } from '../api/client'
+import { showToast } from '../services/toast'
 
 const form = reactive({ email: '', verificationCode: '', newPassword: '', confirmPassword: '' })
 const stage = ref('request')
 const loading = ref(false)
 const error = ref('')
-const notice = ref('')
 const resendSeconds = ref(0)
 let countdownTimer
 
@@ -22,11 +22,10 @@ const startCountdown = (seconds) => {
 const requestCode = async () => {
   loading.value = true
   error.value = ''
-  notice.value = ''
   try {
     const { data } = await api.post('/password-reset-verification-codes', { email: form.email })
     stage.value = 'reset'
-    notice.value = `验证码已发送。${data.message}`
+    showToast(`验证码已发送。${data.message}`)
     startCountdown(data.resendAfterSeconds)
   } catch (exception) {
     error.value = errorMessage(exception)
@@ -37,7 +36,6 @@ const requestCode = async () => {
 
 const resetPassword = async () => {
   error.value = ''
-  notice.value = ''
   if (form.newPassword !== form.confirmPassword) {
     error.value = '两次输入的新密码不一致'
     return
@@ -49,7 +47,7 @@ const resetPassword = async () => {
       verificationCode: form.verificationCode,
       newPassword: form.newPassword
     })
-    notice.value = data.message
+    showToast(data.message)
     stage.value = 'success'
     clearInterval(countdownTimer)
   } catch (exception) {
@@ -78,7 +76,6 @@ onBeforeUnmount(() => clearInterval(countdownTimer))
       </div>
 
       <div class="flash error" v-if="error">{{ error }}</div>
-      <div class="flash success" v-if="notice">{{ notice }}</div>
 
       <form v-if="stage === 'request'" @submit.prevent="requestCode">
         <label>邮箱<input v-model.trim="form.email" type="email" autocomplete="email" required placeholder="you@example.com"></label>

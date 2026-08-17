@@ -11,7 +11,7 @@
     <groupId>com.clicker</groupId>
     <artifactId>mouse-hub-api</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-    <name>Clicker Index API</name>
+    <name>GearDB API</name>
 
     <properties>
         <java.version>17</java.version>
