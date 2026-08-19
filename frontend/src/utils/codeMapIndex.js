@@ -107,17 +107,17 @@ const normalizeUrl = (url) => url
   .replace(/\/+/g, '/')
 
 export const learningLevels = {
-  core: { label: '必须理解', short: '必看', summary: '启动、鉴权、鼠标、评价、对比、推荐与排行主链', order: '第一阶段' },
+  core: { label: '必须理解', short: '必看', summary: '启动、鉴权、鼠标、支撑记录、对比与推荐主链', order: '第一阶段' },
   support: { label: '理解后再看', short: '再看', summary: '后台、反馈、实时、邮件、导入、限流、配置与数据访问', order: '第二阶段' },
   skip: { label: '初读可跳过', short: '跳过', summary: '测试、访问器、构造器、异常包装、3D / 图片与格式化工具', order: '需要时再看' },
 }
 
 const coreJavaOwners = new Set([
   'MouseHubApiApplication', 'AuthController', 'MouseController', 'ReviewController',
-  'MouseComparisonController', 'MouseRecommendationController', 'MouseRankingController',
+  'MouseComparisonController', 'MouseRecommendationController',
   'AuthService', 'MouseService', 'ReviewService', 'ComparisonService', 'RecommendationService',
-  'LeaderboardService', 'SessionService', 'MouseDevice', 'UserAccount', 'Review',
-  'ReviewGripScore', 'ReviewSupportPosition', 'SecurityConfig', 'SecurityRateLimitFilter',
+  'SessionService', 'MouseDevice', 'UserAccount', 'Review',
+  'ReviewSupportPosition', 'SecurityConfig', 'SecurityRateLimitFilter',
   'JwtAuthenticationFilter', 'JwtService', 'RefreshCookieService',
 ])
 
@@ -133,7 +133,7 @@ const coreFrontendFiles = [
   'frontend/src/views/HomeView.vue', 'frontend/src/views/MiceView.vue',
   'frontend/src/views/MouseDetailView.vue', 'frontend/src/views/CompareView.vue',
   'frontend/src/views/AuthView.vue', 'frontend/src/views/RecommendationView.vue',
-  'frontend/src/views/LeaderboardView.vue', 'frontend/src/views/ProfileView.vue',
+  'frontend/src/views/ProfileView.vue',
 ]
 
 const ownerName = (node) => node?.file?.split('/').pop()?.replace(/\.(?:java|js|vue)$/, '') || ''
@@ -170,7 +170,7 @@ export const getLearningMeta = (node) => {
       : '它位于鼠标详情的公开评价展示主链，是用户理解评价数据的关键入口。' }
   }
   if (coreJavaOwners.has(owner)) {
-    if (['MouseDevice', 'UserAccount', 'Review', 'ReviewGripScore', 'ReviewSupportPosition'].includes(owner)) {
+    if (['MouseDevice', 'UserAccount', 'Review', 'ReviewSupportPosition'].includes(owner)) {
       if (!isCallable) return { level: 'core', ...learningLevels.core, reason: '这是核心领域数据模型，理解字段关系才能读懂后续业务流程。' }
       return { level: 'skip', ...learningLevels.skip, reason: '实体方法大多是字段访问；先理解实体字段，不必逐个阅读访问器。' }
     }

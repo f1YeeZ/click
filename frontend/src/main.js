@@ -8,5 +8,7 @@ import './assets/dark-velocity.css'
 import './assets/adaptive-layout.css'
 import './assets/app-mobile.css'
 import './assets/figma-redesign.css'
+import './assets/app-admin.css'
+import './assets/app-select.css'
 
 createApp(App).use(createPinia()).use(router).mount('#app')

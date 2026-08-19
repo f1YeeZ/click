@@ -2,8 +2,10 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useCompareStore } from '../stores/compare'
 import brandLogo from '../assets/geardb-logo.svg'
 const auth = useAuthStore()
+const compare = useCompareStore()
 const router = useRouter()
 const headerQuery = ref('')
 const logout = () => { auth.logout(); router.push('/') }
@@ -21,7 +23,6 @@ const searchCatalog = () => {
         <img class="brand-logo" :src="brandLogo" alt="GearDB">
       </RouterLink>
       <nav class="main-nav" aria-label="主导航">
-        <RouterLink exact-active-class="router-link-active" to="/">首页</RouterLink>
         <RouterLink to="/mice">鼠标库</RouterLink>
         <RouterLink to="/recommend">鼠标推荐</RouterLink>
         <RouterLink to="/compare">参数对比</RouterLink>
@@ -42,9 +43,8 @@ const searchCatalog = () => {
     </div>
   </header>
   <nav class="mobile-nav" aria-label="移动主导航">
-    <RouterLink exact-active-class="router-link-active" to="/">首页</RouterLink>
     <RouterLink to="/mice">鼠标库</RouterLink>
     <RouterLink to="/recommend">鼠标推荐</RouterLink>
-    <RouterLink to="/compare">参数对比</RouterLink>
+    <RouterLink class="mobile-compare-link" :to="{ path: '/compare', query: compare.ids.length ? { ids: compare.ids.join(',') } : {} }">参数对比<span v-if="compare.items.length" class="mobile-compare-count" :aria-label="`已选 ${compare.items.length} 款`">{{ compare.items.length }}</span></RouterLink>
   </nav>
 </template>

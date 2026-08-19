@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  appendSupportDabs,
   interpolateSupportDabs,
   legacyCellsToDabs,
   mirrorSupportGridX,
   mirrorSupportX,
   replaySupportDabs,
+  SUPPORT_DAB_LIMIT,
   SUPPORT_GRID_COLUMNS,
   SUPPORT_GRID_ROWS,
   supportCoveragePercentage,
@@ -34,6 +36,23 @@ describe('support heatmap brush', () => {
     expect(painted[center]).toBe(1)
     expect(erased[center]).toBe(0)
     expect(erased.reduce((sum, value) => sum + value, 0)).toBeLessThan(painted.reduce((sum, value) => sum + value, 0))
+  })
+
+  it('keeps accepting paint and erase operations after the history reaches its limit', () => {
+    const saturated = Array.from({ length: SUPPORT_DAB_LIMIT }, () => ({
+      x: 500,
+      y: 500,
+      radius: 80,
+      mode: 'PAINT'
+    }))
+    const erased = appendSupportDabs(saturated, [{ x: 500, y: 500, radius: 80, mode: 'ERASE' }])
+    const repainted = appendSupportDabs(erased, [{ x: 500, y: 500, radius: 40, mode: 'PAINT' }])
+    const center = Math.floor(SUPPORT_GRID_ROWS / 2) * SUPPORT_GRID_COLUMNS + Math.floor(SUPPORT_GRID_COLUMNS / 2)
+
+    expect(erased.length).toBeLessThanOrEqual(SUPPORT_DAB_LIMIT)
+    expect(replaySupportDabs(erased)[center]).toBe(0)
+    expect(repainted.length).toBeLessThanOrEqual(SUPPORT_DAB_LIMIT)
+    expect(replaySupportDabs(repainted)[center]).toBe(1)
   })
 
   it('uses brush radius to control covered area', () => {

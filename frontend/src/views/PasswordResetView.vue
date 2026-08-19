@@ -63,14 +63,14 @@ onBeforeUnmount(() => clearInterval(countdownTimer))
 <template>
   <main class="auth-shell password-reset-shell">
     <section class="auth-aside">
-      <p class="eyebrow">ACCOUNT RECOVERY</p>
+      <p class="eyebrow">账户恢复</p>
       <h1 class="visually-hidden">重置密码</h1>
       <p class="auth-note">验证码仅发送至已注册邮箱，有效期内完成验证即可设置新密码。</p>
     </section>
 
     <section class="auth-form-card">
       <div>
-        <p class="eyebrow">RESET PASSWORD</p>
+        <p class="eyebrow">重置密码</p>
         <h2>{{ stage === 'success' ? '密码已经重置' : '忘记密码' }}</h2>
         <p>{{ stage === 'request' ? '输入注册邮箱，我们会发送一次性验证码。' : stage === 'reset' ? '填写邮件中的验证码并设置新密码。' : '原密码已经失效，现在可以返回登录。' }}</p>
       </div>

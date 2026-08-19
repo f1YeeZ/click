@@ -7,11 +7,11 @@ import handModelUrl from '../assets/models/hand-support.glb?url'
 import handPreviewUrl from '../assets/models/hand-support-preview.png'
 import { fitPerspectiveBounds, scaleAndCenterObject3D } from '../utils/threeCameraFit'
 import {
+  appendSupportDabs,
   interpolateSupportDabs,
   mirrorSupportGridX,
   mirrorSupportX,
   normalizeSupportDab,
-  SUPPORT_DAB_LIMIT,
   SUPPORT_GRID_COLUMNS,
   SUPPORT_GRID_ROWS,
   SUPPORT_VIEWBOX_HEIGHT,
@@ -194,8 +194,7 @@ const applyPaintPoint = (point) => {
   const radius = Math.round(props.brushSize * 5)
   const mode = props.tool === 'erase' ? 'ERASE' : 'PAINT'
   const nextDabs = interpolateSupportDabs(previousPaintPoint, point, radius, mode)
-  if (localDabs.length + nextDabs.length > SUPPORT_DAB_LIMIT) return
-  localDabs.push(...nextDabs)
+  localDabs = appendSupportDabs(localDabs, nextDabs)
   emit('update:dabs', [...localDabs])
   renderHeatTexture()
   previousPaintPoint = point
@@ -215,14 +214,13 @@ const beginPaint = (event) => {
   }
   const intersection = intersectionFromEvent(event)
   updateBrushCursor(event, intersection)
-  if (!intersection) return
   event.preventDefault()
   event.stopImmediatePropagation()
   canvas.value?.setPointerCapture(event.pointerId)
   painting = true
   paintPointerId = event.pointerId
   previousPaintPoint = null
-  applyPaintPoint(supportPointFromWorld(intersection.point))
+  if (intersection) applyPaintPoint(supportPointFromWorld(intersection.point))
 }
 
 const continuePaint = (event) => {
@@ -242,11 +240,13 @@ const continuePaint = (event) => {
 }
 
 const finishPaint = (event) => {
-  if (!painting || event.pointerId !== paintPointerId) return
-  if (canvas.value?.hasPointerCapture(event.pointerId)) canvas.value.releasePointerCapture(event.pointerId)
+  if (!painting || (event?.pointerId != null && event.pointerId !== paintPointerId)) return
   painting = false
   paintPointerId = null
   previousPaintPoint = null
+  if (event?.pointerId != null && canvas.value?.hasPointerCapture(event.pointerId)) {
+    canvas.value.releasePointerCapture(event.pointerId)
+  }
 }
 
 const hideBrushCursor = () => {
@@ -254,6 +254,8 @@ const hideBrushCursor = () => {
 }
 
 const dispose = () => {
+  window.removeEventListener('blur', finishPaint)
+  finishPaint()
   resizeObserver?.disconnect()
   visibilityObserver?.disconnect()
   renderer?.setAnimationLoop(null)
@@ -453,8 +455,14 @@ watch(() => props.dabs, (dabs) => {
   renderHeatTexture()
 }, { deep: true, immediate: true })
 watch(() => [props.summaryCells, props.maxCount, props.gridColumns, props.gridRows], renderHeatTexture, { deep: true })
-watch(() => [props.tool, props.editable], setControlMode)
-onMounted(initialize)
+watch(() => [props.tool, props.editable], () => {
+  if (!props.editable || !['paint', 'erase'].includes(props.tool)) finishPaint()
+  setControlMode()
+})
+onMounted(() => {
+  window.addEventListener('blur', finishPaint)
+  initialize()
+})
 onBeforeUnmount(dispose)
 </script>
 
@@ -467,6 +475,7 @@ onBeforeUnmount(dispose)
       @pointermove="continuePaint"
       @pointerup="finishPaint"
       @pointercancel="finishPaint"
+      @lostpointercapture="finishPaint"
       @pointerleave="hideBrushCursor"
       @mousedown.right.prevent
       @auxclick.prevent

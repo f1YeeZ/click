@@ -31,7 +31,6 @@ public class AdminService {
     private final MouseMapper mice;
     private final UserMapper users;
     private final ReviewMapper reviews;
-    private final ReviewGripScoreMapper gripScores;
     private final ReviewSupportPositionMapper supportPositions;
     private final ContentReportMapper reports;
     private final MouseService mouseService;
@@ -41,11 +40,11 @@ public class AdminService {
     private final TrafficAnalyticsService traffic;
 
     public AdminService(MouseMapper mice, UserMapper users, ReviewMapper reviews,
-                        ReviewGripScoreMapper gripScores, ReviewSupportPositionMapper supportPositions,
+                        ReviewSupportPositionMapper supportPositions,
                         ContentReportMapper reports,
                         MouseService mouseService, RealtimeEventService events, AuditLogService audit,
                         SessionService sessions, TrafficAnalyticsService traffic) {
-        this.mice = mice; this.users = users; this.reviews = reviews; this.gripScores = gripScores;
+        this.mice = mice; this.users = users; this.reviews = reviews;
         this.supportPositions = supportPositions; this.reports = reports; this.mouseService = mouseService; this.events = events; this.audit = audit;
         this.sessions = sessions; this.traffic = traffic;
     }
@@ -193,14 +192,14 @@ public class AdminService {
     @Transactional
     public AdminReviewView updateReviewStatus(UUID id, ModerationRequest request) {
         if (!Set.of("ACTIVE", "DISABLED", "PENDING").contains(request.status())) throw invalidStatus();
-        Review candidate = reviews.selectById(id); if (candidate == null) throw notFound("评价");
+        Review candidate = reviews.selectById(id); if (candidate == null) throw notFound("支撑记录");
         users.selectForUpdate(candidate.getUserId());
-        Review review = reviews.selectById(id); if (review == null) throw notFound("评价");
+        Review review = reviews.selectById(id); if (review == null) throw notFound("支撑记录");
         if (review.getDeletedAt() != null && !"DISABLED".equals(review.getStatus())) {
-            throw new BusinessException("REVIEW_DELETED_BY_USER", "用户已删除该评价，后台不能重新公开", HttpStatus.CONFLICT);
+            throw new BusinessException("REVIEW_DELETED_BY_USER", "用户已删除该支撑记录，后台不能重新公开", HttpStatus.CONFLICT);
         }
         if ("DISABLED".equals(request.status()) && !hasText(request.reason())) {
-            throw new BusinessException("MODERATION_REASON_REQUIRED", "停用评价时必须填写处理原因", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("MODERATION_REASON_REQUIRED", "停用支撑记录时必须填写处理原因", HttpStatus.BAD_REQUEST);
         }
         AdminReviewView before = reviewView(review);
         review.setStatus(request.status());
@@ -212,19 +211,13 @@ public class AdminService {
         review.setUpdatedAt(OffsetDateTime.now()); reviews.updateById(review);
         events.publishAfterCommit("review.changed", review.getMouseId());
         AdminReviewView after = reviewView(review);
-        audit.record("REVIEW_MODERATION", "REVIEW", id, "评价状态变更为 " + request.status(), before, after, request.reason());
+        audit.record("REVIEW_MODERATION", "REVIEW", id, "支撑记录状态变更为 " + request.status(), before, after, request.reason());
         return after;
     }
 
     private AdminReviewView reviewView(Review review) {
         UserAccount user = users.selectById(review.getUserId()); MouseDevice mouse = mice.selectById(review.getMouseId());
         AdminReviewView base = AdminReviewView.from(review, user == null ? "—" : user.getEmail(), mouse == null ? "—" : mouse.displayName());
-        List<GripScoreView> grips = gripScores.selectList(new LambdaQueryWrapper<ReviewGripScore>()
-                        .eq(ReviewGripScore::getReviewId, review.getId()).orderByAsc(ReviewGripScore::getGripStyle))
-                .stream().map(score -> new GripScoreView(score.getGripStyle(), score.getComfortScore())).toList();
-        java.math.BigDecimal comfortAverage = grips.isEmpty() ? base.comfortAverage() : java.math.BigDecimal.valueOf(
-                grips.stream().mapToInt(score -> score.comfortScore() == null ? 0 : score.comfortScore()).average().orElse(0))
-                .setScale(1, java.math.RoundingMode.HALF_UP);
         List<ReviewSupportPosition> supportRows = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
                 .eq(ReviewSupportPosition::getReviewId, review.getId()).orderByAsc(ReviewSupportPosition::getPositionCode));
         List<String> supportCodes = supportRows.stream().map(ReviewSupportPosition::getPositionCode).toList();
@@ -241,10 +234,7 @@ public class AdminService {
         long openReports = reviewReports.stream().filter(report -> Set.of("OPEN", "IN_PROGRESS").contains(report.getStatus())).count();
         List<String> riskFlags = new ArrayList<>();
         if (openReports > 0) riskFlags.add(openReports > 1 ? "多次举报" : "有举报");
-        if (comfortAverage.compareTo(java.math.BigDecimal.valueOf(2)) <= 0 || comfortAverage.compareTo(java.math.BigDecimal.valueOf(9)) >= 0) {
-            riskFlags.add("极端评分");
-        }
-        if (grips.isEmpty() && supportCodes.isEmpty()) riskFlags.add("内容不完整");
+        if (supportCodes.isEmpty()) riskFlags.add("内容不完整");
         String riskLevel = openReports > 1 || "PENDING".equals(review.getStatus()) ? "HIGH" : riskFlags.isEmpty() ? "LOW" : "MEDIUM";
         List<ReviewReportView> reportViews = reviewReports.stream()
                 .sorted(Comparator.comparing(ContentReport::getCreatedAt).reversed())
@@ -252,9 +242,9 @@ public class AdminService {
                         report.getStatus(), report.getReporterEmail(), report.getCreatedAt()))
                 .toList();
         return new AdminReviewView(base.id(), base.userId(), base.mouseId(), base.userEmail(), base.mouseName(), base.status(),
-                user == null ? null : user.getHandSize(), comfortAverage,
-                grips, positions, cells, dabs, supportByGrip, base.moderationReason(), base.moderatedBy(), base.moderatedAt(), base.createdAt(),
-                grips.size(), supportCodes.size(), reviewReports.size(), openReports, riskLevel, riskFlags, reportViews);
+                user == null ? null : user.getHandSize(), positions, cells, dabs, supportByGrip,
+                base.moderationReason(), base.moderatedBy(), base.moderatedAt(), base.createdAt(),
+                supportCodes.size(), reviewReports.size(), openReports, riskLevel, riskFlags, reportViews);
     }
 
     private static SupportGrip supportGripView(String gripStyle, List<ReviewSupportPosition> rows) {

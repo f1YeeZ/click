@@ -63,12 +63,6 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.gripStyles", hasSize(4)))
                 .andExpect(jsonPath("$.proTags", hasSize(9)));
-        mvc.perform(get("/api/v1/mouse-rankings").param("dimension", "overall"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items", hasSize(0)));
-        mvc.perform(get("/api/v1/mouse-rankings").param("dimension", "unknown"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code", is("INVALID_RANKING_DIMENSION")));
         mvc.perform(get("/api/v1/mouse-recommendations")
                         .param("gripStyle", "CLAW").param("supportPositions", "PALM_CENTER"))
                 .andExpect(status().isOk())
@@ -151,6 +145,48 @@ class ApiIntegrationTest {
 
     @Test
     @Transactional
+    void publicComparisonUsesTheReducedFieldSetAndLocalizedValues() throws Exception {
+        MouseDevice first = publishedMouse();
+        first.setShapeType("ERGONOMIC");
+        first.setHandCompatibility("RIGHT");
+        first.setConnectionModes("wireless_2_4g,wired");
+        first.setSensorType("OPTICAL");
+        first.setButtonCount(6);
+        first.setSideButtonCount(2);
+        first.setEncoderName("TTC Gold");
+        mice.insert(first);
+
+        MouseDevice second = publishedMouse();
+        second.setModel("Compare Mouse");
+        second.setSlug("contract-compare-mouse-" + second.getId());
+        second.setSizeCategory("SMALL");
+        second.setShapeType("SYMMETRICAL");
+        second.setHandCompatibility("RIGHT");
+        second.setConnectionModes("wired");
+        second.setSensorType("OPTICAL");
+        second.setButtonCount(5);
+        second.setSideButtonCount(2);
+        second.setEncoderName("TTC Silver");
+        mice.insert(second);
+
+        mvc.perform(get("/api/v1/mouse-comparisons")
+                        .param("mouseIds", first.getId() + "," + second.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows[*].label", hasItems(
+                        "长度", "宽度", "高度", "重量", "尺寸分类", "外形类型", "适用手",
+                        "传感器型号", "最大 DPI", "最大回报率", "连接方式")))
+                .andExpect(jsonPath("$.rows[*].label", not(hasItem("隆起位置"))))
+                .andExpect(jsonPath("$.rows[*].label", not(hasItem("传感器类型"))))
+                .andExpect(jsonPath("$.rows[*].label", not(hasItem("总按键数"))))
+                .andExpect(jsonPath("$.rows[*].label", not(hasItem("侧键数"))))
+                .andExpect(jsonPath("$.rows[*].label", not(hasItem("编码器"))))
+                .andExpect(jsonPath("$.rows[?(@.label == '尺寸分类')].cells[0].value", hasItem("中")))
+                .andExpect(jsonPath("$.rows[?(@.label == '外形类型')].cells[0].value", hasItem("人体工学")))
+                .andExpect(jsonPath("$.rows[?(@.label == '连接方式')].cells[0].value", hasItem("2.4G 无线 / 有线")));
+    }
+
+    @Test
+    @Transactional
     void currentReviewRequiresAuthentication() throws Exception {
         MouseDevice mouse = publishedMouse();
         mice.insert(mouse);
@@ -223,7 +259,7 @@ class ApiIntegrationTest {
                 .andExpect(jsonPath("$.reporterEmail", is("visitor@example.com")));
 
         org.assertj.core.api.Assertions.assertThat(reports.selectCount(null)).isEqualTo(1L);
-        mvc.perform(get("/api/v1/admin/reports")
+        mvc.perform(get("/api/v1/admin/reports").param("targetType", "SITE,MOUSE")
                         .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin@example.com").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items", hasSize(1)))
@@ -301,28 +337,19 @@ class ApiIntegrationTest {
 
     @Test
     @Transactional
-    void catalogRatingSortPlacesReliableSamplesFirstAndExposesDistribution() throws Exception {
-        MouseDevice reliableHigh = publishedMouse(); reliableHigh.setModel("Reliable High"); reliableHigh.setSlug("reliable-high");
-        MouseDevice reliableLow = publishedMouse(); reliableLow.setModel("Reliable Low"); reliableLow.setSlug("reliable-low");
-        MouseDevice tinyPerfect = publishedMouse(); tinyPerfect.setModel("Tiny Perfect"); tinyPerfect.setSlug("tiny-perfect");
-        mice.insert(reliableHigh); mice.insert(reliableLow); mice.insert(tinyPerfect);
-        for (int i = 0; i < 5; i++) addReview(reliableHigh, "high-" + i + "@example.com", 8);
-        for (int i = 0; i < 5; i++) addReview(reliableLow, "low-" + i + "@example.com", 7);
-        addReview(tinyPerfect, "perfect@example.com", 10);
+    @WithMockUser(username = "reader@example.com", roles = "USER")
+    void removedRatingEndpointsAreUnavailableAndDetailsExposeNoScoreSummary() throws Exception {
+        MouseDevice mouse = publishedMouse();
+        mice.insert(mouse);
 
-        mvc.perform(get("/api/v1/mice").param("sort", "rating_desc"))
+        mvc.perform(get("/api/v1/mice/" + mouse.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[0].id", is(reliableHigh.getId().toString())))
-                .andExpect(jsonPath("$.items[0].averageScore", is(8.0)))
-                .andExpect(jsonPath("$.items[0].reviewCount", is(5)))
-                .andExpect(jsonPath("$.items[2].id", is(tinyPerfect.getId().toString())))
-                .andExpect(jsonPath("$.items[2].lowReviewSample", is(true)));
-
-        mvc.perform(get("/api/v1/mice/" + reliableHigh.getId()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.reviewSummary.sampleCount", is(5)))
-                .andExpect(jsonPath("$.reviewSummary.scoreDistribution.8", is(5)))
-                .andExpect(jsonPath("$.reviewSummary.lastUpdatedAt", not(emptyOrNullString())));
+                .andExpect(jsonPath("$.mouse.id", is(mouse.getId().toString())))
+                .andExpect(jsonPath("$.reviewSummary").doesNotExist());
+        mvc.perform(get("/api/v1/mice/" + mouse.getId() + "/review-summary"))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/mouse-rankings"))
+                .andExpect(status().isNotFound());
     }
 
     @Test

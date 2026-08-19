@@ -12,8 +12,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -30,13 +28,11 @@ public class RecommendationService {
     private final ReviewMapper reviews;
     private final UserMapper users;
     private final ReviewSupportPositionMapper supportPositions;
-    private final ReviewGripScoreMapper gripScores;
 
     public RecommendationService(MouseMapper mice, ReviewMapper reviews, UserMapper users,
-                                 ReviewSupportPositionMapper supportPositions,
-                                 ReviewGripScoreMapper gripScores) {
+                                 ReviewSupportPositionMapper supportPositions) {
         this.mice = mice; this.reviews = reviews; this.users = users;
-        this.supportPositions = supportPositions; this.gripScores = gripScores;
+        this.supportPositions = supportPositions;
     }
 
     @Cacheable(cacheNames = "recommendations", key = "#requestedGrip + ':' + (#requestedSupportPositions == null ? 'null' : #requestedSupportPositions.toString())", sync = true)
@@ -109,10 +105,6 @@ public class RecommendationService {
                 .toList();
         if (positionMatches.isEmpty()) return new RecommendationResponse(grip, List.copyOf(requested), published.size(), List.of());
 
-        Set<UUID> positionMatchIds = positionMatches.stream().map(Review::getId).collect(Collectors.toSet());
-        Map<UUID, Integer> comfortByReview = gripScores.selectList(new LambdaQueryWrapper<ReviewGripScore>()
-                        .in(ReviewGripScore::getReviewId, positionMatchIds).eq(ReviewGripScore::getGripStyle, grip)).stream()
-                .collect(Collectors.toMap(ReviewGripScore::getReviewId, ReviewGripScore::getComfortScore));
         Map<UUID, List<Review>> eligibleByMouse = eligible.stream().collect(Collectors.groupingBy(Review::getMouseId));
 
         List<RecommendationItem> candidates = new ArrayList<>();
@@ -136,11 +128,6 @@ public class RecommendationService {
                 evidenceMatches = exactMatches;
             }
             List<Review> evidenceReviews = evidenceMatches.stream().map(ReviewMatch::review).toList();
-            List<Integer> comforts = evidenceReviews.stream().map(review -> comfortByReview.get(review.getId()))
-                    .filter(Objects::nonNull).toList();
-            BigDecimal comfortAverage = comforts.isEmpty() ? BigDecimal.ZERO
-                    : BigDecimal.valueOf(comforts.stream().mapToInt(Integer::intValue).sum())
-                    .divide(BigDecimal.valueOf(comforts.size()), 1, RoundingMode.HALF_UP);
             LinkedHashMap<String, Long> evidence = new LinkedHashMap<>();
             for (String code : requested) {
                 long count = mouseReviews.stream()
@@ -154,16 +141,16 @@ public class RecommendationService {
                     : SupportPreview.empty();
             String explanation = shapeMatching
                     ? "EXACT".equals(matchType)
-                        ? exactMatches.size() + " 份同握姿评价达到图形匹配标准：期望范围覆盖 " + coveragePercent
+                        ? exactMatches.size() + " 份同握姿支撑记录达到图形匹配标准：期望范围覆盖 " + coveragePercent
                             + "%、形状相似度 " + similarityPercent + "%。"
-                        : "相近匹配：最佳单份同握姿评价覆盖期望范围 " + coveragePercent
+                        : "相近匹配：最佳单份同握姿支撑记录覆盖期望范围 " + coveragePercent
                             + "%、形状相似度 " + similarityPercent + "%；未同时达到 80% 覆盖与 60% 相似度。"
                     : "EXACT".equals(matchType)
-                        ? exactMatches.size() + " 份同握姿评价完整覆盖 " + requested.size() + " 个期望支撑位置。"
-                        : "相近匹配：最佳单份同握姿评价覆盖 " + bestScore.intersectionCount() + "/" + requested.size()
-                            + " 个期望支撑位置（" + coveragePercent + "%）；当前没有单份评价同时覆盖全部条件。";
+                        ? exactMatches.size() + " 份同握姿支撑记录完整覆盖 " + requested.size() + " 个期望支撑位置。"
+                        : "相近匹配：最佳单份同握姿支撑记录覆盖 " + bestScore.intersectionCount() + "/" + requested.size()
+                            + " 个期望支撑位置（" + coveragePercent + "%）；当前没有单份记录同时覆盖全部条件。";
             candidates.add(new RecommendationItem(0, MouseView.from(mouse), exactMatches.size(),
-                    mouseReviews.size(), comfortAverage, comforts.size(), evidence, evidenceReviews.size() < 5,
+                    mouseReviews.size(), evidence, evidenceReviews.size() < 5,
                     matchType, coveragePercent, similarityPercent, explanation, matchedSupport.cells(),
                     matchedSupport.maxCount(), matchedSupport.sampleCount()));
         }
@@ -171,14 +158,12 @@ public class RecommendationService {
                 .thenComparing(RecommendationItem::shapeSimilarityPercent, Comparator.reverseOrder())
                 .thenComparing(RecommendationItem::supportCoveragePercent, Comparator.reverseOrder())
                 .thenComparing(RecommendationItem::exactMatchCount, Comparator.reverseOrder())
-                .thenComparing(RecommendationItem::gripComfortAverage, Comparator.reverseOrder())
                 .thenComparing(item -> item.mouse().displayName(), String.CASE_INSENSITIVE_ORDER));
         List<RecommendationItem> ranked = new ArrayList<>();
         for (int index = 0; index < candidates.size(); index++) {
             RecommendationItem item = candidates.get(index);
             ranked.add(new RecommendationItem(index + 1, item.mouse(), item.exactMatchCount(),
-                    item.eligibleReviewCount(), item.gripComfortAverage(), item.gripComfortSampleCount(),
-                    item.positionEvidence(), item.lowSample(), item.matchType(), item.supportCoveragePercent(),
+                    item.eligibleReviewCount(), item.positionEvidence(), item.lowSample(), item.matchType(), item.supportCoveragePercent(),
                     item.shapeSimilarityPercent(), item.explanation(), item.matchedSupportCells(),
                     item.matchedSupportMaxCount(), item.matchedSupportSampleCount()));
         }

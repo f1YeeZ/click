@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.clicker.mousehub.common.BusinessException;
 import com.clicker.mousehub.dto.OperationsDtos.*;
 import com.clicker.mousehub.dto.PageResponse;
-import com.clicker.mousehub.dto.ReviewDtos.GripComfort;
 import com.clicker.mousehub.dto.ReviewDtos.SupportCell;
 import com.clicker.mousehub.dto.ReviewDtos.SupportDab;
 import com.clicker.mousehub.dto.ReviewDtos.SupportGrip;
@@ -14,8 +13,6 @@ import com.clicker.mousehub.mapper.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.*;
 
@@ -32,16 +29,15 @@ public class FeedbackService {
     private final ContentReportMapper reports;
     private final UserMapper users;
     private final ReviewMapper reviews;
-    private final ReviewGripScoreMapper gripScores;
     private final ReviewSupportPositionMapper supportPositions;
     private final MouseMapper mice;
     private final AdminNotificationService notifications;
     private final AuditLogService audit;
     private final RealtimeEventService events;
     public FeedbackService(ContentReportMapper reports, UserMapper users, ReviewMapper reviews,
-                           ReviewGripScoreMapper gripScores, ReviewSupportPositionMapper supportPositions, MouseMapper mice,
+                           ReviewSupportPositionMapper supportPositions, MouseMapper mice,
                            AdminNotificationService notifications, AuditLogService audit, RealtimeEventService events) {
-        this.reports = reports; this.users = users; this.reviews = reviews; this.gripScores = gripScores; this.supportPositions = supportPositions; this.mice = mice;
+        this.reports = reports; this.users = users; this.reviews = reviews; this.supportPositions = supportPositions; this.mice = mice;
         this.notifications = notifications; this.audit = audit; this.events = events;
     }
 
@@ -64,7 +60,7 @@ public class FeedbackService {
         report.setTargetType(request.targetType()); report.setTargetId(request.targetId()); report.setCategory(request.category().trim());
         report.setDescription(request.description().trim()); report.setStatus("OPEN"); report.setCreatedAt(now); report.setUpdatedAt(now);
         reports.insert(report);
-        notifications.create("NEW_REPORT", "收到新的" + ("MOUSE".equals(report.getTargetType()) ? "数据纠错" : "评价举报"),
+        notifications.create("NEW_REPORT", "收到新的" + ("MOUSE".equals(report.getTargetType()) ? "数据纠错" : "支撑记录举报"),
                 targetLabel + " · " + report.getCategory(), "REPORT", report.getId());
         events.publishAfterCommit("feedback.changed", null);
         return view(report);
@@ -89,12 +85,14 @@ public class FeedbackService {
 
     public PageResponse<ContentReportView> list(String q, String status, String targetType, long page) {
         String term = q == null ? null : q.trim();
+        List<String> targetTypes = targetType == null ? List.of() : Arrays.stream(targetType.split(","))
+                .map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
         Page<ContentReport> result = reports.selectPage(new Page<>(Math.max(1, page), 12),
                 new LambdaQueryWrapper<ContentReport>()
                         .and(term != null && !term.isBlank(), w -> w.like(ContentReport::getReporterEmail, term)
                                 .or().like(ContentReport::getDescription, term).or().like(ContentReport::getCategory, term))
                         .eq(status != null && !status.isBlank(), ContentReport::getStatus, status)
-                        .eq(targetType != null && !targetType.isBlank(), ContentReport::getTargetType, targetType)
+                        .in(!targetTypes.isEmpty(), ContentReport::getTargetType, targetTypes)
                         .orderByAsc(ContentReport::getStatus).orderByDesc(ContentReport::getCreatedAt));
         return new PageResponse<>(result.getRecords().stream().map(this::view).toList(),
                 new PageResponse.PageMeta(result.getCurrent(), result.getSize(), result.getTotal(), result.getPages()));
@@ -123,18 +121,10 @@ public class FeedbackService {
         }
         Page<Review> result = reviews.selectPage(new Page<>(Math.max(1, page), 10), new LambdaQueryWrapper<Review>()
                 .eq(Review::getMouseId, mouseId).eq(Review::getStatus, "ACTIVE").isNull(Review::getDeletedAt)
-                .isNotNull(Review::getComfortScore)
+                .exists("SELECT 1 FROM review_support_positions rsp WHERE rsp.review_id = reviews.id")
                 .orderByDesc(Review::getCreatedAt));
         List<PublicReviewView> items = result.getRecords().stream().map(review -> {
             UserAccount user = users.selectById(review.getUserId());
-            List<GripComfort> scores = gripScores.selectList(new LambdaQueryWrapper<ReviewGripScore>()
-                            .eq(ReviewGripScore::getReviewId, review.getId()).orderByAsc(ReviewGripScore::getGripStyle))
-                    .stream().map(score -> new GripComfort(score.getGripStyle(), score.getComfortScore())).toList();
-            if (scores.isEmpty() && review.getGripStyle() != null && review.getComfortScore() != null) {
-                scores = List.of(new GripComfort(review.getGripStyle(), review.getComfortScore()));
-            }
-            BigDecimal average = scores.isEmpty() ? BigDecimal.ZERO : BigDecimal.valueOf(
-                    scores.stream().mapToInt(GripComfort::comfortScore).average().orElse(0)).setScale(1, RoundingMode.HALF_UP);
             UserAccount supportUser = user;
             List<ReviewSupportPosition> supportRows = supportPositions.selectList(new LambdaQueryWrapper<ReviewSupportPosition>()
                     .eq(ReviewSupportPosition::getReviewId, review.getId()).orderByAsc(ReviewSupportPosition::getPositionCode));
@@ -146,7 +136,7 @@ public class FeedbackService {
             List<SupportDab> dabs = supportByGrip.stream().flatMap(item -> item.supportDabs().stream()).toList();
             List<SupportCell> cells = supportByGrip.stream().flatMap(item -> item.supportCells().stream()).distinct().toList();
             return new PublicReviewView(review.getId(), mask(user == null ? null : user.getEmail()), review.getGripStyle(),
-                    review.getHandSize(), review.getUsageDuration(), average, scores, review.getCreatedAt(), cells, dabs, supportByGrip);
+                    review.getHandSize(), review.getUsageDuration(), review.getCreatedAt(), cells, dabs, supportByGrip);
         }).toList();
         return new PageResponse<>(items, new PageResponse.PageMeta(result.getCurrent(), result.getSize(), result.getTotal(), result.getPages()));
     }
@@ -162,7 +152,7 @@ public class FeedbackService {
     private String requireTarget(String type, UUID id) {
         if ("SITE".equals(type)) return "GearDB 前台";
         if ("MOUSE".equals(type)) { MouseDevice mouse = mice.selectById(id); if (mouse != null) return mouse.displayName(); }
-        if ("REVIEW".equals(type)) { Review review = reviews.selectById(id); if (review != null) { MouseDevice mouse = mice.selectById(review.getMouseId()); return mouse == null ? "评价 " + id : mouse.displayName() + " 的评价"; } }
+        if ("REVIEW".equals(type)) { Review review = reviews.selectById(id); if (review != null) { MouseDevice mouse = mice.selectById(review.getMouseId()); return mouse == null ? "支撑记录 " + id : mouse.displayName() + " 的支撑记录"; } }
         throw new BusinessException("TARGET_NOT_FOUND", "反馈对象不存在", HttpStatus.NOT_FOUND);
     }
     private static String mask(String email) {

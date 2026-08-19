@@ -1,7 +1,6 @@
 package com.clicker.mousehub;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.clicker.mousehub.dto.ReviewDtos.GripScoreRequest;
 import com.clicker.mousehub.dto.ReviewDtos.SupportDab;
 import com.clicker.mousehub.dto.ReviewDtos.SupportPositionRequest;
 import com.clicker.mousehub.entity.MouseDevice;
@@ -36,7 +35,7 @@ class ReviewConcurrencyIntegrationTest {
     @Autowired ReviewMapper reviews;
 
     @Test
-    void firstScoreAndSupportMapCanBeSavedConcurrentlyAsOneReviewPackage() throws Exception {
+    void supportMapsForDifferentGripsCanBeSavedConcurrentlyAsOneReviewPackage() throws Exception {
         String email = "concurrent-" + UUID.randomUUID() + "@example.com";
         OffsetDateTime now = OffsetDateTime.now();
         UserAccount user = new UserAccount();
@@ -55,11 +54,13 @@ class ReviewConcurrencyIntegrationTest {
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         try {
-            Future<?> score = pool.submit(() -> {
+            Future<?> palmSupport = pool.submit(() -> {
                 await(ready, start);
-                reviewService.saveGrip(mouse.getId(), email, "CLAW", new GripScoreRequest(8));
+                reviewService.saveSupportPositions(mouse.getId(), email, "PALM",
+                        new SupportPositionRequest(List.of(), List.of(),
+                                List.of(new SupportDab(350, 500, 70, "PAINT"))));
             });
-            Future<?> support = pool.submit(() -> {
+            Future<?> clawSupport = pool.submit(() -> {
                 await(ready, start);
                 reviewService.saveSupportPositions(mouse.getId(), email, "CLAW",
                         new SupportPositionRequest(List.of(), List.of(),
@@ -67,15 +68,14 @@ class ReviewConcurrencyIntegrationTest {
             });
             ready.await();
             start.countDown();
-            score.get();
-            support.get();
+            palmSupport.get();
+            clawSupport.get();
         } finally {
             pool.shutdownNow();
         }
 
         var mine = reviewService.mine(mouse.getId(), email);
-        assertThat(mine.gripComforts()).extracting("gripStyle").containsExactly("CLAW");
-        assertThat(mine.supportByGrip()).extracting("gripStyle").containsExactly("CLAW");
+        assertThat(mine.supportByGrip()).extracting("gripStyle").containsExactlyInAnyOrder("PALM", "CLAW");
         assertThat(reviews.selectCount(new LambdaQueryWrapper<Review>()
                 .eq(Review::getUserId, user.getId()).eq(Review::getMouseId, mouse.getId()))).isEqualTo(1);
     }

@@ -98,7 +98,7 @@ public class SecurityConfig {
                                 "/api/v1/mice", "/api/v1/mice/brands", "/api/v1/mice/*",
                                 "/api/v1/mice/*/review-summary", "/api/v1/mice/*/support-summary",
                                 "/api/v1/mice/*/reviews").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/mouse-rankings", "/api/v1/mouse-recommendations", "/api/v1/mouse-comparisons").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/mouse-recommendations", "/api/v1/mouse-comparisons").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/mouse-recommendations").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())

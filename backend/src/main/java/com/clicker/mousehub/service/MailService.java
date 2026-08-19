@@ -30,7 +30,7 @@ public class MailService {
             message.setFrom(from);
             message.setTo(recipient);
             message.setSubject("欢迎加入 GearDB");
-            message.setText("账号创建成功。现在可以提交结构化鼠标评价并保存对比清单。");
+            message.setText("账号创建成功。现在可以提交鼠标支撑位置记录并保存对比清单。");
             sender.send(message);
         } catch (RuntimeException exception) {
             log.warn("欢迎邮件发送失败，不影响注册：{}", exception.getMessage());

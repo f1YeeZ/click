@@ -8,7 +8,6 @@ import { onRealtime } from '../services/realtime'
 const latest = ref([])
 const total = ref(0)
 const contentReady = ref(false)
-const latestPaused = ref(false)
 const shouldLoopLatest = computed(() => latest.value.length > 4)
 const loadLatest = async () => {
   const { data } = await api.get('/mice', { params: { pageSize: 10, sort: 'newest' } })
@@ -32,7 +31,7 @@ onMounted(() => {
   // Let the route fade finish before inserting the initial card grid.
   initialLoadTimer = window.setTimeout(loadLatest, 220)
 })
-onActivated(startViewRealtime)
+onActivated(() => { startViewRealtime() })
 onDeactivated(() => { stopRealtime(); clearTimeout(realtimeTimer) })
 onBeforeUnmount(() => {
   stopRealtime()
@@ -46,9 +45,8 @@ onBeforeUnmount(() => {
   <main class="home-page">
     <section class="home-hero section-shell">
       <div class="hero-copy">
-        <p class="hero-kicker">GEARDB · MOUSE DATABASE</p>
         <h1>找到真正适合你的鼠标</h1>
-        <p class="hero-summary">按重量、尺寸、外形和传感器筛选，再结合握姿评价与参数对比做出判断。</p>
+        <p class="hero-summary">按重量、尺寸、外形和传感器筛选，再结合握姿支撑热力图与参数对比做出判断。</p>
         <div class="hero-actions">
           <RouterLink class="hero-cta hero-cta-primary" to="/mice">浏览鼠标库 <span aria-hidden="true">→</span></RouterLink>
           <RouterLink class="hero-cta hero-cta-secondary" to="/recommend">开始鼠标推荐</RouterLink>
@@ -58,19 +56,22 @@ onBeforeUnmount(() => {
     <template v-if="contentReady">
     <section class="section-shell trending-section">
       <div class="section-heading ruled-heading">
-        <div><p class="eyebrow">LATEST ARRIVALS / {{ total }} VERIFIED</p><h2>近期新品</h2></div>
+        <div><h2>近期新品</h2><p>{{ total }} 款鼠标已收录</p></div>
         <div class="trending-heading-actions">
-          <button v-if="shouldLoopLatest" class="trending-pause" type="button" :aria-pressed="latestPaused" @click="latestPaused = !latestPaused">{{ latestPaused ? '继续滚动' : '暂停滚动' }}</button>
           <RouterLink class="inline-link" to="/mice">查看全部 <span>→</span></RouterLink>
         </div>
       </div>
-      <div class="trending-grid" :aria-label="shouldLoopLatest ? '近期新品，无限循环轮播' : '近期新品'">
-        <div class="trending-track" :class="{ 'is-static': !shouldLoopLatest, 'is-paused': latestPaused }">
+      <div class="trending-grid" :aria-label="shouldLoopLatest ? '近期新品，自动循环轮播' : '近期新品'">
+        <div class="trending-track" :class="{ 'is-static': !shouldLoopLatest }">
           <div class="trending-set">
-            <MouseCard v-for="(mouse, index) in latest" :key="mouse.id" :mouse="mouse" :index="index" />
+            <div v-for="(mouse, index) in latest" :key="mouse.id" class="trending-card-slot" :style="{ '--card-index': index }">
+              <MouseCard :mouse="mouse" :index="index" />
+            </div>
           </div>
           <div v-if="shouldLoopLatest" class="trending-set" aria-hidden="true" inert>
-            <MouseCard v-for="(mouse, index) in latest" :key="`loop-${mouse.id}`" :mouse="mouse" :index="index" />
+            <div v-for="(mouse, index) in latest" :key="`loop-${mouse.id}`" class="trending-card-slot">
+              <MouseCard :mouse="mouse" :index="index" />
+            </div>
           </div>
         </div>
       </div>
@@ -93,6 +94,7 @@ onBeforeUnmount(() => {
 .home-hero .hero-copy {
   max-width: 680px;
   text-align: center;
+  animation: home-hero-slide-in 680ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .hero-kicker {
@@ -142,7 +144,15 @@ onBeforeUnmount(() => {
   font-weight: 650;
   line-height: 1;
   text-decoration: none;
-  transition: background-color 180ms ease, color 180ms ease;
+  transition: background-color 180ms ease, color 180ms ease, transform 140ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.hero-cta:active {
+  transform: scale(0.97);
+}
+
+.hero-cta-primary span {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .hero-cta-primary,
@@ -154,6 +164,11 @@ onBeforeUnmount(() => {
 .hero-cta-primary:hover {
   background: var(--figma-cyan-strong);
   color: #071006;
+}
+
+.hero-cta-primary:hover span,
+.hero-cta-primary:focus-visible span {
+  transform: translate3d(3px, 0, 0);
 }
 
 .hero-cta-secondary,
@@ -169,6 +184,23 @@ onBeforeUnmount(() => {
 
 .home-page .trending-section {
   padding-top: 18px;
+  animation: home-section-arrive 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.trending-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.trending-heading-actions .inline-link span {
+  display: inline-block;
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.trending-heading-actions .inline-link:hover span,
+.trending-heading-actions .inline-link:focus-visible span {
+  transform: translate3d(3px, 0, 0);
 }
 
 .home-page .trending-grid {
@@ -195,19 +227,72 @@ onBeforeUnmount(() => {
   padding-right: 16px;
 }
 
-.home-page .trending-set .mouse-card {
+.home-page .trending-card-slot {
   flex: 0 0 clamp(230px, 24vw, 290px);
+  min-width: 0;
+}
+
+.home-page .trending-set:first-child .trending-card-slot {
+  animation: home-card-arrive 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--card-index, 0) * 38ms);
+}
+
+.home-page .trending-card-slot :deep(.mouse-card) {
+  height: 100%;
+  animation: none;
+}
+
+.home-page .trending-card-slot :deep(.card-product-image) {
+  transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1), filter 260ms ease-out;
+}
+
+.home-page .trending-card-slot :deep(.mouse-card:hover .card-product-image),
+.home-page .trending-card-slot :deep(.card-detail-link:focus-visible .card-product-image) {
+  transform: scale(1.035);
+  filter: saturate(1.05);
 }
 
 .home-page .trending-grid:hover .trending-track,
-.home-page .trending-grid:focus-within .trending-track,
-.home-page .trending-track.is-paused {
+.home-page .trending-grid:focus-within .trending-track {
   animation-play-state: paused;
 }
 
 @keyframes trending-loop {
   to {
     transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes home-hero-slide-in {
+  from {
+    opacity: 0;
+    transform: translate3d(clamp(72px, 10vw, 150px), 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes home-section-arrive {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes home-card-arrive {
+  from {
+    opacity: 0;
+    transform: translate3d(18px, 0, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
@@ -226,7 +311,7 @@ onBeforeUnmount(() => {
     font-size: 0.94rem;
   }
 
-  .home-page .trending-set .mouse-card {
+  .home-page .trending-card-slot {
     flex-basis: min(76vw, 290px);
   }
 }
@@ -253,15 +338,37 @@ onBeforeUnmount(() => {
     flex: 1 1 150px;
     padding-inline: 14px;
   }
+
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-cta {
+  .home-hero .hero-copy,
+  .home-page .trending-section,
+  .home-page .trending-set:first-child .trending-card-slot {
+    animation: none;
+  }
+
+  .hero-cta,
+  .hero-cta-primary span,
+  .trending-heading-actions .inline-link span,
+  .home-page .trending-card-slot :deep(.card-product-image) {
     transition-duration: 1ms;
+  }
+
+  .hero-cta:active,
+  .hero-cta-primary:hover span,
+  .hero-cta-primary:focus-visible span,
+  .trending-heading-actions .inline-link:hover span,
+  .trending-heading-actions .inline-link:focus-visible span,
+  .home-page .trending-card-slot :deep(.mouse-card:hover .card-product-image),
+  .home-page .trending-card-slot :deep(.card-detail-link:focus-visible .card-product-image) {
+    transform: none;
   }
 
   .home-page .trending-track {
     animation: none;
+    will-change: auto;
   }
+
 }
 </style>

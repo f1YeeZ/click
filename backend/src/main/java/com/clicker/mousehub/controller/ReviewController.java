@@ -20,30 +20,26 @@ public class ReviewController {
 
     @GetMapping public ReviewView mine(@PathVariable UUID mouseId, Authentication auth) {
         ReviewView review = reviews.mine(mouseId, auth.getName());
-        if (review == null) throw new BusinessException("REVIEW_NOT_FOUND", "尚未提交评价", HttpStatus.NOT_FOUND);
+        if (review == null) throw new BusinessException("REVIEW_NOT_FOUND", "尚未提交支撑记录", HttpStatus.NOT_FOUND);
         return review;
-    }
-    @PutMapping("/grip-scores/{gripStyle}") public ReviewView saveGrip(@PathVariable UUID mouseId, @PathVariable String gripStyle,
-                                                                 Authentication auth, @Valid @RequestBody GripScoreRequest request) {
-        settings.requireEnabled("reviews.enabled", "当前暂停提交评价");
-        return reviews.saveGrip(mouseId, auth.getName(), gripStyle, request);
     }
     @PutMapping("/support-positions") public ReviewView saveSupportPositions(@PathVariable UUID mouseId,
                                                                               Authentication auth,
                                                                               @Valid @RequestBody SupportPositionRequest request) {
-        settings.requireEnabled("reviews.enabled", "当前暂停提交评价");
+        settings.requireEnabled("reviews.enabled", "当前暂停提交支撑记录");
         return reviews.saveSupportPositions(mouseId, auth.getName(), request);
     }
     @PutMapping("/support-positions/{gripStyle}") public ReviewView saveSupportPositionsForGrip(@PathVariable UUID mouseId,
                                                                                                       @PathVariable String gripStyle,
                                                                                                       Authentication auth,
                                                                                                       @Valid @RequestBody SupportPositionRequest request) {
-        settings.requireEnabled("reviews.enabled", "当前暂停提交评价");
+        settings.requireEnabled("reviews.enabled", "当前暂停提交支撑记录");
         return reviews.saveSupportPositions(mouseId, auth.getName(), gripStyle, request);
     }
-    @DeleteMapping("/grip-scores/{gripStyle}") @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteGrip(@PathVariable UUID mouseId, @PathVariable String gripStyle, Authentication auth) {
-        reviews.deleteGrip(mouseId, auth.getName(), gripStyle);
+    @DeleteMapping("/support-positions/{gripStyle}") @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteSupportPositionsForGrip(@PathVariable UUID mouseId, @PathVariable String gripStyle,
+                                               Authentication auth) {
+        reviews.deleteSupportPositions(mouseId, auth.getName(), gripStyle);
     }
     @DeleteMapping @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable UUID mouseId, Authentication auth) { reviews.delete(mouseId, auth.getName()); }

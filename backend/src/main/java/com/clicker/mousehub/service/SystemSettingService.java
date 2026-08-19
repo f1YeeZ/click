@@ -33,7 +33,7 @@ public class SystemSettingService {
     private static final Map<String, String> DESCRIPTIONS = Map.ofEntries(
             Map.entry("maintenance.notice", "显示在前台顶部的运营公告"),
             Map.entry("registration.enabled", "是否允许新用户注册"),
-            Map.entry("reviews.enabled", "是否允许用户提交或修改评价"),
+            Map.entry("reviews.enabled", "是否允许用户提交或修改支撑位置记录"),
             Map.entry("upload.max-mb", "后台图片上传大小提示（MB）"),
             Map.entry("verification.stale-days", "数据核验过期天数"),
             Map.entry("security.session-days", "登录会话有效天数（配置提示）"),

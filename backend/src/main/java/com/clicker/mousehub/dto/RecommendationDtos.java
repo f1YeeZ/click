@@ -8,7 +8,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -23,8 +22,7 @@ public final class RecommendationDtos {
                                          int evaluatedMouseCount, List<RecommendationItem> items) {}
 
     public record RecommendationItem(int rank, MouseView mouse, int exactMatchCount,
-                                     int eligibleReviewCount, BigDecimal gripComfortAverage,
-                                     int gripComfortSampleCount, Map<String, Long> positionEvidence,
+                                     int eligibleReviewCount, Map<String, Long> positionEvidence,
                                      boolean lowSample, String matchType, int supportCoveragePercent,
                                      int shapeSimilarityPercent, String explanation,
                                      List<SupportHeatCell> matchedSupportCells,

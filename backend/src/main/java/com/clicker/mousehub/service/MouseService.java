@@ -6,9 +6,7 @@ import com.clicker.mousehub.common.BusinessException;
 import com.clicker.mousehub.dto.MouseDtos.*;
 import com.clicker.mousehub.dto.PageResponse;
 import com.clicker.mousehub.entity.MouseDevice;
-import com.clicker.mousehub.entity.Review;
 import com.clicker.mousehub.mapper.MouseMapper;
-import com.clicker.mousehub.mapper.ReviewMapper;
 import com.clicker.mousehub.util.MouseDataQuality;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
@@ -26,13 +24,11 @@ public class MouseService {
     private static final Set<String> SHAPES = Set.of("SYMMETRICAL", "ERGONOMIC", "HYBRID");
     private static final Set<String> CONNECTIONS = Set.of("wired", "wireless_2_4g", "bluetooth");
     private final MouseMapper mice;
-    private final ReviewMapper reviews;
     private final RealtimeEventService events;
     private final AuditLogService audit;
 
-    public MouseService(MouseMapper mice, ReviewMapper reviews, RealtimeEventService events, AuditLogService audit) {
+    public MouseService(MouseMapper mice, RealtimeEventService events, AuditLogService audit) {
         this.mice = mice;
-        this.reviews = reviews;
         this.events = events;
         this.audit = audit;
     }
@@ -107,28 +103,10 @@ public class MouseService {
             case "brand_asc" -> query.orderByAsc(MouseDevice::getBrand, MouseDevice::getModel);
             case "weight_asc" -> query.orderByAsc(MouseDevice::getWeightG, MouseDevice::getId);
             case "weight_desc" -> query.orderByDesc(MouseDevice::getWeightG).orderByAsc(MouseDevice::getId);
-            case "rating_desc" -> query.last("""
-                    ORDER BY CASE WHEN (SELECT COUNT(*) FROM reviews r
-                        WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL
-                          AND r.comfort_score IS NOT NULL) >= 5 THEN 0 ELSE 1 END,
-                        (SELECT AVG(r.comfort_score) FROM reviews r
-                         WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL
-                           AND r.comfort_score IS NOT NULL) DESC,
-                        (SELECT COUNT(*) FROM reviews r
-                         WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL
-                           AND r.comfort_score IS NOT NULL) DESC,
-                        mice.id ASC
-                    """);
-            case "review_count_desc" -> query.last("""
-                    ORDER BY (SELECT COUNT(*) FROM reviews r
-                        WHERE r.mouse_id = mice.id AND r.status = 'ACTIVE' AND r.deleted_at IS NULL
-                          AND r.comfort_score IS NOT NULL) DESC,
-                        mice.id ASC
-                    """);
             default -> query.orderByDesc(MouseDevice::getCreatedAt, MouseDevice::getId);
         }
         Page<MouseDevice> result = mice.selectPage(new Page<>(Math.max(page, 1), safeSize), query);
-        return new PageResponse<>(viewsWithRatingStats(result.getRecords()),
+        return new PageResponse<>(result.getRecords().stream().map(MouseView::from).toList(),
                 new PageResponse.PageMeta(result.getCurrent(), result.getSize(), result.getTotal(), result.getPages()));
     }
 
@@ -162,10 +140,10 @@ public class MouseService {
             long safePage = Math.max(1, page); int from = (int) Math.min(filtered.size(), (safePage - 1) * safeSize);
             int to = (int) Math.min(filtered.size(), from + safeSize);
             long pages = filtered.isEmpty() ? 0 : (filtered.size() + safeSize - 1) / safeSize;
-            return new PageResponse<>(viewsWithRatingStats(filtered.subList(from, to)), new PageResponse.PageMeta(safePage, safeSize, filtered.size(), pages));
+            return new PageResponse<>(filtered.subList(from, to).stream().map(MouseView::from).toList(), new PageResponse.PageMeta(safePage, safeSize, filtered.size(), pages));
         }
         Page<MouseDevice> result = mice.selectPage(new Page<>(Math.max(1, page), safeSize), query);
-        return new PageResponse<>(viewsWithRatingStats(result.getRecords()),
+        return new PageResponse<>(result.getRecords().stream().map(MouseView::from).toList(),
                 new PageResponse.PageMeta(result.getCurrent(), result.getSize(), result.getTotal(), result.getPages()));
     }
 
@@ -310,21 +288,4 @@ public class MouseService {
         throw new BusinessException("MOUSE_PUBLICATION_INCOMPLETE", "发布前请补全：" + fields, HttpStatus.BAD_REQUEST);
     }
 
-    private List<MouseView> viewsWithRatingStats(List<MouseDevice> records) {
-        if (records.isEmpty()) return List.of();
-        List<UUID> ids = records.stream().map(MouseDevice::getId).toList();
-        Map<UUID, List<Review>> byMouse = reviews.selectList(new LambdaQueryWrapper<Review>()
-                        .in(Review::getMouseId, ids).eq(Review::getStatus, "ACTIVE")
-                        .isNull(Review::getDeletedAt).isNotNull(Review::getComfortScore))
-                .stream().collect(java.util.stream.Collectors.groupingBy(Review::getMouseId));
-        return records.stream().map(mouse -> {
-            List<Review> mouseReviews = byMouse.getOrDefault(mouse.getId(), List.of());
-            BigDecimal average = mouseReviews.isEmpty() ? BigDecimal.ZERO : mouseReviews.stream()
-                    .map(review -> review.getOverallScore() == null || review.getOverallScore().signum() == 0
-                            ? BigDecimal.valueOf(review.getComfortScore()) : review.getOverallScore())
-                    .reduce(BigDecimal.ZERO, BigDecimal::add)
-                    .divide(BigDecimal.valueOf(mouseReviews.size()), 1, java.math.RoundingMode.HALF_UP);
-            return MouseView.from(mouse, average, mouseReviews.size());
-        }).toList();
-    }
 }

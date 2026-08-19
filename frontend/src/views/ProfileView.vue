@@ -145,12 +145,12 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="profile-page section-shell">
-    <header class="profile-heading"><div><p class="eyebrow">MEMBER PROFILE</p><h1 class="visually-hidden">个人资料</h1><p>手长和习惯握姿只在这里维护。提交鼠标评价时，系统会自动使用这些数据。</p></div><span class="profile-id">{{ auth.user?.email }}</span></header>
+    <header class="profile-heading"><div><h1>个人资料</h1><p>手长和习惯握姿只在这里维护。提交鼠标评价时，系统会自动使用这些数据。</p></div><span class="profile-id">{{ auth.user?.email }}</span></header>
     <section class="profile-card">
-      <div class="profile-measure"><span>HAND LENGTH / CM</span><strong>{{ handLengthCm || '—' }}</strong><small>{{ handRange }}</small></div>
+      <div class="profile-measure"><span>手长 / cm</span><strong>{{ handLengthCm || '—' }}</strong><small>{{ handRange }}</small></div>
       <form @submit.prevent="save">
         <label>个人手长 <small>{{ handLocked ? '已锁定，不可更改' : '从掌根到中指指尖' }}</small><div class="unit-input"><input v-model.number="handLengthCm" type="number" min="10" max="30" step="0.1" required :disabled="handLocked" placeholder="例如 18.5"><span>cm</span></div></label>
-        <label>习惯握姿 <small>{{ gripLocked ? '已锁定，不可更改' : '用于计算握姿评分权重' }}</small>
+        <label>习惯握姿 <small>{{ gripLocked ? '已锁定，不可更改' : '用于筛选对应的支撑记录' }}</small>
           <div ref="gripPicker" class="grip-picker" :class="{ open: gripOpen, locked: gripLocked }" @focusout="handleGripFocusOut">
             <button ref="gripTrigger" class="grip-picker-trigger" type="button" :disabled="gripLocked" aria-haspopup="listbox" :aria-expanded="gripOpen" aria-controls="profile-grip-options" @click="toggleGrip" @keydown="handleGripTriggerKey">
               <span class="grip-picker-value" :class="{ placeholder: !selectedGrip }">
@@ -176,7 +176,7 @@ onBeforeUnmount(() => {
       </form>
     </section>
     <section class="password-card">
-      <div class="password-card-intro"><p class="eyebrow">ACCOUNT SECURITY</p><h2>修改密码</h2><p>验证码将发送至当前账号邮箱 <strong>{{ auth.user?.email }}</strong>，有效期以邮件提示为准。</p></div>
+      <div class="password-card-intro"><p class="eyebrow">账户安全</p><h2>修改密码</h2><p>验证码将发送至当前账号邮箱 <strong>{{ auth.user?.email }}</strong>，有效期以邮件提示为准。</p></div>
       <form @submit.prevent="changePassword">
         <label>邮箱验证码
           <span class="verification-input"><input v-model.trim="passwordForm.verificationCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="\d{6}" maxlength="6" required placeholder="6 位验证码"><button type="button" :disabled="codeLoading || resendSeconds > 0" @click="sendPasswordCode">{{ codeLoading ? '发送中…' : (resendSeconds > 0 ? `${resendSeconds}s 后重发` : '获取验证码') }}</button></span>

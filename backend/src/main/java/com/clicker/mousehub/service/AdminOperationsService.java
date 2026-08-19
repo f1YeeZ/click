@@ -172,8 +172,8 @@ public class AdminOperationsService {
                     .map(m -> row(m.getId(), m.getBrand(), m.getModel(), m.getVariant(), m.getStatus(), com.clicker.mousehub.util.MouseDataQuality.qualityPercent(m), com.clicker.mousehub.util.MouseDataQuality.verificationStatus(m), m.getUpdatedAt())).collect(Collectors.joining("\r\n"));
             case "users" -> "id,email,role,status,createdAt,updatedAt\r\n" + users.selectList(null).stream()
                     .map(u -> row(u.getId(), u.getEmail(), u.getRole(), u.getStatus(), u.getCreatedAt(), u.getUpdatedAt())).collect(Collectors.joining("\r\n"));
-            case "reviews" -> "id,userId,mouseId,status,comfortAverage,createdAt\r\n" + reviews.selectList(null).stream()
-                    .map(r -> row(r.getId(), r.getUserId(), r.getMouseId(), r.getStatus(), r.getComfortScore(), r.getCreatedAt())).collect(Collectors.joining("\r\n"));
+            case "reviews" -> "id,userId,mouseId,status,createdAt\r\n" + reviews.selectList(null).stream()
+                    .map(r -> row(r.getId(), r.getUserId(), r.getMouseId(), r.getStatus(), r.getCreatedAt())).collect(Collectors.joining("\r\n"));
             case "audit" -> "createdAt,actor,action,entityType,entityId,summary,reason\r\n" + auditLogs.selectList(new LambdaQueryWrapper<AuditLog>().orderByDesc(AuditLog::getCreatedAt)).stream()
                     .map(a -> row(a.getCreatedAt(), a.getActorEmail(), a.getAction(), a.getEntityType(), a.getEntityId(), a.getSummary(), a.getReason())).collect(Collectors.joining("\r\n"));
             default -> throw new BusinessException("INVALID_EXPORT", "不支持的导出类型", HttpStatus.BAD_REQUEST);

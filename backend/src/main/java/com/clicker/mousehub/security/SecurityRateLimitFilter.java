@@ -40,7 +40,7 @@ public class SecurityRateLimitFilter extends OncePerRequestFilter {
             new Rule("POST", "/api/v1/feedback", "public-feedback", 5, Duration.ofMinutes(10)),
             new Rule("POST", "/api/v1/reports", "content-report", 5, Duration.ofMinutes(10)),
             new Rule("GET", "/api/v1/events", "realtime-connect", 20, Duration.ofMinutes(1)),
-            new Rule("*", "/api/v1/mice/[0-9a-fA-F-]{36}/reviews/mine(?:/grip-scores/[A-Za-z]+|/support-positions(?:/[A-Za-z]+)?)?",
+            new Rule("*", "/api/v1/mice/[0-9a-fA-F-]{36}/reviews/mine(?:/support-positions(?:/[A-Za-z]+)?)?",
                     "review-write", 10, Duration.ofMinutes(1)),
             new Rule("*", "/api/v1/mouse-recommendations", "recommendations", 30, Duration.ofMinutes(1))
     );

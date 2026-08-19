@@ -60,7 +60,7 @@
     bottom: 0;
     left: 0;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
     padding: 0 max(4px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(4px, env(safe-area-inset-left));
     border-top: 1px solid var(--dv-border);
@@ -239,9 +239,10 @@
 
   .active-filter-strip {
     gap: 8px;
-    overflow-x: auto;
-    padding-bottom: 8px;
-    scroll-snap-type: x proximity;
+    flex-wrap: wrap;
+    overflow: visible;
+    padding-bottom: 0;
+    scroll-snap-type: none;
   }
 
   .active-filter-chip {
@@ -268,8 +269,9 @@
   .tray-items {
     grid-column: 1 / -1;
     grid-row: 2;
-    overflow-x: auto;
-    padding-bottom: 2px;
+    flex-wrap: wrap;
+    overflow: visible;
+    padding-bottom: 0;
   }
 
   .tray-chip {

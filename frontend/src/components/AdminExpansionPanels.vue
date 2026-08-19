@@ -2,11 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api, { errorMessage } from '../api/client'
 import AdminFloatingPanel from './AdminFloatingPanel.vue'
+import AdminActionDialog from './AdminActionDialog.vue'
 import { onRealtime } from '../services/realtime'
+import { useAdminActionDialog } from '../composables/useAdminActionDialog'
 
 const props = defineProps({ activeTab: { type: String, required: true } })
 const emit = defineEmits(['toast'])
 const loading = ref(false)
+const { actionDialog, requestAdminAction, confirmAdminAction, cancelAdminAction } = useAdminActionDialog()
 const analytics = ref(null)
 const analyticsDays = ref(30)
 const notifications = ref({ items: [], page: {} })
@@ -15,7 +18,7 @@ const brandForm = reactive({ id: '', name: '', officialUrl: '', logoUrl: '', ali
 const brandEditorOpen = ref(false)
 const reports = ref({ items: [], page: {} })
 const reportStatus = ref('')
-const reportType = ref('')
+const reportType = ref('SITE,MOUSE')
 const reportQuery = ref('')
 const reportDrafts = reactive({})
 const selectedReport = ref(null)
@@ -46,7 +49,7 @@ const analyticsMetrics = [
   { key: 'pageViews', label: '页面浏览 PV', description: '前台页面的每日有效浏览次数', color: '#7198ff', chartType: 'line', group: 'traffic', totalField: 'periodPageViews', totalLabel: '区间页面浏览' },
   { key: 'users', label: '新增用户', description: '新注册账户的每日变化', color: '#7198ff', chartType: 'line', group: 'operations' },
   { key: 'mice', label: '新增鼠标', description: '新建鼠标数据的每日变化', color: '#7198ff', chartType: 'line', group: 'operations' },
-  { key: 'reviews', label: '新增评价', description: '新评价包的每日提交量', color: '#7198ff', chartType: 'line', group: 'operations' },
+  { key: 'reviews', label: '新增支撑记录', description: '用户每日提交的支撑位置记录数', color: '#7198ff', chartType: 'line', group: 'operations' },
   { key: 'adminActions', label: '管理员操作', description: '后台治理与维护操作次数', color: '#7198ff', chartType: 'bar', group: 'operations' },
 ]
 const metricPoints = key => (analytics.value?.points || []).map(point => Number(point[key] || 0))
@@ -190,10 +193,19 @@ const loadOperations = () => run(async () => {
   imports.value = importData.data; sessions.value = sessionData.data; applySettings(settingData.data)
 })
 const loadSessions = (page = 1) => run(async () => { sessions.value = (await api.get('/admin/sessions', { params: { q: sessionQuery.value || undefined, activeOnly: sessionActiveOnly.value, page } })).data })
-const revokeSession = session => run(async () => {
-  if (!window.confirm(`确定让 ${session.userEmail} 的该会话立即失效吗？`)) return
+const revokeSession = async session => {
+  const confirmed = await requestAdminAction({
+    title: '强制用户下线',
+    subtitle: session.userEmail,
+    message: `该设备的登录凭证将立即失效。\n设备：${session.userAgent || '未知设备'}\n网络：${session.ipAddress || '未知地址'}`,
+    confirmLabel: '确认强制下线',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+  return run(async () => {
   await api.delete(`/admin/sessions/${session.id}`); await loadSessions(sessions.value.page.number || 1); showNotice('会话已撤销')
-})
+  })
+}
 const saveSetting = item => run(async () => {
   const value = String(settingDrafts[item.key] ?? '')
   await api.put(`/admin/settings/${encodeURIComponent(item.key)}`, { value })
@@ -214,10 +226,19 @@ const download = async (url, filename) => {
   catch (e) { showError(errorMessage(e)) }
 }
 const exportData = type => download(`/admin/exports/${type}`, `clicker-${type}.csv`)
-const settingLabel = key => ({ 'maintenance.notice': '前台维护公告', 'registration.enabled': '开放用户注册', 'reviews.enabled': '开放评价提交', 'upload.max-mb': '图片上传提示上限（MB）', 'verification.stale-days': '数据核验过期天数', 'security.session-days': '会话有效天数提示' }[key] || key)
+const settingLabel = key => ({ 'maintenance.notice': '前台维护公告', 'registration.enabled': '开放用户注册', 'reviews.enabled': '开放支撑记录提交', 'upload.max-mb': '图片上传提示上限（MB）', 'verification.stale-days': '数据核验过期天数', 'security.session-days': '会话有效天数提示' }[key] || key)
 const statusLabel = value => ({ ACTIVE: '正常', ARCHIVED: '已归档', OPEN: '待处理', IN_PROGRESS: '处理中', RESOLVED: '已解决', REJECTED: '已驳回', PREVIEW_READY: '预检通过', PREVIEW_FAILED: '预检失败', COMPLETED: '已导入' }[value] || value)
-const reportTypeLabel = value => ({ SITE: '前台反馈', MOUSE: '数据纠错', REVIEW: '评价举报' }[value] || value)
+const reportTypeLabel = value => ({ SITE: '前台反馈', MOUSE: '数据纠错', REVIEW: '支撑记录举报' }[value] || value)
 const reportCategoryLabel = value => ({ MOUSE_MISSING: '缺失鼠标型号', BUG: '网站 Bug', DATA_ERROR: '数据修正', SUGGESTION: '功能建议', OTHER: '其他反馈' }[value] || value)
+const reportPriority = report => {
+  if (report.status === 'REJECTED' || report.status === 'RESOLVED') return 'low'
+  const category = String(report.category || '').toUpperCase()
+  if (category === 'BUG' || category.includes('BUG')) return 'high'
+  if (report.targetType === 'MOUSE' || category === 'DATA_ERROR' || category === 'MOUSE_MISSING' || category.includes('纠错')) return 'medium'
+  return 'low'
+}
+const reportPriorityLabel = report => ({ high: '高优先级', medium: '需关注', low: '常规' }[reportPriority(report)])
+const reportStatusIcon = status => ({ OPEN: '!', IN_PROGRESS: '↻', RESOLVED: '✓', REJECTED: '×' }[status] || '•')
 const date = value => value ? new Date(value).toLocaleString('zh-CN') : '—'
 watch(() => settingDrafts['advertising.left.image-url'], () => { adPreviewErrors.left = false })
 watch(() => settingDrafts['advertising.right.image-url'], () => { adPreviewErrors.right = false })
@@ -244,7 +265,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="expansion-shell">
     <section v-if="activeTab === 'analytics'" class="admin-panel full-panel expansion-panel">
-      <div class="panel-heading expansion-heading"><div><span class="panel-kicker">OPERATIONS PULSE</span><h3>运营分析与通知</h3><p>按指标查看每日变化、区间累计和近期趋势。</p></div><select v-model.number="analyticsDays" aria-label="选择统计时间范围" @change="loadAnalytics"><option :value="7">近 7 天</option><option :value="14">近 14 天</option><option :value="30">近 30 天</option><option :value="90">近 90 天</option></select></div>
+      <div class="panel-heading expansion-heading"><div><h3>运营分析与通知</h3><p>按指标查看每日变化、区间累计和近期趋势。</p></div><select v-model.number="analyticsDays" aria-label="选择统计时间范围" @change="loadAnalytics"><option :value="7">近 7 天</option><option :value="14">近 14 天</option><option :value="30">近 30 天</option><option :value="90">近 90 天</option></select></div>
       <div class="signal-cards"><article><span>待处理反馈</span><strong>{{ analytics?.openReports ?? '—' }}</strong></article><article><span>未读通知</span><strong>{{ analytics?.unreadNotifications ?? '—' }}</strong></article><article><span>活跃会话</span><strong>{{ analytics?.activeSessions ?? '—' }}</strong></article><article><span>过期数据</span><strong>{{ analytics?.staleMice ?? '—' }}</strong></article></div>
       <div class="analytics-report">
         <section v-for="group in analyticsGroups" :key="group.key" class="analytics-report-group">
@@ -291,7 +312,7 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-else-if="activeTab === 'brands'" class="admin-panel full-panel expansion-panel">
-      <div class="panel-heading expansion-heading"><div><span class="panel-kicker">BRAND REGISTRY</span><h3>品牌资料中心</h3><p>统一官网、Logo、别名与归档状态；重命名会同步鼠标资产。</p></div><button class="toolbar-action" @click="openBrandCreate">新建品牌</button></div>
+      <div class="panel-heading expansion-heading"><div><h3>品牌资料中心</h3><p>统一官网、Logo、别名与归档状态；重命名会同步鼠标资产。</p></div><button class="toolbar-action" @click="openBrandCreate">新建品牌</button></div>
       <div class="brand-layout"><div class="brand-list"><button v-for="brand in brands" :key="brand.id" @click="editBrand(brand)"><span v-if="brand.logoUrl" class="brand-mark"><img :src="brand.logoUrl" alt=""></span><span v-else class="brand-mark text">{{ brand.name.slice(0, 2).toUpperCase() }}</span><span><strong>{{ brand.name }}</strong><small>{{ brand.mouseCount }} 款鼠标 · {{ statusLabel(brand.status) }}</small></span><em>编辑品牌</em></button></div></div>
       <AdminFloatingPanel :open="brandEditorOpen" :title="brandForm.id ? '编辑品牌' : '新建品牌'" subtitle="品牌资料保存后会同步用于鼠标资产筛选。" :busy="loading" @close="closeBrandEditor">
         <form id="brand-floating-form" class="brand-editor brand-editor-floating" @submit.prevent="saveBrand"><label>品牌名称<input v-model.trim="brandForm.name" maxlength="80" required></label><label>官方网站<input v-model.trim="brandForm.officialUrl" type="url" placeholder="https://"></label><label>Logo 地址<input v-model.trim="brandForm.logoUrl" type="url" placeholder="https://"></label><label>品牌别名<input v-model.trim="brandForm.aliases" placeholder="多个别名用逗号分隔"></label><label>状态<select v-model="brandForm.status"><option value="ACTIVE">正常</option><option value="ARCHIVED">归档</option></select></label><label class="wide">运营备注<textarea v-model.trim="brandForm.notes" maxlength="1000"></textarea></label></form>
@@ -300,9 +321,9 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-else-if="activeTab === 'feedback'" class="admin-panel full-panel expansion-panel">
-      <div class="panel-heading expansion-heading"><div><span class="panel-kicker">TRUST DESK</span><h3>举报与数据纠错</h3><p>从用户反馈到受理、处理和结论的完整工单闭环。</p></div></div>
-      <div class="toolbar"><div class="toolbar-search"><span>⌕</span><input v-model="reportQuery" placeholder="搜索提交人、分类或说明…" @keyup.enter="loadReports(1)"></div><select v-model="reportType" @change="loadReports(1)"><option value="">全部对象</option><option value="SITE">前台反馈</option><option value="MOUSE">数据纠错</option><option value="REVIEW">评价举报</option></select><select v-model="reportStatus" @change="loadReports(1)"><option value="">全部状态</option><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="RESOLVED">已解决</option><option value="REJECTED">已驳回</option></select></div>
-      <div class="report-board"><article v-for="report in reports.items" :key="report.id" :class="`report-${report.status.toLowerCase()}`"><header><div><span>{{ reportTypeLabel(report.targetType) }}</span><h4>{{ report.targetLabel }}</h4></div><em>{{ statusLabel(report.status) }}</em></header><p>{{ report.description }}</p><dl><div><dt>分类</dt><dd>{{ reportCategoryLabel(report.category) }}</dd></div><div><dt>提交人</dt><dd>{{ report.reporterEmail }}</dd></div><div><dt>提交时间</dt><dd>{{ date(report.createdAt) }}</dd></div></dl><button class="button button-ghost report-open-action" @click="openReport(report)">处理工单</button></article><p v-if="!reports.items.length" class="table-empty">暂无反馈工单</p></div>
+      <div class="panel-heading expansion-heading"><div><h3>前台反馈与数据纠错</h3><p>处理网站反馈和鼠标数据问题；支撑记录举报请在“支撑记录”中处理。</p></div></div>
+      <div class="toolbar"><div class="toolbar-search"><span>⌕</span><input v-model="reportQuery" placeholder="搜索提交人、分类或说明…" @keyup.enter="loadReports(1)"></div><select v-model="reportType" @change="loadReports(1)"><option value="SITE,MOUSE">全部反馈</option><option value="SITE">前台反馈</option><option value="MOUSE">数据纠错</option></select><select v-model="reportStatus" @change="loadReports(1)"><option value="">全部状态</option><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="RESOLVED">已解决</option><option value="REJECTED">已驳回</option></select></div>
+      <div class="report-board"><article v-for="report in reports.items" :key="report.id" class="report-row" :class="[`report-${report.status.toLowerCase()}`, `report-priority-${reportPriority(report)}`]" :aria-label="`${reportTypeLabel(report.targetType)}，${report.targetLabel}，${statusLabel(report.status)}，${reportPriorityLabel(report)}`"><header class="report-lead"><span class="report-status-mark" aria-hidden="true">{{ reportStatusIcon(report.status) }}</span><div><span class="report-type">{{ reportTypeLabel(report.targetType) }}</span><h4>{{ report.targetLabel }}</h4></div></header><div class="report-summary"><p>{{ report.description }}</p><div class="report-tags"><em class="report-priority">{{ reportPriorityLabel(report) }}</em><em class="report-category">{{ reportCategoryLabel(report.category) }}</em></div></div><dl><div><dt>状态</dt><dd><em class="report-status">{{ reportStatusIcon(report.status) }} {{ statusLabel(report.status) }}</em></dd></div><div><dt>提交人</dt><dd>{{ report.reporterEmail }}</dd></div><div><dt>提交时间</dt><dd>{{ date(report.createdAt) }}</dd></div></dl><button class="button button-ghost report-open-action" @click="openReport(report)">处理工单</button></article><p v-if="!reports.items.length" class="table-empty">暂无反馈工单</p></div>
       <AdminFloatingPanel :open="Boolean(selectedReport)" title="处理反馈工单" :subtitle="selectedReport ? `${selectedReport.targetLabel} · ${selectedReport.reporterEmail}` : ''" :busy="loading" @close="selectedReport = null">
         <section v-if="selectedReport" class="report-modal-content"><div class="report-original"><span>{{ reportTypeLabel(selectedReport.targetType) }} · {{ reportCategoryLabel(selectedReport.category) }}</span><p>{{ selectedReport.description }}</p></div><div class="report-workflow report-workflow-floating"><label>处理状态<select v-model="reportDrafts[selectedReport.id].status"><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="RESOLVED">已解决</option><option value="REJECTED">已驳回</option></select></label><label>负责人<input v-model.trim="reportDrafts[selectedReport.id].assigneeEmail" placeholder="默认当前管理员"></label><label class="wide">处理结论<textarea v-model.trim="reportDrafts[selectedReport.id].resolution" maxlength="1000"></textarea></label></div></section>
         <template #footer><div v-if="selectedReport" class="expansion-modal-actions"><button type="button" class="button button-ghost" :disabled="loading" @click="selectedReport = null">取消处理</button><button class="button" :disabled="loading" @click="saveReport(selectedReport)">{{ loading ? '正在保存…' : '保存处理结果' }}</button></div></template>
@@ -310,10 +331,10 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-else-if="activeTab === 'operations'" class="admin-panel full-panel expansion-panel">
-      <div class="panel-heading expansion-heading"><div><span class="panel-kicker">SYSTEM OPERATIONS</span><h3>系统运营</h3><p>数据流转、账号会话和运行开关集中管理。</p></div></div>
+      <div class="panel-heading expansion-heading"><div><h3>系统运营</h3><p>数据流转、账号会话和前台运行开关集中管理。</p></div></div>
       <div class="operations-grid">
-        <section class="ops-card"><header><div><h4>数据导出</h4><small>CSV 统一使用 UTF-8 BOM</small></div></header><div class="export-actions"><button @click="exportData('mice')">导出鼠标</button><button @click="exportData('users')">导出用户</button><button @click="exportData('reviews')">导出评价</button><button @click="exportData('audit')">导出审计</button></div></section>
-        <section class="ops-card settings-card"><header><div><h4>系统设置</h4><small>保存后立即作用于注册、评价和前台公告</small></div></header><label v-for="item in generalSettings" :key="item.key"><span><strong>{{ settingLabel(item.key) }}</strong><small>{{ item.description }}</small></span><select v-if="item.key.endsWith('.enabled')" v-model="settingDrafts[item.key]"><option value="true">开启</option><option value="false">关闭</option></select><input v-else v-model="settingDrafts[item.key]"><button @click="saveSetting(item)">保存</button></label></section>
+        <section class="ops-card"><header><div><h4>数据导出</h4><small>CSV 统一使用 UTF-8 BOM</small></div></header><div class="export-actions"><button @click="exportData('mice')">导出鼠标</button><button @click="exportData('users')">导出用户</button><button @click="exportData('reviews')">导出支撑记录</button><button @click="exportData('audit')">导出审计</button></div></section>
+        <section class="ops-card settings-card"><header><div><h4>前台运行设置</h4><small>保存后会实时同步到已打开的前台页面</small></div></header><label v-for="item in generalSettings" :key="item.key"><span><strong>{{ settingLabel(item.key) }}</strong><small>{{ item.description }}</small></span><select v-if="item.key.endsWith('.enabled')" v-model="settingDrafts[item.key]"><option value="true">开启</option><option value="false">关闭</option></select><input v-else v-model="settingDrafts[item.key]"><button @click="saveSetting(item)">保存</button></label></section>
         <section class="ops-card wide-card advertising-card">
           <header><div><h4>广告位设置</h4><small>仅在宽度不小于 1440px 的前台页面展示；关闭后主内容宽度和位置不会变化</small></div><label class="advertising-master-toggle"><span>全局广告</span><select v-model="settingDrafts['advertising.enabled']"><option value="true">开启</option><option value="false">关闭</option></select></label></header>
           <form class="advertising-form" @submit.prevent="saveAdvertising">
@@ -339,6 +360,7 @@ onBeforeUnmount(() => {
     </section>
     <div v-if="loading" class="expansion-loading">正在同步运营数据…</div>
   </div>
+  <AdminActionDialog :config="actionDialog" :busy="loading" @confirm="confirmAdminAction" @close="cancelAdminAction" />
 </template>
 
 <style scoped>
@@ -348,6 +370,7 @@ onBeforeUnmount(() => {
 </style>
 
 <style scoped>
+.notification-list { max-height: none; overflow: visible; }
 .signal-cards {
   display: flex;
   gap: 0;
@@ -657,5 +680,74 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) {
   .session-check-indicator { transition: none; }
   .advertising-preview { transition: none; }
+}
+.expansion-shell .signal-cards article,
+.expansion-shell .trend-card,
+.expansion-shell .notification-card,
+.expansion-shell .ops-card,
+.expansion-shell .brand-list > button,
+.expansion-shell .report-board article,
+.expansion-shell .analytics-report-group { border-radius: 10px; box-shadow: none; }
+.expansion-shell .operations-grid { gap: 12px; }
+.expansion-shell .ops-card { padding: 18px; }
+.expansion-shell .export-actions button { border-radius: 8px; padding: 13px; }
+.expansion-shell .expansion-loading { backdrop-filter: none; }
+.expansion-shell .report-board {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.expansion-shell .report-board article {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.05fr) minmax(240px, 1.35fr) minmax(360px, 1.4fr) auto;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 18px;
+}
+.expansion-shell .report-board article > header { gap: 12px; }
+.expansion-shell .report-board article > p { margin: 0; line-height: 1.55; }
+.expansion-shell .report-board dl { gap: 12px; margin: 0; }
+.expansion-shell .report-board dd { overflow: hidden; text-overflow: ellipsis; }
+.expansion-shell .report-open-action { margin-top: 0; white-space: nowrap; }
+.expansion-shell .report-row {
+  --report-color: var(--admin-accent, var(--dv-primary));
+  --report-soft: rgba(220, 229, 223, .08);
+  --priority-color: var(--admin-muted, var(--dv-muted));
+  --priority-soft: transparent;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+.expansion-shell .report-row:hover { border-color: color-mix(in srgb, var(--report-color) 45%, var(--admin-border, #2d3339)); background: var(--admin-surface-raised, var(--dv-surface-high)); }
+.expansion-shell .report-row.report-open { --report-color: #f2b866; --report-soft: rgba(242, 184, 102, .10); }
+.expansion-shell .report-row.report-in_progress { --report-color: #73b8ff; --report-soft: rgba(115, 184, 255, .10); }
+.expansion-shell .report-row.report-resolved { --report-color: #73d49a; --report-soft: rgba(115, 212, 154, .10); }
+.expansion-shell .report-row.report-rejected { --report-color: #ed858d; --report-soft: rgba(237, 133, 141, .10); }
+.expansion-shell .report-row.report-priority-high { --priority-color: #ed858d; --priority-soft: rgba(237, 133, 141, .10); }
+.expansion-shell .report-row.report-priority-medium { --priority-color: #f2b866; --priority-soft: rgba(242, 184, 102, .10); }
+.expansion-shell .report-row.report-priority-low { --priority-color: #aab3bb; --priority-soft: rgba(170, 179, 187, .07); }
+.expansion-shell .report-lead { display: flex; align-items: center; justify-content: flex-start; gap: 11px; min-width: 0; }
+.expansion-shell .report-status-mark { display: grid; flex: 0 0 28px; width: 28px; height: 28px; place-items: center; border: 1px solid color-mix(in srgb, var(--report-color) 58%, transparent); border-radius: 8px; background: var(--report-soft); color: var(--report-color); font: 750 .82rem/1 var(--dv-mono); }
+.expansion-shell .report-type { color: var(--report-color); font-size: .66rem; font-weight: 700; }
+.expansion-shell .report-row h4 { overflow: hidden; margin: 4px 0 0; color: var(--admin-text, var(--dv-text)); font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
+.expansion-shell .report-summary { min-width: 0; }
+.expansion-shell .report-summary > p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--admin-text-soft, var(--dv-text-soft)); line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.expansion-shell .report-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.expansion-shell .report-tags em { display: inline-flex; align-items: center; width: fit-content; padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--report-color) 42%, transparent); border-radius: 999px; background: var(--report-soft); color: var(--report-color); font-size: .62rem; font-style: normal; white-space: nowrap; }
+.expansion-shell .report-tags .report-priority { border-color: color-mix(in srgb, var(--priority-color) 46%, transparent); background: var(--priority-soft); color: var(--priority-color); }
+.expansion-shell .report-tags .report-category { border-color: var(--admin-border, var(--dv-border)); background: transparent; color: var(--admin-muted, var(--dv-muted)); }
+.expansion-shell .report-row dt { color: var(--admin-muted, var(--dv-muted)); font-size: .6rem; }
+.expansion-shell .report-row dd { overflow: hidden; margin: 3px 0 0; color: var(--admin-text-soft, var(--dv-text-soft)); font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
+.expansion-shell .report-row .report-status { display: inline-flex; align-items: center; gap: 4px; width: fit-content; padding: 3px 6px; border: 1px solid color-mix(in srgb, var(--report-color) 52%, transparent); border-radius: 999px; background: var(--report-soft); color: var(--report-color); font-size: .64rem; font-style: normal; }
+.expansion-shell .report-open-action { justify-self: end; }
+@media (max-width: 1400px) {
+  .expansion-shell .report-board article { grid-template-columns: minmax(210px, 1fr) minmax(260px, 1.4fr) auto; }
+  .expansion-shell .report-row .report-summary { grid-column: 1 / 3; grid-row: 2; }
+  .expansion-shell .report-row dl { grid-column: 1 / 3; grid-row: 3; }
+  .expansion-shell .report-open-action { grid-column: 3; grid-row: 1 / 4; }
+}
+@media (max-width: 900px) {
+  .expansion-shell .report-board article { grid-template-columns: 1fr; }
+  .expansion-shell .report-row .report-summary,
+  .expansion-shell .report-row dl,
+  .expansion-shell .report-open-action { grid-column: auto; grid-row: auto; }
+  .expansion-shell .report-open-action { justify-self: start; }
 }
 </style>

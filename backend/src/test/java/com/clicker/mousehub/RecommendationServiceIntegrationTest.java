@@ -1,7 +1,6 @@
 package com.clicker.mousehub;
 
 import com.clicker.mousehub.dto.AuthDtos.ProfileRequest;
-import com.clicker.mousehub.dto.ReviewDtos.GripScoreRequest;
 import com.clicker.mousehub.dto.ReviewDtos.SupportDab;
 import com.clicker.mousehub.dto.ReviewDtos.SupportPositionRequest;
 import com.clicker.mousehub.entity.MouseDevice;
@@ -47,7 +46,6 @@ class RecommendationServiceIntegrationTest {
 
         reviews.saveSupportPositions(exactMouse.getId(), exactUser,
                 new SupportPositionRequest(List.of("PALM_CENTER", "PALM_HEEL")));
-        reviews.saveGrip(exactMouse.getId(), exactUser, "CLAW", new GripScoreRequest(9));
         reviews.saveSupportPositions(splitEvidenceMouse.getId(), partialOne,
                 new SupportPositionRequest(List.of("PALM_CENTER")));
         reviews.saveSupportPositions(splitEvidenceMouse.getId(), partialTwo,
@@ -58,7 +56,6 @@ class RecommendationServiceIntegrationTest {
         assertThat(result.items().get(0).mouse().id()).isEqualTo(exactMouse.getId());
         assertThat(result.items().get(0).matchType()).isEqualTo("EXACT");
         assertThat(result.items().get(0).exactMatchCount()).isEqualTo(1);
-        assertThat(result.items().get(0).gripComfortAverage()).isEqualByComparingTo("9.0");
         assertThat(result.items().get(0).supportCoveragePercent()).isEqualTo(100);
         assertThat(result.items().get(0).explanation()).contains("完整覆盖 2 个期望支撑位置");
         assertThat(result.items().get(0).positionEvidence())

@@ -3,6 +3,7 @@ defineOptions({ name: 'RecommendationView' })
 import { computed, nextTick, ref } from 'vue'
 import api, { errorMessage } from '../api/client'
 import HandSupport3D from '../components/HandSupport3D.vue'
+import HandSupport2D from '../components/HandSupport2D.vue'
 import { recommendationShapeReady, recommendationShapeRequest } from '../utils/recommendation'
 import { supportCoveragePercentage } from '../utils/supportHeatmap'
 
@@ -48,52 +49,46 @@ const recommend = async () => {
   } catch (e) { error.value = errorMessage(e) }
   finally { loading.value = false }
 }
-const scoreText = (item) => item.gripComfortSampleCount ? Number(item.gripComfortAverage).toFixed(1) : '—'
 const matchLabel = (item) => item.matchType === 'EXACT' ? '完全匹配' : '相近匹配'
-const handleSupportModelError = () => { supportModelError.value = '三维模型加载失败，请刷新页面后重试' }
+const handleSupportModelError = () => { supportModelError.value = '二维手掌图片加载失败，请刷新页面后重试' }
+const readinessHint = computed(() => !gripStyle.value ? '请先选择握姿' : !supportHasPaint.value ? '请标记至少一处期望支撑位置' : '条件已完整，可以查看匹配结果')
 </script>
 
 <template>
   <main class="recommendation-page section-shell">
+    <header class="recommendation-page-heading">
+      <h1>按握姿与支撑位置推荐鼠标</h1>
+      <p>依次选择握姿、标记期望被鼠标托住的位置，再查看有支撑记录依据的匹配结果。</p>
+    </header>
     <section class="recommendation-lab">
       <div class="recommendation-controls">
-        <div class="recommendation-step"><span>01</span><div><small>GRIP PROFILE</small><h2>选择你的握姿</h2></div></div>
+        <div class="recommendation-step"><span>01</span><div><h2>选择你的握姿</h2></div></div>
         <div class="recommendation-grips" role="radiogroup" aria-label="选择握持方式">
           <button v-for="item in gripOptions" :key="item.code" type="button" role="radio" :aria-checked="gripStyle === item.code" :class="{ selected: gripStyle === item.code }" @click="chooseGrip(item.code)">
             <span>{{ item.label }}</span><small>{{ item.note }}</small><i>{{ item.code }}</i>
           </button>
         </div>
-        <div class="recommendation-contract">
-          <small>YOUR MATCH CONTRACT</small>
-          <div><span>握姿</span><strong>{{ selectedGrip?.label || '尚未选择' }}</strong></div>
-          <div><span>图形范围</span><strong>{{ supportHasPaint ? `已涂抹约 ${supportCoverage}% 的掌面` : '尚未涂抹' }}</strong></div>
-        </div>
-        <div v-if="error" class="flash error">{{ error }}</div>
-        <button class="button recommendation-submit" type="button" :disabled="!ready || loading" @click="recommend">
-          {{ loading ? '正在检索评价证据…' : '查找匹配并解释原因 →' }}
-        </button>
       </div>
 
       <div class="recommendation-hand-panel">
-        <div class="recommendation-step"><span>02</span><div><small>REQUIRED CONTACT</small><h2>选择期望支撑位置</h2></div></div>
-        <p>按住鼠标或用手指，在三维手掌上涂抹期望被鼠标托住的位置。</p>
+        <div class="recommendation-step"><span>02</span><div><h2>标记期望支撑位置</h2></div></div>
+        <p>按住鼠标或用手指，在手掌上连续涂抹期望被鼠标托住的位置。</p>
         <div class="recommendation-hand-map">
           <div class="recommendation-model-stage">
-            <HandSupport3D
+            <HandSupport2D
               :dabs="supportDabs"
               :brush-size="supportBrushSize"
               :tool="supportTool"
               :editable="true"
-              aria-label="可涂抹期望支撑位置的三维右手模型"
+              aria-label="可涂抹期望支撑位置的二维右手掌面图"
               @update:dabs="updateSupportDabs"
               @error="handleSupportModelError"
             />
-            <span class="recommendation-model-hint">{{ supportTool === 'rotate' ? '拖动旋转模型，确认掌面位置后切回涂抹' : supportTool === 'erase' ? '在掌面按住并拖动擦除' : '在掌面按住并拖动连续涂抹' }}</span>
+            <span class="recommendation-model-hint">{{ supportTool === 'erase' ? '在掌面拖动擦除' : '在掌面拖动连续涂抹' }}</span>
           </div>
           <div class="support-tools recommendation-support-tools" aria-label="期望支撑位置涂抹工具">
             <button type="button" :class="{ active: supportTool === 'paint' }" @click="supportTool = 'paint'">涂抹</button>
             <button type="button" :class="{ active: supportTool === 'erase' }" @click="supportTool = 'erase'">擦除</button>
-            <button type="button" :class="{ active: supportTool === 'rotate' }" @click="supportTool = 'rotate'">旋转查看</button>
             <button type="button" :disabled="!supportDabs.length" @click="clearSupportSelection">清空</button>
           </div>
           <label class="support-brush-size recommendation-brush-size">
@@ -107,11 +102,23 @@ const handleSupportModelError = () => { supportModelError.value = '三维模型�
           <div v-if="supportModelError" class="recommendation-model-error" role="status">{{ supportModelError }}</div>
         </div>
       </div>
+      <section class="recommendation-submit-panel" aria-labelledby="recommendation-submit-title">
+        <div class="recommendation-step"><span>03</span><div><h2 id="recommendation-submit-title">查看匹配结果</h2></div></div>
+        <div class="recommendation-contract">
+          <div><span>握姿</span><strong>{{ selectedGrip?.label || '尚未选择' }}</strong></div>
+          <div><span>支撑范围</span><strong>{{ supportHasPaint ? `已涂抹约 ${supportCoverage}% 的掌面` : '尚未涂抹' }}</strong></div>
+        </div>
+        <p class="recommendation-readiness" role="status">{{ readinessHint }}</p>
+        <div v-if="error" class="flash error">{{ error }}</div>
+        <button class="button recommendation-submit" type="button" :disabled="!ready || loading" @click="recommend">
+          {{ loading ? '正在检索支撑记录…' : '查看匹配结果 →' }}
+        </button>
+      </section>
     </section>
 
     <section v-if="result" ref="resultsElement" class="recommendation-results">
       <header>
-        <div><p class="eyebrow">EXPLAINED MATCH RESULTS</p><h2>{{ result.items.length ? `${exactCount} 款完全匹配 · ${nearCount} 款相近匹配` : '暂未找到可用证据' }}</h2></div>
+        <div><h2>{{ result.items.length ? `${exactCount} 款完全匹配 · ${nearCount} 款相近匹配` : '暂未找到可用支撑记录' }}</h2></div>
         <p>已检查 {{ result.evaluatedMouseCount }} 款在库鼠标 · {{ selectedGrip?.label }} · 期望范围约 {{ supportCoverage }}% 掌面</p>
       </header>
 
@@ -124,7 +131,7 @@ const handleSupportModelError = () => { supportModelError.value = '三维模型�
           </div>
           <div class="recommendation-support-preview" :class="{ empty: !item.matchedSupportCells?.length }">
             <div class="recommendation-support-preview-head">
-              <span>MATCHED SUPPORT</span>
+              <span>匹配支撑位置</span>
               <strong>{{ item.matchedSupportSampleCount || 0 }} 份匹配涂抹</strong>
             </div>
             <div v-if="item.matchedSupportCells?.length" class="recommendation-support-preview-stage">
@@ -143,14 +150,14 @@ const handleSupportModelError = () => { supportModelError.value = '三维模型�
           </div>
           <div class="recommendation-result-copy">
             <div class="recommendation-result-topline"><small>{{ item.mouse.brand }}</small><span class="recommendation-match-badge">{{ matchLabel(item) }}</span></div><h3>{{ item.mouse.displayName }}</h3>
-            <div class="recommendation-match-stats"><div><strong>{{ item.supportCoveragePercent }}%</strong><span>期望范围覆盖</span></div><div><strong>{{ item.shapeSimilarityPercent }}%</strong><span>形状相似度</span></div><div><strong>{{ scoreText(item) }}</strong><span>{{ selectedGrip?.label }}舒适度</span></div></div>
+            <div class="recommendation-match-stats"><div><strong>{{ item.supportCoveragePercent }}%</strong><span>期望范围覆盖</span></div><div><strong>{{ item.shapeSimilarityPercent }}%</strong><span>形状相似度</span></div><div><strong>{{ item.matchedSupportSampleCount || 0 }}</strong><span>匹配支撑记录</span></div></div>
             <p class="recommendation-explanation">{{ item.explanation }}</p>
             <RouterLink class="recommendation-detail-link" :to="`/mice/${item.mouse.id}`">查看完整参数与评价 →</RouterLink>
           </div>
         </article>
       </div>
       <div v-else class="recommendation-empty">
-        <span>NO USABLE EVIDENCE</span><h3>数据库里还没有相关支撑评价</h3><p>可以减少一个期望支撑位置后重试，或等待更多对应握姿用户提交支撑评价。</p>
+        <h3>数据库里还没有相关支撑记录</h3><p>可以减少一个期望支撑位置后重试，或等待更多对应握姿用户提交支撑记录。</p>
         <button type="button" @click="result = null; supportTool = 'erase'">返回调整涂抹范围</button>
       </div>
     </section>

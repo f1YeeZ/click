@@ -1546,18 +1546,6 @@ select:focus {
 .database-filter-rail .filter-accordion-section .filter-fields {
   padding: 1px 0 0;
 }
-.filter-expand-enter-active,
-.filter-expand-leave-active {
-  max-height: 720px;
-  overflow: hidden;
-  opacity: 1;
-  transition: max-height 0.28s ease, opacity 0.2s ease;
-}
-.filter-expand-enter-from,
-.filter-expand-leave-to {
-  max-height: 0;
-  opacity: 0;
-}
 .database-filter-rail .filter-accordion-toggle i {
   transition: transform 0.24s ease;
 }

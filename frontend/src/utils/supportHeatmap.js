@@ -70,6 +70,36 @@ export const replaySupportDabs = (dabs, columns = SUPPORT_GRID_COLUMNS, rows = S
   return mask
 }
 
+/**
+ * Collapses an arbitrarily long command history into a bounded snapshot of
+ * its current visible result. The 24x32 snapshot matches the legacy support
+ * grid and can contain at most 768 paint dabs, leaving room for a new stroke
+ * below the API's 1200-command validation limit.
+ */
+export const compactSupportDabs = (dabs, columns = 24, rows = 32) => {
+  const mask = replaySupportDabs(dabs, columns, rows)
+  const radius = Math.round(Math.max(1000 / columns, 1000 / rows) * 0.58)
+  const compacted = []
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < columns; x += 1) {
+      if (!mask[y * columns + x]) continue
+      compacted.push(normalizeSupportDab({
+        x: (x + 0.5) / columns * 1000,
+        y: (y + 0.5) / rows * 1000,
+        radius,
+        mode: 'PAINT'
+      }))
+    }
+  }
+  return compacted
+}
+
+/** Appends commands without ever letting a long editing session lock up. */
+export const appendSupportDabs = (currentDabs, nextDabs, limit = SUPPORT_DAB_LIMIT) => {
+  const combined = [...(currentDabs || []), ...(nextDabs || [])]
+  return combined.length <= limit ? combined : compactSupportDabs(combined)
+}
+
 export const supportCoveragePercentage = (dabs) => {
   const mask = replaySupportDabs(dabs)
   const covered = mask.reduce((total, value) => total + value, 0)

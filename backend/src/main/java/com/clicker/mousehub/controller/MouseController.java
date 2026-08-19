@@ -2,7 +2,6 @@ package com.clicker.mousehub.controller;
 
 import com.clicker.mousehub.dto.MouseDtos.*;
 import com.clicker.mousehub.dto.PageResponse;
-import com.clicker.mousehub.dto.ReviewDtos.ReviewSummary;
 import com.clicker.mousehub.dto.ReviewDtos.SupportPositionSummary;
 import com.clicker.mousehub.entity.MouseDevice;
 import com.clicker.mousehub.service.*;
@@ -79,19 +78,9 @@ public class MouseController {
     @GetMapping("/brands") public List<String> brands() { return mice.brands(); }
 
     @GetMapping("/{id}")
-    public MouseDetail detail(@PathVariable UUID id,
-                               @RequestParam(required = false) String gripStyle,
-                               @RequestParam(required = false) String handSize) {
+    public MouseDetail detail(@PathVariable UUID id) {
         MouseDevice mouse = mice.requirePublished(id);
-        return new MouseDetail(MouseView.from(mouse), reviews.summary(mouse.getId(), gripStyle, handSize));
-    }
-
-    @GetMapping("/{id}/review-summary")
-    public ReviewSummary summary(@PathVariable UUID id,
-                                 @RequestParam(required = false) String gripStyle,
-                                 @RequestParam(required = false) String handSize) {
-        mice.requirePublished(id);
-        return reviews.summary(id, gripStyle, handSize);
+        return new MouseDetail(MouseView.from(mouse));
     }
 
     @GetMapping("/{id}/support-summary")
@@ -102,5 +91,5 @@ public class MouseController {
         return reviews.supportSummary(id, gripStyle, handSize);
     }
 
-    public record MouseDetail(MouseView mouse, ReviewSummary reviewSummary) {}
+    public record MouseDetail(MouseView mouse) {}
 }

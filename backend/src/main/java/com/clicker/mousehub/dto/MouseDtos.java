@@ -24,15 +24,10 @@ public final class MouseDtos {
             String sensorType, Boolean adjustableSensorPosition, BigDecimal sensorPositionX, BigDecimal sensorPositionY,
             BigDecimal sensorPositionX2, BigDecimal sensorPositionY2, Boolean hotSwappableSwitches, String switchType,
             Integer switchLifeSpanM, String encoderType, Integer encoderSteps, String purchaseChannels, String imageUrl,
-            BigDecimal averageScore, long reviewCount, boolean lowReviewSample,
             int dataQualityPercent, boolean publicationReady, List<String> missingPublicationFields,
             String verificationStatus, String verificationWorkflowStatus, String verificationAssignee,
             String verificationNote, OffsetDateTime verificationDueAt) {
         public static MouseView from(MouseDevice mouse) {
-            return from(mouse, BigDecimal.ZERO, 0);
-        }
-
-        public static MouseView from(MouseDevice mouse, BigDecimal averageScore, long reviewCount) {
             List<String> modes = mouse.getConnectionModes() == null || mouse.getConnectionModes().isBlank()
                     ? List.of() : List.of(mouse.getConnectionModes().split(","));
             List<String> missing = MouseDataQuality.missingPublicationFields(mouse);
@@ -47,7 +42,6 @@ public final class MouseDtos {
                     mouse.getSensorType(), mouse.getAdjustableSensorPosition(), mouse.getSensorPositionX(), mouse.getSensorPositionY(),
                     mouse.getSensorPositionX2(), mouse.getSensorPositionY2(), mouse.getHotSwappableSwitches(), mouse.getSwitchType(),
                     mouse.getSwitchLifeSpanM(), mouse.getEncoderType(), mouse.getEncoderSteps(), mouse.getPurchaseChannels(), mouse.getImageUrl(),
-                    averageScore == null ? BigDecimal.ZERO : averageScore, reviewCount, reviewCount < 5,
                     MouseDataQuality.qualityPercent(mouse), missing.isEmpty(), missing,
                     MouseDataQuality.verificationStatus(mouse),
                     mouse.getVerificationWorkflowStatus() == null ? "OPEN" : mouse.getVerificationWorkflowStatus(),

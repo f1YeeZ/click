@@ -1,12 +1,12 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import handPalmUrl from '../assets/images/hand-palm-blueprint.png'
+import handPalmUrl from '../assets/images/hand-palm-model-projection.png'
 import {
+  appendSupportDabs,
   interpolateSupportDabs,
   mirrorSupportGridX,
   mirrorSupportX,
   normalizeSupportDab,
-  SUPPORT_DAB_LIMIT,
   SUPPORT_GRID_COLUMNS,
   SUPPORT_GRID_ROWS,
   SUPPORT_VIEWBOX_HEIGHT,
@@ -39,6 +39,7 @@ let summaryCanvas
 let strokeCanvas
 let localDabs = []
 let painting = false
+let paintPointerId = null
 let previousPaintPoint = null
 
 const makeCanvas = (width, height) => {
@@ -167,8 +168,7 @@ const applyPaintPoint = (point) => {
   const radius = Math.round(props.brushSize * 5)
   const mode = props.tool === 'erase' ? 'ERASE' : 'PAINT'
   const nextDabs = interpolateSupportDabs(previousPaintPoint, point, radius, mode)
-  if (localDabs.length + nextDabs.length > SUPPORT_DAB_LIMIT) return
-  localDabs.push(...nextDabs)
+  localDabs = appendSupportDabs(localDabs, nextDabs)
   previousPaintPoint = point
   emit('update:dabs', [...localDabs])
   renderHeatmap()
@@ -176,20 +176,22 @@ const applyPaintPoint = (point) => {
 
 const beginPaint = (event) => {
   if (!props.editable || !['paint', 'erase'].includes(props.tool)) return
+  const primaryPaintPointer = event.pointerType === 'touch' || event.button === 0
+  if (!primaryPaintPointer) return
   const point = pointFromEvent(event)
   updateBrushCursor(event)
-  if (!point) return
   event.preventDefault()
   canvas.value?.setPointerCapture(event.pointerId)
   painting = true
+  paintPointerId = event.pointerId
   previousPaintPoint = null
-  applyPaintPoint(point)
+  if (point) applyPaintPoint(point)
 }
 
 const continuePaint = (event) => {
   const point = pointFromEvent(event)
   updateBrushCursor(event)
-  if (!painting) return
+  if (!painting || event.pointerId !== paintPointerId) return
   if (!point) {
     previousPaintPoint = null
     return
@@ -199,10 +201,13 @@ const continuePaint = (event) => {
 }
 
 const finishPaint = (event) => {
-  if (!painting) return
-  if (canvas.value?.hasPointerCapture(event.pointerId)) canvas.value.releasePointerCapture(event.pointerId)
+  if (!painting || (event?.pointerId != null && event.pointerId !== paintPointerId)) return
   painting = false
+  paintPointerId = null
   previousPaintPoint = null
+  if (event?.pointerId != null && canvas.value?.hasPointerCapture(event.pointerId)) {
+    canvas.value.releasePointerCapture(event.pointerId)
+  }
 }
 
 watch(() => props.dabs, (dabs) => {
@@ -211,7 +216,10 @@ watch(() => props.dabs, (dabs) => {
 }, { deep: true, immediate: true })
 watch(() => [props.summaryCells, props.maxCount, props.gridColumns, props.gridRows], renderHeatmap, { deep: true })
 watch(() => [props.tool, props.editable], () => {
-  if (!props.editable || !['paint', 'erase'].includes(props.tool)) cursorVisible.value = false
+  if (!props.editable || !['paint', 'erase'].includes(props.tool)) {
+    cursorVisible.value = false
+    finishPaint()
+  }
 })
 
 const handleWindowPointerMove = (event) => {
@@ -224,11 +232,13 @@ const handleWindowPointerMove = (event) => {
 
 onMounted(() => {
   window.addEventListener('pointermove', handleWindowPointerMove)
+  window.addEventListener('blur', finishPaint)
   if (image.value?.complete && image.value.naturalWidth) initializeImage()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('pointermove', handleWindowPointerMove)
-  painting = false
+  window.removeEventListener('blur', finishPaint)
+  finishPaint()
   maskCanvas = null
   summaryCanvas = null
   strokeCanvas = null
@@ -253,6 +263,7 @@ onBeforeUnmount(() => {
       @pointermove="continuePaint"
       @pointerup="finishPaint"
       @pointercancel="finishPaint"
+      @lostpointercapture="finishPaint"
     />
     <span ref="brushCursor" class="support-brush-cursor" :class="{ erase: tool === 'erase' }" :hidden="!cursorVisible"></span>
     <div v-if="state === 'loading'" class="hand-model-loading" aria-live="polite"><span></span><em>正在加载二维手掌</em></div>

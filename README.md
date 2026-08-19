@@ -1,6 +1,6 @@
 # GearDB
 
-鼠标参数浏览、多选对比与结构化用户评价平台。项目采用前后端分离架构：
+鼠标参数浏览、多选对比与握姿支撑记录平台。项目采用前后端分离架构：
 
 - `backend`：JDK 17、Spring Boot、Spring Security、MyBatis-Plus、PostgreSQL；
 - `frontend`：Vue 3、Vite、Vue Router、Pinia、Axios。
@@ -23,9 +23,8 @@ clicker_demo/
 - 鼠标搜索、筛选、排序、分页和详情 API；
 - 2～4 款鼠标参数对比与差值计算；
 - 邮箱注册登录、忘记密码、JWT 鉴权和管理员权限；
-- SSE 实时刷新鼠标列表、详情、对比和评价汇总；
-- 分握姿舒适度评价、评分分布、删除和聚合；
-- 手掌支撑位置多选评价与选择率热度聚合；
+- SSE 实时刷新鼠标列表、详情、对比和支撑记录汇总；
+- 分握姿手掌支撑位置涂抹、删除与热力聚合；
 - 根据握姿与必要支撑位置进行精确/相近匹配并提供解释的鼠标推荐页；
 - 鼠标草稿、发布前完整性校验、核验过期提示和数据健康度；
 - 鼠标核验任务分配/完成、批量状态处理、品牌资料维护和品牌名称同步；
@@ -170,15 +169,12 @@ CI 会自动启动 Vite，并执行单元测试、生产构建与浏览器冒烟
 | PUT | `/api/v1/users/me/password` | 使用邮箱验证码替换当前账号密码 |
 | GET | `/api/v1/events` | 公开的低敏 SSE 资源变更事件流 |
 | GET | `/api/v1/mice` | 搜索、筛选和分页 |
-| GET | `/api/v1/mice/{id}` | 按 UUID 获取鼠标详情和评价汇总 |
-| GET | `/api/v1/mice/{id}/reviews` | 获取该鼠标的公开逐条评价 |
+| GET | `/api/v1/mice/{id}` | 按 UUID 获取鼠标详情 |
+| GET | `/api/v1/mice/{id}/reviews` | 获取该鼠标的公开逐条支撑记录 |
 | GET | `/api/v1/mouse-comparisons?mouseIds=...` | 参数对比，最多 4 个 UUID |
-| GET | `/api/v1/mouse-rankings?dimension=comfort&gripStyle=...` | 按握姿舒适度获取排行榜 |
 | GET | `/api/v1/mouse-recommendations` | 按握姿和支撑位置推荐鼠标 |
-| GET/DELETE | `/api/v1/mice/{id}/reviews/mine` | 获取或删除当前用户对该鼠标的评价 |
-| PUT/DELETE | `/api/v1/mice/{id}/reviews/mine/grip-scores/{gripStyle}` | 保存或删除指定握姿的舒适度评分 |
-| PUT | `/api/v1/mice/{id}/reviews/mine/support-positions` | 保存手掌支撑位置 |
-| PUT | `/api/v1/mice/{id}/reviews/mine/support-positions` | 保存当前用户的手掌支撑位置（可多选） |
+| GET/DELETE | `/api/v1/mice/{id}/reviews/mine` | 获取或删除当前用户对该鼠标的支撑记录 |
+| PUT/DELETE | `/api/v1/mice/{id}/reviews/mine/support-positions/{gripStyle}` | 保存或删除指定握姿的支撑位置 |
 | GET | `/api/v1/mice/{id}/support-summary` | 获取各支撑位置的选择人数与选择率 |
 | POST | `/api/v1/reports` | 登录用户提交评价举报或鼠标数据纠错 |
 | GET | `/api/v1/config` | 获取公告、注册/评价开关和上传上限等公开设置 |
@@ -209,7 +205,7 @@ CI 会自动启动 Vite，并执行单元测试、生产构建与浏览器冒烟
 
 ## 实时更新与安全配置
 
-SSE 事件只包含事件类型、鼠标 ID 和发生时间；浏览器收到事件后重新请求 REST API，不会通过事件流发送邮箱、用户 ID、评价内容或评分明细。短时间内同类型变更会合并，广播使用有界线程池分片发送；浏览器采用带抖动的指数退避重连、重连后数据校准和错峰刷新，避免后端恢复或批量更新时形成请求尖峰。生产反向代理需要关闭 `/api/v1/events` 的响应缓冲，并为长连接设置足够长的读取超时。
+SSE 事件只包含事件类型、鼠标 ID 和发生时间；浏览器收到事件后重新请求 REST API，不会通过事件流发送邮箱、用户 ID、评价内容或支撑图明细。短时间内同类型变更会合并，广播使用有界线程池分片发送；浏览器采用带抖动的指数退避重连、重连后数据校准和错峰刷新，避免后端恢复或批量更新时形成请求尖峰。生产反向代理需要关闭 `/api/v1/events` 的响应缓冲，并为长连接设置足够长的读取超时。
 
 单实例默认保护上限为 5,000 条 SSE 连接、同一来源地址 50 条连接，Tomcat 上限为 10,000。它们是可调整的容量保护值，不是未经验证的性能承诺；部署前应使用 `node scripts/sse-load-test.mjs --url http://127.0.0.1:8080/api/v1/events --connections 1000` 从 1,000 连接逐级压测，并同时观察 CPU、内存、文件描述符、数据库和接口延迟。若所有压测连接来自同一台机器，需要仅在非生产环境临时把 `SSE_MAX_CONNECTIONS_PER_ADDRESS` 提高到压测目标值，测试后恢复正常限制。
 

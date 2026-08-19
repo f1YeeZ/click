@@ -6,6 +6,7 @@ import AdRail from './components/AdRail.vue'
 import CompareTray from './components/CompareTray.vue'
 import FeedbackWidget from './components/FeedbackWidget.vue'
 import ToastViewport from './components/ToastViewport.vue'
+import SelectEnhancer from './components/SelectEnhancer.vue'
 import brandLogo from './assets/geardb-logo.svg'
 import { useAuthStore } from './stores/auth'
 import { usePublicConfigStore } from './stores/publicConfig'
@@ -56,6 +57,7 @@ onBeforeUnmount(() => {
 <template>
   <AppHeader v-if="!isAdminRoute" />
   <ToastViewport />
+  <SelectEnhancer />
   <div v-if="!isAdminRoute && publicConfig.maintenanceNotice" class="maintenance-banner" role="status">
     <strong>运营公告</strong><span>{{ publicConfig.maintenanceNotice }}</span>
   </div>
@@ -78,7 +80,7 @@ onBeforeUnmount(() => {
         <RouterLink to="/compare">参数对比</RouterLink>
         <RouterLink to="/privacy">隐私政策</RouterLink>
         <RouterLink to="/terms">用户协议</RouterLink>
-        <RouterLink to="/review-rules">评价规则</RouterLink>
+        <RouterLink to="/review-rules">提交规则</RouterLink>
         <RouterLink to="/login">账户</RouterLink>
       </nav>
     </div>

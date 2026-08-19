@@ -1,6 +1,7 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api, { errorMessage } from "../api/client";
+import { useAdminActionDialog } from "./useAdminActionDialog";
 import { useAdminAuthStore } from "../stores/auth";
 import { onRealtime } from "../services/realtime";
 
@@ -13,6 +14,7 @@ const activeTab = ref(knownTabs.includes(String(route.query.tab)) ? String(route
 const loading = ref(false);
 const error = ref("");
 const notice = ref("");
+const { actionDialog, requestAdminAction, confirmAdminAction, cancelAdminAction } = useAdminActionDialog();
 let noticeTimer = null;
 let errorTimer = null;
 let reloadOnNextActivation = false;
@@ -144,7 +146,7 @@ const tabs = [
     { id: "mice", label: "鼠标资产", icon: "▦" },
     { id: "brands", label: "品牌中心", icon: "◆" },
     { id: "users", label: "用户管理", icon: "◎" },
-    { id: "reviews", label: "评价治理", icon: "◇" },
+    { id: "reviews", label: "支撑记录", icon: "◇" },
     { id: "feedback", label: "反馈工单", icon: "◉" },
     { id: "audit", label: "操作审计", icon: "◷" },
     { id: "operations", label: "系统运营", icon: "⚙" },
@@ -319,7 +321,14 @@ const removeImage = () => {
     imageError.value = "";
 };
 const deleteImage = async (asset) => {
-    if (!window.confirm(`确定永久删除图片 ${asset.name} 吗？仅未被鼠标引用的图片可以删除。`)) return;
+    const confirmed = await requestAdminAction({
+        title: "永久删除图片",
+        subtitle: asset.name,
+        message: "删除后无法恢复。只有未被鼠标资料引用的图片才能删除。",
+        confirmLabel: "删除图片",
+        tone: "danger",
+    });
+    if (!confirmed) return;
     imageError.value = "";
     try {
         await api.delete(`/admin/images/${encodeURIComponent(asset.name)}`);
@@ -507,59 +516,108 @@ const saveMouse = () =>
         await loadMice();
         await loadBrands();
     });
-const changeMouseStatus = (mouse, status) =>
-    request(async () => {
-        const label = statusLabel(status);
-        if (!window.confirm(`确定将 ${mouse.displayName} 设为“${label}”吗？`)) return;
+const changeMouseStatus = async (mouse, status) => {
+    const label = statusLabel(status);
+    const confirmed = await requestAdminAction({
+        title: "调整鼠标发布状态",
+        subtitle: mouse.displayName,
+        message: `确认将这款鼠标设为“${label}”吗？`,
+        confirmLabel: `设为${label}`,
+        tone: status === "ARCHIVED" ? "danger" : "default",
+    });
+    if (!confirmed) return;
+    return request(async () => {
         await api.patch(`/admin/mice/${mouse.id}`, { status });
         notice.value = `鼠标已设为${label}`;
         await loadMice();
     });
-const updateVerification = (mouse, status) => request(async () => {
-    const assigneeEmail = status === 'IN_PROGRESS' ? (window.prompt('负责人邮箱（留空则由当前管理员认领）', auth.user?.email || '') || '') : auth.user?.email;
-    const note = window.prompt(status === 'DONE' ? '填写本次复核结论（可选）' : '填写复核任务说明（可选）', mouse.verificationNote || '') || '';
+};
+const updateVerification = async (mouse, status) => {
+    const fields = status === 'IN_PROGRESS' ? [{
+        key: 'assigneeEmail', label: '负责人邮箱', type: 'email', value: auth.user?.email || '',
+        placeholder: '留空则由当前管理员认领', autofocus: true,
+    }] : [];
+    fields.push({
+        key: 'note', label: status === 'DONE' ? '本次复核结论' : '复核任务说明', type: 'textarea',
+        value: mouse.verificationNote || '', placeholder: '可选，填写核验依据或需要关注的参数', autofocus: status !== 'IN_PROGRESS',
+    });
+    const values = await requestAdminAction({
+        title: status === 'DONE' ? '完成数据复核' : '认领复核任务',
+        subtitle: mouse.displayName,
+        message: status === 'DONE' ? '复核结果会写入审计记录，并更新这款鼠标的数据状态。' : '认领后可在鼠标资产列表继续跟踪处理。',
+        confirmLabel: status === 'DONE' ? '确认完成复核' : '确认认领任务',
+        fields,
+    });
+    if (!values) return;
+    return request(async () => {
+    const assigneeEmail = status === 'IN_PROGRESS' ? values.assigneeEmail : auth.user?.email;
+    const note = values.note || '';
     await api.patch(`/admin/mice/${mouse.id}/verification`, { status, assigneeEmail, note });
     notice.value = status === 'DONE' ? '数据已完成复核' : '复核任务已认领'; await loadMice(); await loadDashboard();
-});
+    });
+};
 const openMouseQueue = (type) => {
     mouseStatus.value = ''; mouseQuality.value = type === 'INCOMPLETE' ? 'INCOMPLETE' : '';
     mouseVerification.value = type === 'STALE' ? 'STALE' : ''; selectTab('mice');
 };
 const openReviewQueue = () => { reviewStatus.value = 'PENDING'; selectTab('reviews'); };
-const batchStatus = (kind, status) => request(async () => {
+const batchStatus = async (kind, status) => {
     const selection = ({ mice: mouseSelection, users: userSelection, reviews: reviewSelection })[kind].value;
     if (!selection.length) return;
-    const reason = window.prompt('请填写批量操作原因（发布或恢复时可留空）', '') || '';
-    if ((status === 'ARCHIVED' || status === 'DISABLED') && !reason.trim()) { error.value = '高风险批量操作必须填写原因'; return; }
-    if (!window.confirm(`确定处理选中的 ${selection.length} 条记录吗？`)) return;
+    const highRisk = status === 'ARCHIVED' || status === 'DISABLED';
+    const target = ({ mice: '鼠标', users: '用户', reviews: '支撑记录' })[kind];
+    const label = statusLabel(status);
+    const values = await requestAdminAction({
+        title: `批量${label}`,
+        subtitle: `已选择 ${selection.length} 条${target}记录`,
+        message: highRisk ? '这是高风险批量操作，处理原因将写入审计记录。' : '确认后将立即更新所有选中记录。',
+        confirmLabel: `确认批量${label}`,
+        tone: highRisk ? 'danger' : 'default',
+        fields: [{ key: 'reason', label: '操作原因', type: 'textarea', required: highRisk, placeholder: highRisk ? '请说明批量处理原因' : '可选，填写后将写入审计记录', autofocus: true }],
+    });
+    if (!values) return;
+    const reason = values.reason || '';
+    return request(async () => {
     const { data } = await api.post(`/admin/${kind}/batch-status`, { ids: selection, status, reason });
     notice.value = `批量处理完成：成功 ${data.changed} 条${data.errors?.length ? `，失败 ${data.errors.length} 条` : ''}`;
     if (kind === 'mice') await loadMice(); else if (kind === 'users') await loadUsers(); else await loadReviews();
-});
-const changeUserStatus = (user) =>
-    request(async () => {
+    });
+};
+const changeUserStatus = async (user) => {
         const status = user.status === "ACTIVE" ? "DISABLED" : "ACTIVE";
         if (status === "DISABLED" && !userStatusReason.value.trim()) {
             error.value = "封禁用户时必须填写处理原因";
             return;
         }
         const action = status === "DISABLED" ? "封禁" : "解除封禁";
-        if (!window.confirm(`确定${action}用户 ${user.email} 吗？`)) return;
+        const confirmed = await requestAdminAction({
+            title: `${action}用户`, subtitle: user.email,
+            message: status === "DISABLED" ? `处理原因：${userStatusReason.value.trim()}\n封禁后该用户将无法继续登录。` : '解除封禁后，该用户可以重新登录并使用账号。',
+            confirmLabel: `确认${action}用户`, tone: status === "DISABLED" ? "danger" : "default",
+        });
+        if (!confirmed) return;
+        return request(async () => {
         await api.patch(`/admin/users/${user.id}`, { status, reason: userStatusReason.value.trim() || undefined });
         notice.value = `已${action}用户 ${user.email}`;
         expandedUserId.value = "";
         userStatusReason.value = "";
         await loadUsers();
-    });
-const changeUserRole = (user) =>
-    request(async () => {
+        });
+};
+const changeUserRole = async (user) => {
         if (userRoleDraft.value === user.role) return;
         if (!userRoleReason.value.trim()) {
             error.value = "修改用户角色时必须填写原因";
             return;
         }
         const label = userRoleDraft.value === "ADMIN" ? "管理员" : "普通用户";
-        if (!window.confirm(`确定将 ${user.email} 的角色调整为“${label}”吗？权限将立即生效。`)) return;
+        const confirmed = await requestAdminAction({
+            title: "变更用户角色", subtitle: user.email,
+            message: `确认将该用户调整为“${label}”吗？权限变更将立即生效。\n调整原因：${userRoleReason.value.trim()}`,
+            confirmLabel: `调整为${label}`, tone: userRoleDraft.value === "ADMIN" ? "danger" : "default",
+        });
+        if (!confirmed) return;
+        return request(async () => {
         await api.patch(`/admin/users/${user.id}/role`, {
             role: userRoleDraft.value,
             reason: userRoleReason.value.trim(),
@@ -567,7 +625,8 @@ const changeUserRole = (user) =>
         notice.value = `${user.email} 已调整为${label}`;
         userRoleReason.value = "";
         await loadUsers();
-    });
+        });
+};
 const toggleUserAction = async (user) => {
     expandedUserId.value = expandedUserId.value === user.id ? "" : user.id;
     userStatusReason.value = "";
@@ -593,14 +652,26 @@ const closeReviewDetails = () => {
 const moderateReview = (review, status) =>
     request(async () => {
         if (status === "DISABLED" && !moderationReason.value.trim()) {
-            error.value = "停用评价时必须填写处理原因";
+            error.value = "停用支撑记录时必须填写处理原因";
             return;
         }
         await api.patch(`/admin/reviews/${review.id}`, { status, reason: moderationReason.value.trim() || undefined });
-        notice.value = `评价已${status === "ACTIVE" ? "恢复" : "停用"}`;
+        notice.value = `支撑记录已${status === "ACTIVE" ? "恢复" : "停用"}`;
         expandedReviewId.value = "";
         moderationReason.value = "";
         await loadReviews();
+    });
+const updateReviewReport = (report, status) =>
+    request(async () => {
+        const resolution = moderationReason.value.trim()
+            || (status === "RESOLVED" ? "已在支撑记录治理中完成核查" : "已在支撑记录治理中复核并驳回");
+        await api.patch(`/admin/reports/${report.id}`, {
+            status,
+            assigneeEmail: auth.user?.email || undefined,
+            resolution,
+        });
+        notice.value = status === "RESOLVED" ? "举报已标记为已解决" : "举报已驳回";
+        await loadReviews(reviewPage.value);
     });
 const actionLabel = (action) => ({
     MOUSE_CREATE: "创建鼠标",
@@ -608,7 +679,7 @@ const actionLabel = (action) => ({
     MOUSE_STATUS_CHANGE: "变更鼠标状态",
     USER_STATUS_CHANGE: "变更用户状态",
     USER_ROLE_CHANGE: "变更用户角色",
-    REVIEW_MODERATION: "治理评价",
+    REVIEW_MODERATION: "治理支撑记录",
     MOUSE_CSV_IMPORT: "批量导入",
     IMAGE_DELETE: "删除图片",
     MOUSE_VERIFICATION: "复核鼠标数据",
@@ -675,6 +746,9 @@ onMounted(() => {
         if (event.type === "review.changed") {
             loadDashboard();
             if (activeTab.value === "reviews") loadReviews(reviewPage.value);
+        } else if (event.type === "feedback.changed") {
+            loadDashboard();
+            if (activeTab.value === "reviews") loadReviews(reviewPage.value);
         } else if (event.type === "mouse.changed") {
             loadDashboard();
             if (activeTab.value === "mice") loadMice(mousePage.value);
@@ -706,6 +780,9 @@ onBeforeUnmount(() => {
         loading,
         error,
         notice,
+        actionDialog,
+        confirmAdminAction,
+        cancelAdminAction,
         dashboard,
         mice,
         mouseQuery,
@@ -812,6 +889,7 @@ onBeforeUnmount(() => {
         openReviewDetails,
         closeReviewDetails,
         moderateReview,
+        updateReviewReport,
         actionLabel,
         selectAudit,
         closeAudit,

@@ -36,25 +36,20 @@ public final class AdminDtos {
     }
 
     public record AdminReviewView(UUID id, UUID userId, UUID mouseId, String userEmail, String mouseName,
-                                  String status, String handSize, java.math.BigDecimal comfortAverage,
-                                  List<GripScoreView> gripScores, List<String> supportPositions,
+                                  String status, String handSize, List<String> supportPositions,
                                   List<SupportCell> supportCells, List<SupportDab> supportDabs,
                                   List<SupportGrip> supportByGrip,
                                   String moderationReason, String moderatedBy, OffsetDateTime moderatedAt,
-                                  OffsetDateTime createdAt, int gripScoreCount, int supportMarkCount,
+                                  OffsetDateTime createdAt, int supportMarkCount,
                                   long reportCount, long openReportCount, String riskLevel, List<String> riskFlags,
                                   List<ReviewReportView> reports) {
         public static AdminReviewView from(Review review, String userEmail, String mouseName) {
             return new AdminReviewView(review.getId(), review.getUserId(), review.getMouseId(), userEmail, mouseName,
-                    review.getStatus(), review.getHandSize(), review.getComfortScore() == null ? java.math.BigDecimal.ZERO
-                            : java.math.BigDecimal.valueOf(review.getComfortScore()).setScale(1),
-                    List.of(), List.of(), List.of(), List.of(), List.of(), review.getModerationReason(),
-                    review.getModeratedBy(), review.getModeratedAt(), review.getCreatedAt(), 0, 0, 0, 0,
+                    review.getStatus(), review.getHandSize(), List.of(), List.of(), List.of(), List.of(),
+                    review.getModerationReason(), review.getModeratedBy(), review.getModeratedAt(), review.getCreatedAt(), 0, 0, 0,
                     "LOW", List.of(), List.of());
         }
     }
-
-    public record GripScoreView(String gripStyle, Integer comfortScore) {}
     public record ReviewReportView(UUID id, String category, String description, String status,
                                    String reporterEmail, OffsetDateTime createdAt) {}
 

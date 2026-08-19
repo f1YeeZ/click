@@ -8,6 +8,11 @@ spring:
     init:
       mode: never
 
+management:
+  health:
+    mail:
+      enabled: false
+
 app:
   security:
     rate-limit-dialect: h2

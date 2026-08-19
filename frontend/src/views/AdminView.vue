@@ -4,6 +4,7 @@ import { useAdminConsole } from "../composables/useAdminConsole";
 import AdminExpansionPanels from "../components/AdminExpansionPanels.vue";
 import AdminFloatingPanel from "../components/AdminFloatingPanel.vue";
 import AdminImageEditor from "../components/AdminImageEditor.vue";
+import AdminActionDialog from "../components/AdminActionDialog.vue";
 
 const HandSupport3D = defineAsyncComponent(() => import("../components/HandSupport3D.vue"));
 
@@ -14,6 +15,9 @@ const {
     loading,
     error,
     notice,
+    actionDialog,
+    confirmAdminAction,
+    cancelAdminAction,
     dashboard,
     mice,
     mouseQuery,
@@ -119,6 +123,7 @@ const {
     openReviewDetails,
     closeReviewDetails,
     moderateReview,
+    updateReviewReport,
     actionLabel,
     selectAudit,
     closeAudit,
@@ -135,6 +140,47 @@ watch(selectedReview, (review) => {
 const selectedReviewSupportMap = computed(() => selectedReview.value?.supportByGrip?.find(
     (support) => support.gripStyle === selectedReviewSupportGrip.value,
 ));
+const expandedReviewMouseKeys = ref(new Set());
+const reviewGroups = computed(() => {
+    const groups = new Map();
+    for (const review of reviews.value.items || []) {
+        const key = review.mouseId || `unknown:${review.mouseName || "unknown"}`;
+        if (!groups.has(key)) {
+            groups.set(key, {
+                key,
+                mouseId: review.mouseId,
+                mouseName: review.mouseName || "未标注鼠标",
+                items: [],
+            });
+        }
+        groups.get(key).items.push(review);
+    }
+    return [...groups.values()].map((group) => {
+        const items = group.items;
+        return {
+            ...group,
+            total: items.length,
+            pending: items.filter((item) => item.status === "PENDING").length,
+            disabled: items.filter((item) => item.status === "DISABLED").length,
+            anomaly: items.filter((item) => (
+                item.riskLevel === "HIGH"
+                || (item.openReportCount || 0) > 0
+                || item.riskFlags?.length
+            )).length,
+            expanded: expandedReviewMouseKeys.value.has(group.key),
+        };
+    }).sort((a, b) => (
+        b.anomaly - a.anomaly
+        || b.pending - a.pending
+        || a.mouseName.localeCompare(b.mouseName, "zh-CN")
+    ));
+});
+const toggleReviewMouseGroup = (group) => {
+    const next = new Set(expandedReviewMouseKeys.value);
+    if (next.has(group.key)) next.delete(group.key);
+    else next.add(group.key);
+    expandedReviewMouseKeys.value = next;
+};
 const reviewSupportCells = computed(() =>
     (selectedReviewSupportMap.value?.supportCells || selectedReview.value?.supportCells || []).map((cell) => ({ ...cell, count: 1 })),
 );
@@ -155,12 +201,27 @@ const riskLabel = (level) => ({ HIGH: "高风险", MEDIUM: "需关注", LOW: "�
 const todayPagesPerVisitor = computed(() => dashboard.value?.todayUniqueVisitors
     ? (dashboard.value.todayPageViews / dashboard.value.todayUniqueVisitors).toFixed(1)
     : "0.0");
+const activeDescription = computed(() => ({
+    overview: "查看内容、用户与前台运行状态。",
+    analytics: "跟踪访问趋势、内容增长与待处理事项。",
+    mice: "维护前台鼠标库公开展示的数据。",
+    brands: "统一管理品牌名称、官网与标识。",
+    users: "管理用户状态、角色与登录会话。",
+    reviews: "审核影响支撑热力图和推荐结果的用户记录。",
+    feedback: "受理前台反馈与鼠标数据纠错；支撑记录举报归入评论治理。",
+    audit: "追溯后台关键操作与数据变更。",
+    operations: "管理导出、会话和前台运行设置。",
+}[activeTab.value] || "管理 GearDB 数据与运营状态。"));
 const riskFlagLabel = (flag) => ({
     多次举报: "多次举报",
     有举报: "有举报",
-    极端评分: "极端评分",
     内容不完整: "内容不完整",
 }[flag] || flag);
+const reviewReportCategoryLabel = (category) => ({
+    INAPPROPRIATE: "不当内容",
+    SUSPICIOUS: "疑似异常",
+    OTHER: "其他问题",
+}[category] || category);
 const setReviewQueue = (status) => {
     reviewStatus.value = status;
     loadReviews(1);
@@ -178,9 +239,7 @@ const showAdminToast = ({ type, message }) => {
 <template>
     <div class="admin-shell admin-saas">
         <header class="admin-header">
-            <RouterLink class="admin-brand" to="/"
-                >CLICKER <span>/ CONTROL</span></RouterLink
-            >
+            <RouterLink class="admin-brand" to="/">GearDB <span>管理后台</span></RouterLink>
             <div v-if="auth.authenticated && auth.admin" class="admin-session">
                 <span>{{ auth.user?.email }}</span
                 ><button class="admin-logout" @click="logout">退出后台</button>
@@ -204,9 +263,9 @@ const showAdminToast = ({ type, message }) => {
         </Teleport>
         <div class="admin-layout">
             <aside class="admin-sidebar">
-                <div class="sidebar-kicker">WORKSPACE / 01</div>
-                <h1>运营中枢</h1>
-                <p>Mouse intelligence<br />data operations</p>
+                <div class="sidebar-kicker">GEARDB ADMIN</div>
+                <h1>数据管理</h1>
+                <p>维护前台内容、用户与运营配置</p>
                 <nav>
                     <button
                         v-for="tab in tabs"
@@ -225,19 +284,13 @@ const showAdminToast = ({ type, message }) => {
                         >
                     </button>
                 </nav>
-                <div class="sidebar-foot">
-                    <span class="live-dot"></span> API CONNECTED<br /><small
-                        >PostgreSQL / LIVE</small
-                    >
-                </div>
+                <div class="sidebar-foot"><span>当前账号</span><strong>{{ auth.user?.email }}</strong></div>
             </aside>
             <main class="admin-content">
                 <div class="admin-content-head">
                     <div>
-                        <p class="eyebrow">
-                            PRIVATE CONSOLE / {{ activeLabel?.toUpperCase() }}
-                        </p>
                         <h2>{{ activeLabel }}</h2>
+                        <p class="admin-section-description">{{ activeDescription }}</p>
                     </div>
                     <button
                         class="admin-refresh"
@@ -265,7 +318,7 @@ const showAdminToast = ({ type, message }) => {
                             ><small>{{ dashboard?.usersActive ?? 0 }} 正常 · {{ dashboard?.usersAdmin ?? 0 }} 管理员 · {{ dashboard?.usersDisabled ?? 0 }} 封禁</small>
                         </article>
                         <article>
-                            <span>评价总量</span
+                            <span>支撑记录总量</span
                             ><strong>{{
                                 dashboard?.reviewsTotal ?? "—"
                             }}</strong
@@ -290,9 +343,7 @@ const showAdminToast = ({ type, message }) => {
                         <section class="admin-panel">
                             <div class="panel-heading">
                                 <div>
-                                    <span class="panel-kicker"
-                                        >RECENT ASSETS</span
-                                    >
+                                    <span class="panel-kicker">最近更新</span>
                                     <h3>最近鼠标数据</h3>
                                 </div>
                                 <button @click="selectTab('mice')">
@@ -348,7 +399,7 @@ const showAdminToast = ({ type, message }) => {
                             </table>
                         </section>
                         <section class="admin-panel signal-panel">
-                            <span class="panel-kicker">OPERATIONS</span>
+                            <span class="panel-kicker">处理队列</span>
                             <h3>待处理事项</h3>
                             <dl>
                                 <div>
@@ -368,12 +419,12 @@ const showAdminToast = ({ type, message }) => {
                                     <dd>{{ dashboard?.miceArchived ?? 0 }}</dd>
                                 </div>
                                 <div class="signal-action" role="button" tabindex="0" @click="openReviewQueue" @keyup.enter="openReviewQueue">
-                                    <dt>待处理评价</dt>
+                                    <dt>待处理支撑记录</dt>
                                     <dd>
                                         {{ dashboard?.reviewsPending ?? 0 }}
                                     </dd>
                                 </div>
-                                <div><dt>有效评价</dt><dd>{{ dashboard?.reviewsActive ?? 0 }}</dd></div>
+                                <div><dt>有效支撑记录</dt><dd>{{ dashboard?.reviewsActive ?? 0 }}</dd></div>
                             </dl>
                         </section>
                     </div>
@@ -468,8 +519,8 @@ const showAdminToast = ({ type, message }) => {
                                     <div>
                                         <span class="panel-kicker">{{
                                             editingId
-                                                ? "EDIT ASSET"
-                                                : "NEW ASSET"
+                                                ? "编辑资产"
+                                                : "新增资产"
                                         }}</span>
                                         <h3>
                                             {{
@@ -670,79 +721,6 @@ const showAdminToast = ({ type, message }) => {
                                                 step=".01"
                                                 :required="form.status === 'PUBLISHED'" /></label
                                         ><label
-                                            >隆起位置<select
-                                                v-model="form.humpPlacement"
-                                            >
-                                                <option value="">未设置</option>
-                                                <option value="FRONT">
-                                                    前部
-                                                </option>
-                                                <option value="CENTER">
-                                                    中部
-                                                </option>
-                                                <option value="BACK">
-                                                    后部
-                                                </option>
-                                            </select></label
-                                        ><label
-                                            >前端外扩<select
-                                                v-model="form.frontFlare"
-                                            >
-                                                <option value="">未设置</option>
-                                                <option value="NARROW">
-                                                    内收
-                                                </option>
-                                                <option value="NEUTRAL">
-                                                    平直
-                                                </option>
-                                                <option value="FLARED">
-                                                    外扩
-                                                </option>
-                                            </select></label
-                                        ><label
-                                            >侧面曲率<select
-                                                v-model="form.sideCurvature"
-                                            >
-                                                <option value="">未设置</option>
-                                                <option value="FLAT">
-                                                    平直
-                                                </option>
-                                                <option value="MILD">
-                                                    轻微
-                                                </option>
-                                                <option value="CURVED">
-                                                    明显
-                                                </option>
-                                            </select></label
-                                        ><label
-                                            >拇指托<select
-                                                v-model="form.thumbRest"
-                                            >
-                                                <option :value="null">
-                                                    未设置
-                                                </option>
-                                                <option :value="true">
-                                                    有
-                                                </option>
-                                                <option :value="false">
-                                                    无
-                                                </option>
-                                            </select></label
-                                        ><label
-                                            >无名指托<select
-                                                v-model="form.ringFingerRest"
-                                            >
-                                                <option :value="null">
-                                                    未设置
-                                                </option>
-                                                <option :value="true">
-                                                    有
-                                                </option>
-                                                <option :value="false">
-                                                    无
-                                                </option>
-                                            </select></label
-                                        ><label
                                             >手型兼容<select
                                                 v-model="form.handCompatibility"
                                             >
@@ -764,18 +742,6 @@ const showAdminToast = ({ type, message }) => {
                                             >传感器<input
                                                 v-model.trim="form.sensorName"
                                                 :required="form.status === 'PUBLISHED'" /></label
-                                        ><label
-                                            >传感器类型<select
-                                                v-model="form.sensorType"
-                                            >
-                                                <option value="">未设置</option>
-                                                <option value="OPTICAL">
-                                                    光学
-                                                </option>
-                                                <option value="LASER">
-                                                    激光
-                                                </option>
-                                            </select></label
                                         ><label
                                             >DPI<input
                                                 v-model.number="form.maxDpi"
@@ -848,25 +814,8 @@ const showAdminToast = ({ type, message }) => {
                                         /></label>
                                     </fieldset>
                                     <fieldset>
-                                        <legend>按键、滚轮与材质</legend>
+                                        <legend>微动与材质</legend>
                                         <label
-                                            >侧键数量<input
-                                                v-model.number="
-                                                    form.sideButtonCount
-                                                "
-                                                type="number" /></label
-                                        ><label
-                                            >总按键数量<input
-                                                v-model.number="
-                                                    form.buttonCount
-                                                "
-                                                type="number" /></label
-                                        ><label
-                                            >微动型号<input
-                                                v-model="
-                                                    form.switchName
-                                                " /></label
-                                        ><label
                                             >微动类型<select
                                                 v-model="form.switchType"
                                             >
@@ -901,32 +850,6 @@ const showAdminToast = ({ type, message }) => {
                                             >寿命（百万次）<input
                                                 v-model.number="
                                                     form.switchLifeSpanM
-                                                "
-                                                type="number" /></label
-                                        ><label
-                                            >编码器型号<input
-                                                v-model="
-                                                    form.encoderName
-                                                " /></label
-                                        ><label
-                                            >编码器类型<select
-                                                v-model="form.encoderType"
-                                            >
-                                                <option value="">未设置</option>
-                                                <option value="MECHANICAL">
-                                                    机械
-                                                </option>
-                                                <option value="OPTICAL">
-                                                    光学
-                                                </option>
-                                                <option value="MAGNETIC">
-                                                    磁性
-                                                </option>
-                                            </select></label
-                                        ><label
-                                            >编码器步数<input
-                                                v-model.number="
-                                                    form.encoderSteps
                                                 "
                                                 type="number" /></label
                                         ><label
@@ -1310,17 +1233,17 @@ const showAdminToast = ({ type, message }) => {
                             <section class="user-management-editor user-management-modal">
                                 <header>
                                     <div>
-                                        <span>ACCOUNT CONTROL</span>
+                                        <span>账号管理</span>
                                         <h3 :id="`user-management-title-${managedUser.id}`">管理用户</h3>
                                         <strong>{{ managedUser.email }}</strong>
                                     </div>
                                     <button type="button" aria-label="关闭用户管理窗口" @click="closeUserAction">×</button>
                                 </header>
                                 <p class="user-management-summary">角色和封禁状态会在下一次接口请求时立即生效，所有操作都会写入审计日志。</p>
-                                <div v-if="userDetail" class="user-detail-strip"><div><span>评价数量</span><strong>{{ userDetail.reviewCount }}</strong></div><div><span>活跃会话</span><strong>{{ userDetail.activeSessionCount }}</strong></div><div><span>全部会话</span><strong>{{ userDetail.sessions.length }}</strong></div><div><span>最近活动</span><strong>{{ userDetail.sessions[0]?.lastUsedAt ? new Date(userDetail.sessions[0].lastUsedAt).toLocaleString('zh-CN') : '—' }}</strong></div></div>
+                                <div v-if="userDetail" class="user-detail-strip"><div><span>支撑记录</span><strong>{{ userDetail.reviewCount }}</strong></div><div><span>活跃会话</span><strong>{{ userDetail.activeSessionCount }}</strong></div><div><span>全部会话</span><strong>{{ userDetail.sessions.length }}</strong></div><div><span>最近活动</span><strong>{{ userDetail.sessions[0]?.lastUsedAt ? new Date(userDetail.sessions[0].lastUsedAt).toLocaleString('zh-CN') : '—' }}</strong></div></div>
                                 <div class="user-management-grid">
                                     <article class="user-role-card">
-                                        <div><span>ROLE</span><h4>角色权限</h4><p>管理员可以访问整个后台；普通用户只能使用公开功能和个人评价。</p></div>
+                                        <div><span>角色</span><h4>角色权限</h4><p>管理员可以访问整个后台；普通用户只能使用公开功能和个人支撑记录。</p></div>
                                         <template v-if="auth.user?.id !== managedUser.id">
                                             <label>目标角色<select v-model="userRoleDraft"><option value="USER">普通用户</option><option value="ADMIN">管理员</option></select></label>
                                             <label>调整原因<textarea v-model.trim="userRoleReason" maxlength="500" placeholder="必填，说明授权或降级依据。"></textarea></label>
@@ -1329,7 +1252,7 @@ const showAdminToast = ({ type, message }) => {
                                         <p v-else class="protected-account-note">当前登录账号不能修改自己的角色，避免误操作导致后台失去管理权限。</p>
                                     </article>
                                     <article class="user-ban-card" :class="{ banned: managedUser.status === 'DISABLED' }">
-                                        <div><span>ACCESS</span><h4>{{ managedUser.status === "ACTIVE" ? "封禁用户" : "解除封禁" }}</h4><p>{{ managedUser.status === "ACTIVE" ? "封禁后账号立即失去登录和评价权限，历史数据仍保留。" : "解除后账号可以重新登录，历史数据不会发生变化。" }}</p></div>
+                                        <div><span>访问权限</span><h4>{{ managedUser.status === "ACTIVE" ? "封禁用户" : "解除封禁" }}</h4><p>{{ managedUser.status === "ACTIVE" ? "封禁后账号立即失去登录和提交支撑记录的权限，历史数据仍保留。" : "解除后账号可以重新登录，历史数据不会发生变化。" }}</p></div>
                                         <template v-if="managedUser.role !== 'ADMIN' && auth.user?.id !== managedUser.id">
                                             <label>处理原因<textarea v-model.trim="userStatusReason" maxlength="500" :placeholder="managedUser.status === 'ACTIVE' ? '封禁时必填，说明违规或安全依据。' : '可填写复核与解封说明。'"></textarea></label>
                                             <button class="button" :class="{ 'danger-button': managedUser.status === 'ACTIVE' }" :disabled="loading" @click="changeUserStatus(managedUser)">{{ managedUser.status === "ACTIVE" ? "确认封禁用户" : "确认解除封禁" }}</button>
@@ -1370,27 +1293,27 @@ const showAdminToast = ({ type, message }) => {
                 <section v-else-if="activeTab === 'reviews'" class="admin-panel full-panel">
                     <div class="review-governance-hero">
                         <div>
-                            <span class="panel-kicker">CONTRIBUTION CONTROL</span>
-                            <h3>评价治理工作台</h3>
-                            <p>前台展示综合热力图；后台按“用户 × 鼠标”评价包追溯每一份贡献。</p>
+                            <span class="panel-kicker">支撑数据治理</span>
+                            <h3>支撑记录治理</h3>
+                            <p>前台展示综合热力图；后台按“用户 × 鼠标”追溯每一份支撑位置贡献。</p>
                         </div>
-                        <div class="review-guardrail"><span>治理原则</span><strong>先看影响，再做处置</strong><small>停用评价会自动退出评分与热力图聚合</small></div>
+                        <div class="review-guardrail"><span>治理原则</span><strong>先看影响，再做处置</strong><small>停用记录会自动退出支撑热力图与推荐聚合</small></div>
                     </div>
                     <div class="review-signal-grid">
                         <button :class="{ active: reviewStatus === 'PENDING' }" @click="setReviewQueue('PENDING')"><span>待审核</span><strong>{{ reviews.page.totalItems && reviewStatus === 'PENDING' ? reviews.page.totalItems : reviewStats.pending }}</strong><small>需要人工判断</small></button>
                         <button class="signal-danger" @click="setReviewQueue('')"><span>当前页有举报</span><strong>{{ reviewStats.reported }}</strong><small>打开详情查看证据</small></button>
                         <button @click="setReviewQueue('DISABLED')"><span>当前页已停用</span><strong>{{ reviewStats.disabled }}</strong><small>可复核并恢复</small></button>
-                        <button class="signal-accent" @click="setReviewQueue('')"><span>当前页高风险</span><strong>{{ reviewStats.high }}</strong><small>多次举报或极端评分</small></button>
+                        <button class="signal-accent" @click="setReviewQueue('')"><span>当前页高风险</span><strong>{{ reviewStats.high }}</strong><small>多次举报或异常支撑记录</small></button>
                     </div>
-                    <div class="review-queue-tabs" role="tablist" aria-label="评价治理队列">
-                        <button :class="{ active: reviewStatus === '' }" @click="setReviewQueue('')">全部评价</button>
+                    <div class="review-queue-tabs" role="tablist" aria-label="支撑记录治理队列">
+                        <button :class="{ active: reviewStatus === '' }" @click="setReviewQueue('')">全部记录</button>
                         <button :class="{ active: reviewStatus === 'PENDING' }" @click="setReviewQueue('PENDING')">待审核</button>
                         <button :class="{ active: reviewStatus === 'ACTIVE' }" @click="setReviewQueue('ACTIVE')">正常贡献</button>
                         <button :class="{ active: reviewStatus === 'DISABLED' }" @click="setReviewQueue('DISABLED')">已排除</button>
                     </div>
                     <div class="toolbar">
                         <div class="toolbar-search">
-                            <span>⌕</span><input v-model="reviewQuery" placeholder="搜索评价者邮箱或鼠标…" @keyup.enter="loadReviews(1)" />
+                            <span>⌕</span><input v-model="reviewQuery" placeholder="搜索提交者邮箱或鼠标…" @keyup.enter="loadReviews(1)" />
                         </div>
                         <select v-model="reviewStatus" @change="loadReviews(1)">
                             <option value="">全部状态</option>
@@ -1400,40 +1323,33 @@ const showAdminToast = ({ type, message }) => {
                         </select>
                     </div>
                     <div v-if="reviewSelection.length" class="batch-action-bar"><strong>已选择 {{ reviewSelection.length }} 项</strong><button @click="batchStatus('reviews', 'ACTIVE')">批量恢复</button><button @click="batchStatus('reviews', 'PENDING')">转待审核</button><button class="danger" @click="batchStatus('reviews', 'DISABLED')">批量停用</button><button @click="reviewSelection = []">取消选择</button></div>
-                    <table class="admin-table">
-                        <thead>
-                            <tr>
-                                <th class="selection-cell"></th>
-                                <th>评价包</th>
-                                <th>鼠标</th>
-                                <th>贡献内容</th>
-                                <th>风险信号</th>
-                                <th>状态</th>
-                                <th>提交时间</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="review in reviews.items" :key="review.id">
-                                <td class="selection-cell"><input v-model="reviewSelection" type="checkbox" :value="review.id" :aria-label="`选择 ${review.userEmail} 的评价`"></td>
-                                <td><strong>{{ review.userEmail }}</strong><small>{{ review.handSize || '未填写手长' }} · {{ review.gripScores?.map((score) => gripLabel(score.gripStyle)).join(' / ') || '暂无握姿评分' }}</small></td>
-                                <td>{{ review.mouseName }}</td>
-                                <td><strong class="score-value">{{ review.comfortAverage || '—' }} / 10</strong><small>{{ review.gripScoreCount || 0 }} 个握姿评分 · {{ review.supportMarkCount || 0 }} 个支撑标记</small></td>
-                                <td><div class="review-risk-cell"><em :class="`risk-${review.riskLevel?.toLowerCase()}`">{{ riskLabel(review.riskLevel) }}</em><small v-if="review.openReportCount">{{ review.openReportCount }} 条待处理举报</small><small v-for="flag in (review.riskFlags || []).slice(0, 2)" :key="flag">{{ riskFlagLabel(flag) }}</small></div></td>
-                                <td><em :class="`status-${review.status?.toLowerCase()}`">{{ statusLabel(review.status) }}</em></td>
-                                <td class="mono">{{ review.createdAt ? new Date(review.createdAt).toLocaleDateString("zh-CN") : "—" }}</td>
-                                <td class="row-actions"><button @click="openReviewDetails(review)">查看与处理</button></td>
-                            </tr>
-                            <tr v-if="!reviews.items.length">
-                                <td colspan="8" class="table-empty">
-                                    暂无评价记录
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <div class="review-mouse-groups" aria-label="按鼠标聚合的支撑记录">
+                        <article v-for="group in reviewGroups" :key="group.key" class="review-mouse-group" :class="{ expanded: group.expanded }">
+                            <button class="review-mouse-group-head" type="button" :aria-expanded="group.expanded" @click="toggleReviewMouseGroup(group)">
+                                <span class="review-mouse-group-chevron" aria-hidden="true">⌄</span>
+                                <span class="review-mouse-group-title"><strong>{{ group.mouseName }}</strong><small>{{ group.total }} 条评价 · {{ group.items[0]?.mouseId || '鼠标标识待补充' }}</small></span>
+                                <span class="review-mouse-group-stats"><em class="group-stat-total"><b>{{ group.total }}</b>已有评价</em><em class="group-stat-pending" :class="{ 'has-issues': group.pending }"><b>{{ group.pending }}</b>待审核</em><em class="group-stat-anomaly" :class="{ 'has-issues': group.anomaly }"><b>{{ group.anomaly }}</b>异常</em><em v-if="group.disabled" class="group-stat-disabled"><b>{{ group.disabled }}</b>已停用</em></span>
+                            </button>
+                            <div v-if="group.expanded" class="review-mouse-group-body">
+                                <div class="review-mouse-group-toolbar"><span>评价明细</span><small>{{ group.items.length }} 条记录，审核动作仍按单条评价执行</small></div>
+                                <div class="review-mouse-review-list">
+                                    <article v-for="review in group.items" :key="review.id" class="review-mouse-review" :class="{ 'is-anomaly': group.anomaly && (review.riskLevel === 'HIGH' || review.openReportCount > 0 || review.riskFlags?.length) }">
+                                        <label class="review-mouse-review-select"><input v-model="reviewSelection" type="checkbox" :value="review.id" :aria-label="`选择 ${review.userEmail} 的支撑记录`"><span></span></label>
+                                        <div class="review-mouse-review-main"><strong>{{ review.userEmail }}</strong><small>{{ review.handSize || '未填写手长' }} · {{ review.supportByGrip?.map((support) => gripLabel(support.gripStyle)).join(' / ') || '暂无握姿支撑记录' }}</small></div>
+                                        <div class="review-mouse-review-contribution"><strong>{{ review.supportByGrip?.length || 0 }} 种握姿</strong><small>{{ review.supportMarkCount || 0 }} 个支撑标记</small></div>
+                                        <div class="review-mouse-review-signal"><em :class="`risk-${(review.riskLevel || 'LOW').toLowerCase()}`">{{ riskLabel(review.riskLevel) }}</em><small v-if="review.openReportCount">{{ review.openReportCount }} 条待处理举报</small><small v-for="flag in (review.riskFlags || []).slice(0, 1)" :key="flag">{{ riskFlagLabel(flag) }}</small></div>
+                                        <em class="review-mouse-review-status" :class="`status-${review.status?.toLowerCase()}`">{{ statusLabel(review.status) }}</em>
+                                        <time class="review-mouse-review-date mono">{{ review.createdAt ? new Date(review.createdAt).toLocaleDateString("zh-CN") : "—" }}</time>
+                                        <button class="button button-ghost review-mouse-review-action" type="button" @click="openReviewDetails(review)">查看与处理</button>
+                                    </article>
+                                </div>
+                            </div>
+                        </article>
+                        <p v-if="!reviewGroups.length" class="table-empty">暂无支撑记录</p>
+                    </div>
                     <AdminFloatingPanel
                         :open="Boolean(selectedReview)"
-                        title="评价查看与处理"
+                        title="支撑记录查看与处理"
                         :subtitle="selectedReview ? `${selectedReview.userEmail} · ${selectedReview.mouseName}` : ''"
                         size="wide"
                         :busy="loading"
@@ -1460,14 +1376,14 @@ const showAdminToast = ({ type, message }) => {
                                             :editable="false"
                                             :aria-label="`${selectedReview.userEmail} 的支撑位置三维涂抹结果`"
                                         />
-                                        <p v-if="!reviewHasSupport">该评价没有提交支撑位置涂抹。</p>
+                                        <p v-if="!reviewHasSupport">该记录没有提交支撑位置涂抹。</p>
                                     </div>
                                 </div>
                                 <aside class="review-governance-details">
-                                    <div class="review-score-summary"><span>评价包贡献</span><strong>{{ selectedReview.comfortAverage ?? '—' }}</strong><small>/ 10</small></div>
+                                    <div class="review-score-summary"><span>记录贡献</span><strong>{{ selectedReview.supportByGrip?.length || 0 }}</strong><small> 种握姿支撑图</small></div>
                                     <section class="review-evidence-summary"><span>治理信号</span><div class="review-chip-row"><em :class="`risk-${selectedReview.riskLevel?.toLowerCase()}`">{{ riskLabel(selectedReview.riskLevel) }}</em><em v-for="flag in (selectedReview.riskFlags || [])" :key="flag">{{ riskFlagLabel(flag) }}</em></div><p><strong>{{ selectedReview.openReportCount || 0 }}</strong> 条待处理举报 · 共 {{ selectedReview.reportCount || 0 }} 条历史举报</p></section>
-                                    <section class="review-report-list"><span>举报证据</span><p v-if="!selectedReview.reports?.length">暂无关联举报</p><article v-for="report in (selectedReview.reports || []).slice(0, 3)" :key="report.id"><div><strong>{{ report.category }}</strong><em>{{ report.status === 'OPEN' ? '待处理' : report.status === 'IN_PROGRESS' ? '处理中' : '已结案' }}</em></div><p>{{ report.description }}</p><small>{{ report.reporterEmail }} · {{ report.createdAt ? new Date(report.createdAt).toLocaleString('zh-CN') : '—' }}</small></article></section>
-                                    <section><span>握姿评分</span><p v-if="!selectedReview.gripScores?.length">暂无握姿评分</p><p v-for="score in selectedReview.gripScores" :key="score.gripStyle"><strong>{{ gripLabel(score.gripStyle) }}</strong><em>{{ score.comfortScore }}/10</em></p></section>
+                                    <section class="review-report-list"><span>举报反馈</span><p v-if="!selectedReview.reports?.length">暂无关联举报</p><article v-for="report in (selectedReview.reports || []).slice(0, 3)" :key="report.id"><div><strong>{{ reviewReportCategoryLabel(report.category) }}</strong><em>{{ report.status === 'OPEN' ? '待处理' : report.status === 'IN_PROGRESS' ? '处理中' : report.status === 'RESOLVED' ? '已解决' : '已驳回' }}</em></div><p>{{ report.description }}</p><small>{{ report.reporterEmail }} · {{ report.createdAt ? new Date(report.createdAt).toLocaleString('zh-CN') : '—' }}</small><div v-if="report.status === 'OPEN' || report.status === 'IN_PROGRESS'" class="review-report-actions"><button type="button" :disabled="loading" @click="updateReviewReport(report, 'REJECTED')">驳回举报</button><button type="button" :disabled="loading" @click="updateReviewReport(report, 'RESOLVED')">标记已解决</button></div></article></section>
+                                    <section><span>握姿记录</span><p v-if="!selectedReview.supportByGrip?.length">暂无握姿支撑记录</p><p v-for="support in selectedReview.supportByGrip" :key="support.gripStyle"><strong>{{ gripLabel(support.gripStyle) }}</strong><em>已提交支撑图</em></p></section>
                                     <section><span>最近处理</span><p><strong>{{ selectedReview.moderatedBy || '尚未处理' }}</strong></p><p v-if="selectedReview.moderationReason">{{ selectedReview.moderationReason }}</p></section>
                                     <label class="moderation-reason">处理原因<textarea v-model.trim="moderationReason" maxlength="500" placeholder="停用时必填，说明判断依据；恢复时可填写复核说明。"></textarea></label>
                                 </aside>
@@ -1476,8 +1392,8 @@ const showAdminToast = ({ type, message }) => {
                         <template #footer>
                             <div v-if="selectedReview" class="floating-action-row review-actions">
                                 <button type="button" class="button button-ghost" :disabled="loading" @click="closeReviewDetails">关闭窗口</button>
-                                <button v-if="selectedReview.status !== 'ACTIVE'" class="button button-ghost" :disabled="loading" @click="moderateReview(selectedReview, 'ACTIVE')">恢复评价包</button>
-                                <button v-if="selectedReview.status !== 'DISABLED'" class="button danger-button" :disabled="loading" @click="moderateReview(selectedReview, 'DISABLED')">排除评价包</button>
+                                <button v-if="selectedReview.status !== 'ACTIVE'" class="button button-ghost" :disabled="loading" @click="moderateReview(selectedReview, 'ACTIVE')">恢复支撑记录</button>
+                                <button v-if="selectedReview.status !== 'DISABLED'" class="button danger-button" :disabled="loading" @click="moderateReview(selectedReview, 'DISABLED')">排除支撑记录</button>
                             </div>
                         </template>
                     </AdminFloatingPanel>
@@ -1518,9 +1434,9 @@ const showAdminToast = ({ type, message }) => {
                         <div class="toolbar-search"><span>⌕</span><input v-model="auditQuery" placeholder="搜索管理员、对象或操作摘要…" @keyup.enter="loadAudits(1)" /></div>
                         <select v-model="auditEntityType" @change="loadAudits(1)">
                             <option value="">全部对象</option><option value="MOUSE">鼠标</option><option value="USER">用户</option>
-                            <option value="REVIEW">评价</option><option value="MOUSE_IMPORT">批量导入</option><option value="IMAGE">图片</option>
+                            <option value="REVIEW">支撑记录</option><option value="MOUSE_IMPORT">批量导入</option><option value="IMAGE">图片</option>
                         </select>
-                        <select v-model="auditAction" @change="loadAudits(1)"><option value="">全部操作</option><option value="MOUSE_UPDATE">更新鼠标</option><option value="MOUSE_STATUS_CHANGE">鼠标状态</option><option value="MOUSE_VERIFICATION">数据复核</option><option value="USER_STATUS_CHANGE">用户状态</option><option value="USER_ROLE_CHANGE">用户角色</option><option value="REVIEW_MODERATION">评价治理</option><option value="REPORT_WORKFLOW_CHANGE">反馈处理</option><option value="SESSION_REVOKE">会话撤销</option><option value="SYSTEM_SETTING_UPDATE">系统设置</option></select>
+                        <select v-model="auditAction" @change="loadAudits(1)"><option value="">全部操作</option><option value="MOUSE_UPDATE">更新鼠标</option><option value="MOUSE_STATUS_CHANGE">鼠标状态</option><option value="MOUSE_VERIFICATION">数据复核</option><option value="USER_STATUS_CHANGE">用户状态</option><option value="USER_ROLE_CHANGE">用户角色</option><option value="REVIEW_MODERATION">支撑记录治理</option><option value="REPORT_WORKFLOW_CHANGE">反馈处理</option><option value="SESSION_REVOKE">会话撤销</option><option value="SYSTEM_SETTING_UPDATE">系统设置</option></select>
                         <label class="audit-date">起<input v-model="auditFrom" type="date" @change="loadAudits(1)"></label><label class="audit-date">止<input v-model="auditTo" type="date" @change="loadAudits(1)"></label>
                     </div>
                     <table class="admin-table audit-table">
@@ -1556,6 +1472,12 @@ const showAdminToast = ({ type, message }) => {
             </main>
         </div>
     </div>
+    <AdminActionDialog
+        :config="actionDialog"
+        :busy="loading"
+        @confirm="confirmAdminAction"
+        @close="cancelAdminAction"
+    />
     <AdminImageEditor
         :source="imageEditorSource"
         :saving="imageUploading"
