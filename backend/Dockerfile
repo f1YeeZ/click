@@ -6,7 +6,7 @@ COPY maven-settings.xml /root/.m2/settings.xml
 COPY pom.xml .
 COPY src ./src
 RUN --mount=type=cache,id=clicker-maven,target=/root/.m2/repository \
-    mvn -B -ntp -s /root/.m2/settings.xml clean package -DskipTests
+    mvn -B -ntp -U -s /root/.m2/settings.xml clean package -DskipTests
 
 FROM eclipse-temurin:17-jre-alpine
 RUN apk add --no-cache curl && addgroup -S clicker && adduser -S clicker -G clicker

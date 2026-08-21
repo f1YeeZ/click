@@ -86,7 +86,7 @@ docker compose up -d
 docker compose ps
 ```
 
-后端构建已固定使用腾讯云 Maven 镜像和 BuildKit Maven 缓存。首次下载依赖会比后续构建慢；不要执行 `docker builder prune -a` 或 `docker system prune -a`，否则下次构建会重新下载全部 Maven 依赖。
+后端构建已固定使用国内 Maven 仓库和 BuildKit Maven 缓存。默认按阿里云、腾讯云、Maven Central 的顺序自动回退，并刷新之前失败的下载记录。首次下载依赖会比后续构建慢；不要执行 `docker builder prune -a` 或 `docker system prune -a`，否则下次构建会重新下载全部 Maven 依赖。
 
 检查后端：
 
@@ -177,7 +177,7 @@ docker compose build frontend
 docker compose up -d
 ```
 
-后端 Dockerfile 已永久引用 `backend/maven-settings.xml` 中的腾讯云 Maven 镜像，不再需要 `/tmp/Dockerfile.clicker-backend` 等临时文件。构建日志会显示 Maven 依赖解析和编译进度。
+后端 Dockerfile 已永久引用 `backend/maven-settings.xml` 中的国内仓库及自动回退配置，不再需要 `/tmp/Dockerfile.clicker-backend` 等临时文件。构建日志会显示 Maven 依赖解析和编译进度。
 
 查看迁移和启动日志：
 

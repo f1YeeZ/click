@@ -2,12 +2,58 @@
 <settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
-  <mirrors>
-    <mirror>
-      <id>tencent-cloud</id>
-      <name>Tencent Cloud Maven Mirror</name>
-      <url>https://mirrors.cloud.tencent.com/nexus/repository/maven-public/</url>
-      <mirrorOf>*</mirrorOf>
-    </mirror>
-  </mirrors>
+  <profiles>
+    <profile>
+      <id>china-maven-repositories</id>
+      <repositories>
+        <repository>
+          <id>central</id>
+          <name>Aliyun Maven Public</name>
+          <url>https://maven.aliyun.com/repository/public/</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+        <repository>
+          <id>tencent-cloud</id>
+          <name>Tencent Cloud Maven Public</name>
+          <url>https://mirrors.cloud.tencent.com/nexus/repository/maven-public/</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+        <repository>
+          <id>maven-central-fallback</id>
+          <name>Maven Central Fallback</name>
+          <url>https://repo.maven.apache.org/maven2/</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>central</id>
+          <name>Aliyun Maven Public</name>
+          <url>https://maven.aliyun.com/repository/public/</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </pluginRepository>
+        <pluginRepository>
+          <id>tencent-cloud</id>
+          <name>Tencent Cloud Maven Public</name>
+          <url>https://mirrors.cloud.tencent.com/nexus/repository/maven-public/</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </pluginRepository>
+        <pluginRepository>
+          <id>maven-central-fallback</id>
+          <name>Maven Central Fallback</name>
+          <url>https://repo.maven.apache.org/maven2/</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
+  <activeProfiles>
+    <activeProfile>china-maven-repositories</activeProfile>
+  </activeProfiles>
 </settings>
