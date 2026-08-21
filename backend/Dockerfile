@@ -8,7 +8,7 @@ COPY src ./src
 RUN --mount=type=cache,id=clicker-maven,target=/root/.m2/repository \
     mvn -B -ntp -U -s /root/.m2/settings.xml clean package -DskipTests
 
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 RUN apk add --no-cache curl && addgroup -S clicker && adduser -S clicker -G clicker
 WORKDIR /app
 COPY --from=build /workspace/target/mouse-hub-api-*.jar app.jar
