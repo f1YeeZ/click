@@ -37,10 +37,10 @@
 }
 
 :root {
-  --ad-rail-edge: 0.4vw;
-  --ad-rail-gap: 1.4vw;
-  --ad-rail-width: 220px;
-  --content-max-width: calc(100vw - var(--ad-rail-edge) - var(--ad-rail-edge) - var(--ad-rail-width) - var(--ad-rail-width) - var(--ad-rail-gap) - var(--ad-rail-gap));
+  --wide-gutter-edge: 0.4vw;
+  --wide-gutter-gap: 1.4vw;
+  --wide-gutter-column-width: 220px;
+  --content-max-width: calc(100vw - var(--wide-gutter-edge) - var(--wide-gutter-edge) - var(--wide-gutter-column-width) - var(--wide-gutter-column-width) - var(--wide-gutter-gap) - var(--wide-gutter-gap));
   --shell: min(100% - 3rem, var(--content-max-width));
   --mouse-card-media-height: 13rem;
 }

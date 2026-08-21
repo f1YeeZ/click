@@ -93,13 +93,14 @@ class ClickerSmokeTest(unittest.TestCase):
         self.allow_admin_refresh = False
         self.public_config = {
             "maintenanceNotice": "", "registrationEnabled": True, "reviewSubmissionEnabled": True,
-            "advertisingEnabled": False,
+            "advertisingEnabled": True,
             "leftAd": {"enabled": True, "imageUrl": "", "targetUrl": "", "altText": ""},
             "rightAd": {"enabled": True, "imageUrl": "", "targetUrl": "", "altText": ""},
         }
         self.settings = [
             {"key": "registration.enabled", "value": "true", "description": "是否允许注册", "updatedBy": "system"},
             {"key": "reviews.enabled", "value": "true", "description": "是否允许用户提交或修改支撑位置记录", "updatedBy": "system"},
+            {"key": "advertising.enabled", "value": "true", "description": "旧版广告开关", "updatedBy": "system"},
         ]
         self.managed_user = {
             "id": "managed-user", "email": "managed@example.com", "role": "USER", "status": "ACTIVE",
@@ -817,6 +818,8 @@ class ClickerSmokeTest(unittest.TestCase):
 
         expect(self.page.get_by_role("heading", name="系统运营", level=2)).to_be_visible()
         expect(self.page.locator(".expansion-loading")).to_be_hidden()
+        expect(self.page.get_by_role("heading", name="广告位设置", exact=True)).to_have_count(0)
+        expect(self.page.get_by_text("旧版广告开关", exact=True)).to_have_count(0)
         nav_metrics = self.page.locator(".admin-sidebar").evaluate("""(sidebar) => ({
             position: getComputedStyle(sidebar).position,
             buttonHeights: [...sidebar.querySelectorAll('nav button')].map((item) => item.getBoundingClientRect().height),
@@ -1370,12 +1373,55 @@ class ClickerSmokeTest(unittest.TestCase):
         expect(desktop_tools_menu).to_be_visible()
         mouse_test_link.click()
         self.page.wait_for_url(f"{BASE_URL}/mouse-test")
-        expect(self.page.get_by_role("heading", name="鼠标按键测试", exact=True)).to_be_visible()
+        expect(self.page.get_by_role("heading", name="鼠标测试", exact=True)).to_be_visible()
+        test_modes = self.page.get_by_role("tablist", name="选择鼠标测试类型")
+        button_test_tab = test_modes.get_by_role("tab", name="按键测试", exact=True)
+        polling_test_tab = test_modes.get_by_role("tab", name="回报率测试", exact=True)
+        reaction_test_tab = test_modes.get_by_role("tab", name="反应测试", exact=True)
+        mode_switcher = self.page.get_by_test_id("mouse-test-mode-switcher")
+        expect(mode_switcher).to_be_visible()
+        expect(self.page.get_by_text("BUTTONS", exact=True)).to_be_visible()
+        expect(self.page.get_by_text("POLLING", exact=True)).to_be_visible()
+        expect(self.page.get_by_text("REACTION", exact=True)).to_be_visible()
+        expect(self.page.get_by_test_id("mouse-mode-glider")).to_be_visible()
+        mode_geometry = test_modes.evaluate("""element => [...element.querySelectorAll('[role="tab"]')].map(tab => {
+            const box = tab.getBoundingClientRect()
+            return { x: box.x, y: box.y, width: box.width, height: box.height }
+        })""")
+        self.assertEqual(len(mode_geometry), 3)
+        self.assertTrue(all(item["height"] >= 44 for item in mode_geometry))
+        self.assertTrue(all(abs(item["x"] - mode_geometry[0]["x"]) <= 1 for item in mode_geometry))
+        self.assertTrue(all(abs(item["width"] - mode_geometry[0]["width"]) <= 1 for item in mode_geometry))
+        self.assertTrue(all(mode_geometry[index]["y"] > mode_geometry[index - 1]["y"] for index in range(1, 3)))
+        expect(button_test_tab).to_have_attribute("aria-selected", "true")
+        expect(polling_test_tab).to_have_attribute("aria-selected", "false")
+        expect(reaction_test_tab).to_have_attribute("aria-selected", "false")
+        workspace_geometry = self.page.evaluate("""() => {
+            const switcher = document.querySelector('[data-testid="mouse-test-mode-switcher"]').getBoundingClientRect()
+            const panel = document.querySelector('#mouse-buttons-panel').getBoundingClientRect()
+            return { switcherRight: switcher.right, switcherTop: switcher.top, panelLeft: panel.left, panelTop: panel.top }
+        }""")
+        self.assertLessEqual(workspace_geometry["switcherRight"] + 12, workspace_geometry["panelLeft"])
+        self.assertAlmostEqual(workspace_geometry["switcherTop"], workspace_geometry["panelTop"], delta=1)
+        button_test_tab.focus()
+        button_test_tab.press("End")
+        expect(reaction_test_tab).to_be_focused()
+        expect(reaction_test_tab).to_have_attribute("aria-selected", "true")
+        reaction_test_tab.press("Home")
+        expect(button_test_tab).to_be_focused()
+        expect(button_test_tab).to_have_attribute("aria-selected", "true")
+        button_test_tab.press("ArrowDown")
+        expect(polling_test_tab).to_be_focused()
+        expect(polling_test_tab).to_have_attribute("aria-selected", "true")
+        polling_test_tab.press("ArrowUp")
+        expect(button_test_tab).to_be_focused()
+        expect(button_test_tab).to_have_attribute("aria-selected", "true")
         expect(self.page.get_by_test_id("mouse-outline")).to_be_visible()
         expect(self.page.locator('.mouse-region[role="button"]')).to_have_count(5)
         expect(desktop_tools).to_have_class(re.compile("is-active"))
         expect(self.page.locator(".public-floating-actions")).to_have_count(0)
         expect(self.page.locator(".compare-tray")).to_have_count(0)
+        expect(self.page.locator("[data-ad-slot]")).to_have_count(0)
 
         regions = [
             ("左键", "left"),
@@ -1437,6 +1483,188 @@ class ClickerSmokeTest(unittest.TestCase):
         expect(self.page.get_by_test_id("mouse-test-status")).to_contain_text("按下任意测试键")
         for button_id in [*[item[1] for item in regions], "wheel-up", "wheel-down"]:
             expect(self.page.get_by_test_id(f"mouse-count-{button_id}").locator("span").last).to_have_text("0")
+
+        polling_test_tab.click()
+        expect(polling_test_tab).to_have_attribute("aria-selected", "true")
+        expect(self.page.get_by_role("heading", name="实时回报率", exact=True)).to_be_visible()
+        expect(self.page.get_by_test_id("polling-current-rate")).to_contain_text("0")
+        expect(self.page.get_by_test_id("polling-sample-count")).to_have_text("0")
+
+        self.page.get_by_role("button", name="开始测试", exact=True).click()
+        expect(self.page.get_by_role("button", name="暂停测试", exact=True)).to_be_visible()
+        capture_surface = self.page.get_by_test_id("polling-capture-surface")
+        capture_bounds = capture_surface.bounding_box()
+        self.assertIsNone(
+            self.page.evaluate(
+                "([x, y]) => document.elementFromPoint(x, y).closest('.mouse-test-page')",
+                [gutter_x, capture_y],
+            )
+        )
+        self.page.mouse.move(gutter_x, capture_y)
+        self.page.mouse.move(
+            gutter_x,
+            capture_y + 120,
+            steps=40,
+        )
+        expect(self.page.get_by_test_id("polling-sample-count")).not_to_have_text("0")
+        expect(self.page.get_by_test_id("polling-average-rate")).not_to_have_text("0 Hz")
+        expect(capture_surface).to_have_class(re.compile("is-active"))
+        self.page.wait_for_timeout(180)
+        full_page_sample_count = self.page.get_by_test_id("polling-sample-count").inner_text()
+        self.page.mouse.move(gutter_x, header_bottom / 2)
+        self.page.mouse.move(300, header_bottom / 2, steps=10)
+        self.page.wait_for_timeout(180)
+        expect(self.page.get_by_test_id("polling-sample-count")).to_have_text(full_page_sample_count)
+        polling_screenshot = os.environ.get("E2E_POLLING_RATE_SCREENSHOT")
+        if polling_screenshot:
+            self.page.screenshot(path=polling_screenshot, full_page=True)
+
+        self.page.get_by_role("button", name="暂停测试", exact=True).click()
+        expect(self.page.get_by_text("测试已暂停", exact=True).first).to_be_visible()
+        paused_sample_count = self.page.get_by_test_id("polling-sample-count").inner_text()
+        self.page.mouse.move(capture_bounds["x"] + 80, capture_bounds["y"] + 80)
+        self.page.mouse.move(capture_bounds["x"] + 160, capture_bounds["y"] + 120, steps=10)
+        self.page.wait_for_timeout(180)
+        expect(self.page.get_by_test_id("polling-sample-count")).to_have_text(paused_sample_count)
+
+        self.page.get_by_role("button", name="继续测试", exact=True).click()
+        expect(self.page.get_by_role("button", name="暂停测试", exact=True)).to_be_visible()
+        button_test_tab.click()
+        self.page.wait_for_timeout(180)
+        polling_test_tab.click()
+        expect(self.page.get_by_text("测试已暂停", exact=True).first).to_be_visible()
+        resumed_sample_count = self.page.get_by_test_id("polling-sample-count").inner_text()
+        button_test_tab.click()
+        self.page.mouse.move(40, 300)
+        self.page.wait_for_timeout(180)
+        polling_test_tab.click()
+        expect(self.page.get_by_text("测试已暂停", exact=True).first).to_be_visible()
+        expect(self.page.get_by_test_id("polling-sample-count")).to_have_text(resumed_sample_count)
+        self.page.get_by_role("button", name="重测", exact=True).click()
+        expect(self.page.get_by_test_id("polling-current-rate")).to_contain_text("0")
+        expect(self.page.get_by_test_id("polling-sample-count")).to_have_text("0")
+        expect(self.page.get_by_role("button", name="开始测试", exact=True)).to_be_visible()
+
+        reaction_test_tab.click()
+        expect(reaction_test_tab).to_have_attribute("aria-selected", "true")
+        expect(self.page.get_by_role("heading", name="反应结果", exact=True)).to_be_visible()
+        expect(self.page.get_by_test_id("reaction-latest-time").locator("strong")).to_have_text("--")
+        expect(self.page.get_by_text("0 / 5", exact=True)).to_be_visible()
+
+        self.page.evaluate("Math.random = () => 0")
+        self.page.get_by_role("button", name="开始测试", exact=True).click()
+        reaction_surface = self.page.get_by_test_id("reaction-surface")
+        expect(reaction_surface).to_have_class(re.compile("is-waiting"))
+        reaction_wait_trigger = self.page.get_by_role("button", name="等待反应测试信号", exact=True)
+        reaction_wait_trigger.dispatch_event("pointerdown", {"pointerType": "mouse", "button": 0})
+        expect(self.page.get_by_text("抢跑了", exact=True).first).to_be_visible()
+        expect(self.page.get_by_text("0 / 5", exact=True)).to_be_visible()
+        expect(self.page.get_by_test_id("reaction-latest-time").locator("strong")).to_have_text("--")
+
+        self.page.get_by_role("button", name="重新本轮", exact=True).click()
+        expect(reaction_surface).to_have_class(re.compile("is-ready"), timeout=2500)
+        reaction_ready_trigger = self.page.get_by_role("button", name="立即点击记录反应时间", exact=True)
+        reaction_ready_trigger.focus()
+        reaction_ready_trigger.press("Enter")
+        expect(self.page.get_by_test_id("reaction-latest-time").locator("strong")).to_have_text(re.compile(r"^[1-9]\d*$"))
+        expect(self.page.get_by_test_id("reaction-average-time")).not_to_contain_text("--")
+        expect(self.page.get_by_text("1 / 5", exact=True)).to_be_visible()
+        reaction_screenshot = os.environ.get("E2E_REACTION_TEST_SCREENSHOT")
+        if reaction_screenshot:
+            self.page.screenshot(path=reaction_screenshot, full_page=True)
+
+        recorded_reaction = self.page.get_by_test_id("reaction-latest-time").locator("strong").inner_text()
+        next_round_button = self.page.get_by_role("button", name="下一轮", exact=True)
+        geometry = reaction_surface.evaluate("""surface => {
+            const button = surface.querySelector('.reaction-center-action')
+            const surfaceBox = surface.getBoundingClientRect()
+            const buttonBox = button.getBoundingClientRect()
+            return {
+                surface: { x: surfaceBox.x, y: surfaceBox.y, width: surfaceBox.width, height: surfaceBox.height },
+                button: { x: buttonBox.x, y: buttonBox.y, width: buttonBox.width, height: buttonBox.height },
+            }
+        }""")
+        surface_box = geometry["surface"]
+        next_round_box = geometry["button"]
+        self.assertAlmostEqual(
+            next_round_box["x"] + next_round_box["width"] / 2,
+            surface_box["x"] + surface_box["width"] / 2,
+            delta=1,
+        )
+        self.assertAlmostEqual(
+            next_round_box["y"] + next_round_box["height"] / 2,
+            surface_box["y"] + surface_box["height"] / 2,
+            delta=1,
+        )
+        next_round_button.click()
+        expect(reaction_surface).to_have_class(re.compile("is-waiting"))
+        polling_test_tab.click()
+        self.page.wait_for_timeout(1300)
+        reaction_test_tab.click()
+        expect(self.page.get_by_role("button", name="下一轮", exact=True)).to_be_visible()
+        expect(self.page.get_by_test_id("reaction-latest-time").locator("strong")).to_have_text(recorded_reaction)
+        expect(self.page.get_by_text("1 / 5", exact=True)).to_be_visible()
+
+        for completed_rounds in range(2, 6):
+            self.page.get_by_role("button", name="下一轮", exact=True).click()
+            expect(reaction_surface).to_have_class(re.compile("is-ready"), timeout=2500)
+            reaction_ready_trigger.focus()
+            reaction_ready_trigger.press("Enter")
+            expect(self.page.get_by_text(f"{completed_rounds} / 5", exact=True)).to_be_visible()
+
+        expect(self.page.get_by_text("测试完成", exact=True).first).to_be_visible()
+        expect(self.page.get_by_role("button", name="再测一次", exact=True)).to_be_visible()
+        expect(self.page.locator(".reaction-rounds > div.has-result")).to_have_count(5)
+        self.page.get_by_role("button", name="重置成绩", exact=True).click()
+        expect(self.page.get_by_text("0 / 5", exact=True)).to_be_visible()
+
+        for viewport in [
+            {"width": 375, "height": 812},
+            {"width": 844, "height": 390},
+        ]:
+            self.page.set_viewport_size(viewport)
+            self.page.evaluate("window.scrollTo(0, 0)")
+            responsive_metrics = self.page.evaluate("""() => ({
+                pageWidth: document.documentElement.scrollWidth,
+                viewportWidth: document.documentElement.clientWidth,
+                switcherBottom: document.querySelector('[data-testid="mouse-test-mode-switcher"]').getBoundingClientRect().bottom,
+                panelTop: document.querySelector('[role="tabpanel"]').getBoundingClientRect().top,
+                controlHeights: [...document.querySelectorAll('.mouse-test-modes button, .polling-controls button, .reaction-controls button, .reaction-center-action')]
+                    .map(control => control.getBoundingClientRect().height),
+            })""")
+            self.assertLessEqual(responsive_metrics["pageWidth"], responsive_metrics["viewportWidth"])
+            self.assertLessEqual(responsive_metrics["switcherBottom"], responsive_metrics["panelTop"])
+            self.assertTrue(all(height >= 44 for height in responsive_metrics["controlHeights"]))
+
+        self.page.set_viewport_size({"width": 375, "height": 812})
+        self.page.emulate_media(reduced_motion="reduce")
+        self.page.evaluate("document.documentElement.style.fontSize = '20px'")
+        expect(reaction_test_tab).to_be_visible()
+        self.assertEqual(
+            self.page.get_by_test_id("mouse-mode-glider").evaluate(
+                "element => getComputedStyle(element).transitionDuration"
+            ),
+            "0.001s",
+        )
+        self.assertLessEqual(
+            self.page.evaluate("document.documentElement.scrollWidth"),
+            self.page.evaluate("document.documentElement.clientWidth"),
+        )
+        self.page.evaluate("document.documentElement.style.fontSize = ''")
+        self.page.emulate_media(reduced_motion="no-preference")
+
+        mobile_reaction_screenshot = os.environ.get("E2E_REACTION_TEST_MOBILE_SCREENSHOT")
+        if mobile_reaction_screenshot:
+            self.page.set_viewport_size({"width": 375, "height": 812})
+            self.page.evaluate("window.scrollTo(0, 0)")
+            self.page.locator(".mouse-test-page").screenshot(path=mobile_reaction_screenshot)
+
+        mobile_polling_screenshot = os.environ.get("E2E_POLLING_RATE_MOBILE_SCREENSHOT")
+        if mobile_polling_screenshot:
+            polling_test_tab.click()
+            self.page.set_viewport_size({"width": 375, "height": 812})
+            self.page.evaluate("window.scrollTo(0, 0)")
+            self.page.locator(".mouse-test-page").screenshot(path=mobile_polling_screenshot)
 
         self.page.set_viewport_size({"width": 390, "height": 844})
         mobile_navigation = self.page.get_by_role("navigation", name="移动主导航")
@@ -2462,78 +2690,6 @@ class ClickerSmokeTest(unittest.TestCase):
                         full_page=True,
                     )
 
-    def test_advertising_rails_use_reserved_space_without_moving_content(self):
-        self.public_config["advertisingEnabled"] = True
-        self.page.set_viewport_size({"width": 1920, "height": 900})
-        self.page.goto(f"{BASE_URL}/")
-        self.page.wait_for_load_state("networkidle")
-
-        shell_before = self.page.locator(".home-page .section-shell").first.evaluate(
-            "element => ({ left: element.getBoundingClientRect().left, width: element.getBoundingClientRect().width })"
-        )
-        for side in ("left", "right"):
-            rail = self.page.locator(f'[data-ad-slot="{side}-rail"]')
-            expect(rail).to_be_visible()
-            box = rail.bounding_box()
-            self.assertGreaterEqual(box["width"], 220)
-            self.assertAlmostEqual(box["width"] / box["height"], 220 / 506, delta=0.01)
-        self.assertLessEqual(self.page.evaluate("document.documentElement.scrollWidth"), 1920)
-
-        self.public_config["advertisingEnabled"] = False
-        self.page.reload()
-        self.page.wait_for_load_state("networkidle")
-        expect(self.page.locator('[data-ad-slot]')).to_have_count(0)
-        shell_after = self.page.locator(".home-page .section-shell").first.evaluate(
-            "element => ({ left: element.getBoundingClientRect().left, width: element.getBoundingClientRect().width })"
-        )
-        self.assertEqual(shell_after, shell_before)
-
-        self.public_config["advertisingEnabled"] = True
-        self.page.set_viewport_size({"width": 1024, "height": 900})
-        self.page.reload()
-        self.page.wait_for_load_state("networkidle")
-        self.assertFalse(self.page.locator('[data-ad-slot="left-rail"]').is_visible())
-        self.assertFalse(self.page.locator('[data-ad-slot="right-rail"]').is_visible())
-
-    def test_advertising_rails_stay_outside_every_public_page_at_zoomed_css_viewport(self):
-        self.public_config["advertisingEnabled"] = True
-        self.page.set_viewport_size({"width": 1707, "height": 1067})
-        public_routes = (
-            "/", "/mice", "/mice/mouse-a", "/compare", "/recommend",
-            "/sensitivity", "/privacy", "/terms", "/review-rules",
-            "/login", "/register", "/forgot-password",
-        )
-
-        for path in public_routes:
-            with self.subTest(path=path):
-                self.page.goto(f"{BASE_URL}{path}")
-                self.page.wait_for_load_state("networkidle")
-
-                left_rail = self.page.locator('[data-ad-slot="left-rail"]')
-                right_rail = self.page.locator('[data-ad-slot="right-rail"]')
-                expect(left_rail).to_be_visible()
-                expect(right_rail).to_be_visible()
-                left_box = left_rail.bounding_box()
-                right_box = right_rail.bounding_box()
-                self.assertIsNotNone(left_box)
-                self.assertIsNotNone(right_box)
-
-                shells = self.page.evaluate("""() => [...document.querySelectorAll(
-                    '#app .section-shell, #app .header-shell, #app .footer-shell, #app .auth-shell:not(.admin-login-shell)'
-                )].map(element => {
-                    const rect = element.getBoundingClientRect()
-                    return { left: rect.left, right: rect.right, width: rect.width, height: rect.height }
-                }).filter(rect => rect.width > 0 && rect.height > 0)""")
-                self.assertGreater(len(shells), 0)
-                for shell in shells:
-                    self.assertLessEqual(left_box["x"] + left_box["width"], shell["left"] + 1)
-                    self.assertGreaterEqual(right_box["x"], shell["right"] - 1)
-
-                self.assertLessEqual(
-                    self.page.evaluate("document.documentElement.scrollWidth"),
-                    1707,
-                )
-
     def test_wide_catalog_preserves_the_fixed_shell_with_readable_type(self):
         self.mice = [MICE[0]]
         self.page.set_viewport_size({"width": 2355, "height": 1280})
@@ -2571,6 +2727,28 @@ class ClickerSmokeTest(unittest.TestCase):
         if screenshot_path:
             os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
             self.page.screenshot(path=screenshot_path, full_page=True)
+
+    def test_wide_catalog_keeps_original_side_gutters_without_ads(self):
+        self.mice = [MICE[0]]
+        self.page.set_viewport_size({"width": 1690, "height": 900})
+        self.page.goto(f"{BASE_URL}/mice")
+        self.page.wait_for_load_state("networkidle")
+
+        shell_metrics = self.page.locator(".database-page").evaluate("""element => {
+            const rect = element.getBoundingClientRect()
+            return { left: rect.left, width: rect.width, right: rect.right }
+        }""")
+        expected_width = 1690 - (1690 * 0.004 * 2) - (1690 * 0.014 * 2) - (220 * 2)
+        expected_left = (1690 - expected_width) / 2
+
+        self.assertAlmostEqual(shell_metrics["width"], expected_width, delta=1)
+        self.assertAlmostEqual(shell_metrics["left"], expected_left, delta=1)
+        self.assertAlmostEqual(shell_metrics["right"], 1690 - expected_left, delta=1)
+        expect(self.page.locator("[data-ad-slot]")).to_have_count(0)
+        self.assertLessEqual(
+            self.page.evaluate("document.documentElement.scrollWidth"),
+            1690,
+        )
 
 
 if __name__ == "__main__":

@@ -27,28 +27,16 @@ class SystemSettingServiceTest {
 
     @Test
     @WithMockUser(username = "admin@example.com", roles = "ADMIN")
-    void exposesConfigurableAdvertisingInPublicSettings() {
-        assertThat(settings.publicSettings().advertisingEnabled()).isFalse();
-
-        settings.update("advertising.enabled", "true");
-        settings.update("advertising.left.image-url", "https://cdn.example.com/left.webp");
-        settings.update("advertising.left.target-url", "https://example.com/products/left");
-        settings.update("advertising.left.alt", "左侧鼠标促销广告");
-        settings.update("advertising.right.enabled", "false");
-
+    void exposesOnlySupportedPublicSettings() {
         var result = settings.publicSettings();
-        assertThat(result.advertisingEnabled()).isTrue();
-        assertThat(result.leftAd().enabled()).isTrue();
-        assertThat(result.leftAd().imageUrl()).isEqualTo("https://cdn.example.com/left.webp");
-        assertThat(result.leftAd().targetUrl()).isEqualTo("https://example.com/products/left");
-        assertThat(result.leftAd().altText()).isEqualTo("左侧鼠标促销广告");
-        assertThat(result.rightAd().enabled()).isFalse();
+        assertThat(result.registrationEnabled()).isTrue();
+        assertThat(result.reviewSubmissionEnabled()).isTrue();
     }
 
     @Test
     @WithMockUser(username = "admin@example.com", roles = "ADMIN")
-    void rejectsUnsafeAdvertisingUrls() {
-        assertThatThrownBy(() -> settings.update("advertising.left.target-url", "javascript:alert(1)"))
-                .hasMessageContaining("http 或 https");
+    void rejectsRemovedAdvertisingSettings() {
+        assertThatThrownBy(() -> settings.update("advertising.enabled", "true"))
+                .hasMessageContaining("不支持的系统设置");
     }
 }

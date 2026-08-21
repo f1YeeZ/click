@@ -70,12 +70,12 @@
   --mono: var(--gear-mono);
 }
 
-/* Reserve the fixed ad rails in the same CSS viewport used by the layout. */
+/* Preserve the established wide-screen content ratio after removing ads. */
 @media (min-width: 90rem) and (min-height: 38.75rem) {
   :root {
     --content-max-width: min(
       1440px,
-      calc(100vw - var(--ad-rail-edge) - var(--ad-rail-edge) - var(--ad-rail-width) - var(--ad-rail-width) - var(--ad-rail-gap) - var(--ad-rail-gap))
+      calc(100vw - var(--wide-gutter-edge) - var(--wide-gutter-edge) - var(--wide-gutter-column-width) - var(--wide-gutter-column-width) - var(--wide-gutter-gap) - var(--wide-gutter-gap))
     );
     --shell: min(1440px, calc(100vw - 64px), var(--content-max-width));
   }

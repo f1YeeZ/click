@@ -62,7 +62,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
             @mouseleave="closeTools"
           >
             <RouterLink to="/mouse-test" @click="closeTools">
-              <span><strong>鼠标测试</strong><small>检测五个基础按键</small></span>
+              <span><strong>鼠标测试</strong><small>按键、回报率与反应</small></span>
             </RouterLink>
             <RouterLink to="/sensitivity" @click="closeTools">
               <span><strong>灵敏度换算</strong><small>保持相同转身距离</small></span>

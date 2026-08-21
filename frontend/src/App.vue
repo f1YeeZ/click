@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
-import AdRail from './components/AdRail.vue'
 import CompareTray from './components/CompareTray.vue'
 import FeedbackWidget from './components/FeedbackWidget.vue'
 import SocialMediaWidget from './components/SocialMediaWidget.vue'
@@ -65,10 +64,6 @@ onBeforeUnmount(() => {
   <div v-if="!isAdminRoute && publicConfig.maintenanceNotice" class="maintenance-banner" role="status">
     <strong>运营公告</strong><span>{{ publicConfig.maintenanceNotice }}</span>
   </div>
-  <template v-if="!isAdminRoute && !isCodeMapRoute && publicConfig.advertisingEnabled">
-    <AdRail v-if="publicConfig.leftAd.enabled" side="left" :ad="publicConfig.leftAd" />
-    <AdRail v-if="publicConfig.rightAd.enabled" side="right" :ad="publicConfig.rightAd" />
-  </template>
   <RouterView v-slot="{ Component, route: viewRoute }">
     <KeepAlive :max="8">
       <component :is="Component" :key="viewRoute.path" />

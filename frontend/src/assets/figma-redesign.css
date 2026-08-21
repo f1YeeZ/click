@@ -284,9 +284,7 @@ body::after {
   white-space: nowrap;
 }
 
-/* Keep the focused wide-screen content measure whether advertising is enabled
- * or disabled. Advertising rails use the reserved side space as overlays, so
- * changing the setting never shifts page content. */
+/* Keep the original centered content measure without recreating ad rails. */
 @media (min-width: 1440px) {
   :root {
     --shell: min(1384px, calc(100vw - 536px));

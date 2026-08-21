@@ -53,9 +53,7 @@ public final class OperationsDtos {
 
     public record SettingView(String key, String value, String description, String updatedBy, OffsetDateTime updatedAt) {}
     public record SettingUpdateRequest(@NotNull @Size(max = 2000) String value) {}
-    public record AdPlacement(boolean enabled, String imageUrl, String targetUrl, String altText) {}
-    public record PublicSettings(String maintenanceNotice, boolean registrationEnabled, boolean reviewSubmissionEnabled,
-                                 boolean advertisingEnabled, AdPlacement leftAd, AdPlacement rightAd) {}
+    public record PublicSettings(String maintenanceNotice, boolean registrationEnabled, boolean reviewSubmissionEnabled) {}
 
     public record PageViewRequest(@NotNull UUID visitorId, @NotBlank @Size(max = 240) String path) {}
     public record AnalyticsPoint(LocalDate date, long pageViews, long uniqueVisitors,
