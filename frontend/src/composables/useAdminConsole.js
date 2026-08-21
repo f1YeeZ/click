@@ -1,6 +1,6 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import api, { errorMessage } from "../api/client";
+import api, { errorMessage, getAccessToken } from "../api/client";
 import { useAdminActionDialog } from "./useAdminActionDialog";
 import { useAdminAuthStore } from "../stores/auth";
 import { onRealtime } from "../services/realtime";
@@ -692,7 +692,7 @@ const actionLabel = (action) => ({
 const selectAudit = (entry) => { selectedAudit.value = entry; };
 const closeAudit = () => { selectedAudit.value = null; };
 const formatAuditState = (value) => {
-    if (!value) return "—";
+    if (!value) return "-";
     try { return JSON.stringify(JSON.parse(value), null, 2); }
     catch { return value; }
 };
@@ -731,13 +731,18 @@ watch(error, (value) => {
     }, 4200);
 });
 const loadAdminConsole = async () => {
-    await auth.refresh();
+    if (!auth.authenticated || !auth.admin) await auth.refresh();
     if (!auth.authenticated || !auth.admin) {
         dashboard.value = null;
-        router.replace("/admin/login");
+        await router.replace("/admin/login");
         return;
     }
     await Promise.all([loadDashboard(), loadBrands()]);
+    if (!getAccessToken("clicker.admin")) {
+        auth.clear();
+        dashboard.value = null;
+        await router.replace("/admin/login");
+    }
 };
 onMounted(() => {
     window.addEventListener("keydown", handleEscape);

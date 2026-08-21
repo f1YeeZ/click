@@ -31,14 +31,14 @@ watch(imageUrl, () => { imageFailed.value = false })
 .ad-rail {
   position: fixed;
   z-index: 8;
-  top: max(88px, calc(50vh - 217px));
+  top: 14.7vh;
   display: none;
-  width: 220px;
-  height: 506px;
+  width: var(--ad-rail-width, 13.07vw);
+  aspect-ratio: 220 / 506;
 }
 
-.ad-rail-left { left: max(16px, calc((100vw - var(--shell)) / 2 - 244px)); }
-.ad-rail-right { right: max(16px, calc((100vw - var(--shell)) / 2 - 244px)); }
+.ad-rail-left { left: var(--ad-rail-edge, 0.4vw); }
+.ad-rail-right { right: var(--ad-rail-edge, 0.4vw); }
 
 .ad-rail-creative {
   display: block;
@@ -68,7 +68,7 @@ watch(imageUrl, () => { imageFailed.value = false })
   width: 100%;
   height: 100%;
   place-content: center;
-  gap: 8px;
+  gap: 0.5rem;
   border: 1px solid #202735;
   border-radius: inherit;
   background: linear-gradient(145deg, #111620, #0a0d13);
@@ -84,7 +84,8 @@ watch(imageUrl, () => { imageFailed.value = false })
 .ad-rail-placeholder strong { color: #f3f7fb; font-size: 1rem; }
 .ad-rail-placeholder em { color: #8c96a8; font: normal 0.7rem var(--dv-mono); }
 
-@media (min-width: 1440px) and (min-height: 620px) {
+/* Wide CSS viewports get dedicated rails; the content shell reserves their columns. */
+@media (min-width: 90rem) and (min-height: 38.75rem) {
   .ad-rail { display: block; }
 }
 </style>

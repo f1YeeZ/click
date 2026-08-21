@@ -12,6 +12,8 @@ const PasswordResetView = () => import('../views/PasswordResetView.vue')
 const AdminView = () => import('../views/AdminView.vue')
 const ProfileView = () => import('../views/ProfileView.vue')
 const RecommendationView = () => import('../views/RecommendationView.vue')
+const SensitivityView = () => import('../views/SensitivityView.vue')
+const MouseTestView = () => import('../views/MouseTestView.vue')
 const LegalView = () => import('../views/LegalView.vue')
 const CodeMapView = () => import('../views/CodeMapView.vue')
 
@@ -23,6 +25,8 @@ const router = createRouter({
     { path: '/mice/:id', component: MouseDetailView },
     { path: '/compare', component: CompareView },
     { path: '/recommend', component: RecommendationView },
+    { path: '/sensitivity', component: SensitivityView },
+    { path: '/mouse-test', component: MouseTestView },
     { path: '/privacy', component: LegalView, props: { document: 'privacy' } },
     { path: '/terms', component: LegalView, props: { document: 'terms' } },
     { path: '/review-rules', component: LegalView, props: { document: 'rules' } },

@@ -1,0 +1,231 @@
+/* Responsive GearDB shell overrides. Imported last to settle layout, type, and reset rules. */
+
+:where(*, *::before, *::after) {
+  box-sizing: border-box;
+}
+
+:where(html) {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+:where(body, h1, h2, h3, h4, p, figure, blockquote, dl, dd) {
+  margin: 0;
+}
+
+:where(ul, ol) {
+  margin: 0;
+  padding: 0;
+}
+
+:where(img, picture, svg, canvas) {
+  display: block;
+  max-width: 100%;
+}
+
+:where(button, input, select, textarea) {
+  font: inherit;
+}
+
+:where(button, [type='button'], [type='submit']) {
+  cursor: pointer;
+}
+
+:where(a) {
+  color: inherit;
+  text-decoration: none;
+}
+
+:root {
+  --ad-rail-edge: 0.4vw;
+  --ad-rail-gap: 1.4vw;
+  --ad-rail-width: 220px;
+  --content-max-width: calc(100vw - var(--ad-rail-edge) - var(--ad-rail-edge) - var(--ad-rail-width) - var(--ad-rail-width) - var(--ad-rail-gap) - var(--ad-rail-gap));
+  --shell: min(100% - 3rem, var(--content-max-width));
+  --mouse-card-media-height: 13rem;
+}
+
+#app .section-shell,
+#app .header-shell,
+#app .footer-shell {
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin-inline: auto;
+  padding-inline: 1.5rem;
+}
+
+#app .site-header {
+  padding-inline: 0;
+}
+
+#app .main-nav a,
+#app .main-nav a:last-child,
+#app .mobile-nav a {
+  font-size: 1rem;
+}
+
+#app .database-content-layout {
+  gap: 1.5rem;
+}
+
+#app .filter-studio,
+#app .filter-workbench {
+  margin-bottom: 2rem;
+}
+
+#app .filter-compact-bar {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+#app .filter-compact-bar .filter-search {
+  width: min(600px, 80%);
+  justify-self: start;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+#app .filter-compact-bar .filter-search input {
+  margin-top: 0;
+  padding: 0.625rem 0;
+  font-size: 1rem;
+}
+
+#app .filter-compact-bar .filter-quick-row,
+#app .filter-compact-actions {
+  gap: 0.5rem;
+}
+
+#app .filter-compact-bar .filter-quick-row button,
+#app .filter-more-button,
+#app .filter-clear-button,
+#app .primary-action-button,
+#app .button,
+#app .sign-in-button,
+#app .header-search-submit,
+#app .mouse-card .compare-add {
+  font-size: 0.875rem;
+}
+
+#app .database-results-head {
+  gap: 1.5rem;
+  padding: 0.75rem;
+}
+
+#app .database-results-head > div > span,
+#app .database-results-head > label,
+#app .database-results-head select,
+#app .card-facts {
+  font-size: 0.875rem;
+}
+
+#app .database-results .mouse-grid,
+#app .mouse-grid.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  border: 0;
+  margin: 2rem 0;
+}
+
+#app .mouse-card,
+#app .database-results .mouse-card {
+  min-height: 0;
+  border: 1px solid var(--line);
+}
+
+#app .card-visual,
+#app .card-visual.image-empty {
+  width: 100%;
+  height: var(--mouse-card-media-height);
+  min-height: var(--mouse-card-media-height);
+  aspect-ratio: auto;
+}
+
+#app .card-product-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+#app .card-body {
+  padding: 0.875rem 0.9375rem 0.5rem;
+}
+
+#app .mouse-card h3 {
+  margin: 0.25rem 0 0;
+  font-size: 1.125rem;
+  letter-spacing: 0;
+}
+
+#app .card-brand {
+  font-size: 0.875rem;
+}
+
+#app .card-footer {
+  gap: 0.625rem;
+  padding: 0 0.9375rem 0.875rem;
+}
+
+#app .mouse-card .compare-add {
+  min-height: 2rem;
+  padding: 0.4375rem 0.625rem;
+}
+
+#app .footer-shell,
+#app .footer-shell nav a {
+  font-size: 0.75rem;
+}
+
+#app .site-footer {
+  margin-top: 4rem;
+  padding: 2rem 0;
+}
+
+@media (max-width: 820px) {
+  :root {
+    --content-max-width: 100%;
+    --shell: min(100% - 2rem, var(--content-max-width));
+  }
+
+  #app .section-shell,
+  #app .header-shell,
+  #app .footer-shell {
+    padding-inline: 1rem;
+  }
+
+  #app .filter-compact-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  #app .filter-compact-bar .filter-search {
+    width: min(600px, 80%);
+  }
+
+  #app .filter-compact-bar .filter-quick-row {
+    grid-column: 1 / -1;
+  }
+
+  #app .database-results .mouse-grid,
+  #app .mouse-grid.catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  #app .filter-compact-bar {
+    grid-template-columns: 1fr;
+  }
+
+  #app .filter-compact-bar .filter-search {
+    width: 100%;
+  }
+
+  #app .database-results .mouse-grid,
+  #app .mouse-grid.catalog-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -147,7 +147,7 @@ onBeforeUnmount(() => {
   <main class="profile-page section-shell">
     <header class="profile-heading"><div><h1>个人资料</h1><p>手长和习惯握姿只在这里维护。提交鼠标评价时，系统会自动使用这些数据。</p></div><span class="profile-id">{{ auth.user?.email }}</span></header>
     <section class="profile-card">
-      <div class="profile-measure"><span>手长 / cm</span><strong>{{ handLengthCm || '—' }}</strong><small>{{ handRange }}</small></div>
+      <div class="profile-measure"><span>手长 / cm</span><strong>{{ handLengthCm || '-' }}</strong><small>{{ handRange }}</small></div>
       <form @submit.prevent="save">
         <label>个人手长 <small>{{ handLocked ? '已锁定，不可更改' : '从掌根到中指指尖' }}</small><div class="unit-input"><input v-model.number="handLengthCm" type="number" min="10" max="30" step="0.1" required :disabled="handLocked" placeholder="例如 18.5"><span>cm</span></div></label>
         <label>习惯握姿 <small>{{ gripLocked ? '已锁定，不可更改' : '用于筛选对应的支撑记录' }}</small>

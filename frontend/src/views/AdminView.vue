@@ -304,7 +304,7 @@ const showAdminToast = ({ type, message }) => {
                     <div class="metric-grid">
                         <article>
                             <span>鼠标总量</span
-                            ><strong>{{ dashboard?.miceTotal ?? "—" }}</strong
+                            ><strong>{{ dashboard?.miceTotal ?? "-" }}</strong
                             ><small
                                 >{{
                                     dashboard?.micePublished ?? 0
@@ -314,13 +314,13 @@ const showAdminToast = ({ type, message }) => {
                         </article>
                         <article>
                             <span>注册用户</span
-                            ><strong>{{ dashboard?.usersTotal ?? "—" }}</strong
+                            ><strong>{{ dashboard?.usersTotal ?? "-" }}</strong
                             ><small>{{ dashboard?.usersActive ?? 0 }} 正常 · {{ dashboard?.usersAdmin ?? 0 }} 管理员 · {{ dashboard?.usersDisabled ?? 0 }} 封禁</small>
                         </article>
                         <article>
                             <span>支撑记录总量</span
                             ><strong>{{
-                                dashboard?.reviewsTotal ?? "—"
+                                dashboard?.reviewsTotal ?? "-"
                             }}</strong
                             ><small
                                 >{{
@@ -331,13 +331,13 @@ const showAdminToast = ({ type, message }) => {
                         </article>
                         <article class="metric-accent">
                             <span>数据健康度</span
-                            ><strong>{{ dashboard ? `${dashboard.dataQualityPercent}%` : "—" }}</strong
+                            ><strong>{{ dashboard ? `${dashboard.dataQualityPercent}%` : "-" }}</strong
                             ><small>关键参数与来源完整率</small>
                         </article>
                     </div>
                     <section class="overview-traffic-strip" aria-label="今日前台访问摘要">
                         <header><div><span>今日访问</span><strong>前台流量快照</strong></div><button @click="selectTab('analytics')">查看详细趋势 →</button></header>
-                        <dl><div><dt>独立访客 UV</dt><dd>{{ dashboard?.todayUniqueVisitors ?? "—" }}</dd></div><div><dt>页面浏览 PV</dt><dd>{{ dashboard?.todayPageViews ?? "—" }}</dd></div><div><dt>人均浏览</dt><dd>{{ todayPagesPerVisitor }}</dd><small>页 / 访客</small></div></dl>
+                        <dl><div><dt>独立访客 UV</dt><dd>{{ dashboard?.todayUniqueVisitors ?? "-" }}</dd></div><div><dt>页面浏览 PV</dt><dd>{{ dashboard?.todayPageViews ?? "-" }}</dd></div><div><dt>人均浏览</dt><dd>{{ todayPagesPerVisitor }}</dd><small>页 / 访客</small></div></dl>
                     </section>
                     <div class="admin-columns">
                         <section class="admin-panel">
@@ -376,9 +376,9 @@ const showAdminToast = ({ type, message }) => {
                                             >
                                         </td>
                                         <td class="mono">
-                                            {{ mouse.weightG ?? "—" }}g ·
+                                            {{ mouse.weightG ?? "-" }}g /
                                             {{
-                                                mouse.maxPollingRateHz ?? "—"
+                                                mouse.maxPollingRateHz ?? "-"
                                             }}Hz
                                         </td>
                                         <td>
@@ -1074,8 +1074,8 @@ const showAdminToast = ({ type, message }) => {
                                     mm<br />{{ mouse.weightG }}g
                                 </td>
                                 <td class="mono">
-                                    {{ mouse.sensorName || "—" }}<br />{{
-                                        mouse.maxPollingRateHz || "—"
+                                    {{ mouse.sensorName || "-" }}<br />{{
+                                        mouse.maxPollingRateHz || "-"
                                     }}
                                     Hz
                                 </td>
@@ -1205,7 +1205,7 @@ const showAdminToast = ({ type, message }) => {
                                             ? new Date(
                                                   user.createdAt,
                                               ).toLocaleDateString("zh-CN")
-                                            : "—"
+                                            : "-"
                                     }}
                                 </td>
                                 <td class="row-actions">
@@ -1240,7 +1240,7 @@ const showAdminToast = ({ type, message }) => {
                                     <button type="button" aria-label="关闭用户管理窗口" @click="closeUserAction">×</button>
                                 </header>
                                 <p class="user-management-summary">角色和封禁状态会在下一次接口请求时立即生效，所有操作都会写入审计日志。</p>
-                                <div v-if="userDetail" class="user-detail-strip"><div><span>支撑记录</span><strong>{{ userDetail.reviewCount }}</strong></div><div><span>活跃会话</span><strong>{{ userDetail.activeSessionCount }}</strong></div><div><span>全部会话</span><strong>{{ userDetail.sessions.length }}</strong></div><div><span>最近活动</span><strong>{{ userDetail.sessions[0]?.lastUsedAt ? new Date(userDetail.sessions[0].lastUsedAt).toLocaleString('zh-CN') : '—' }}</strong></div></div>
+                                <div v-if="userDetail" class="user-detail-strip"><div><span>支撑记录</span><strong>{{ userDetail.reviewCount }}</strong></div><div><span>活跃会话</span><strong>{{ userDetail.activeSessionCount }}</strong></div><div><span>全部会话</span><strong>{{ userDetail.sessions.length }}</strong></div><div><span>最近活动</span><strong>{{ userDetail.sessions[0]?.lastUsedAt ? new Date(userDetail.sessions[0].lastUsedAt).toLocaleString('zh-CN') : '-' }}</strong></div></div>
                                 <div class="user-management-grid">
                                     <article class="user-role-card">
                                         <div><span>角色</span><h4>角色权限</h4><p>管理员可以访问整个后台；普通用户只能使用公开功能和个人支撑记录。</p></div>
@@ -1339,7 +1339,7 @@ const showAdminToast = ({ type, message }) => {
                                         <div class="review-mouse-review-contribution"><strong>{{ review.supportByGrip?.length || 0 }} 种握姿</strong><small>{{ review.supportMarkCount || 0 }} 个支撑标记</small></div>
                                         <div class="review-mouse-review-signal"><em :class="`risk-${(review.riskLevel || 'LOW').toLowerCase()}`">{{ riskLabel(review.riskLevel) }}</em><small v-if="review.openReportCount">{{ review.openReportCount }} 条待处理举报</small><small v-for="flag in (review.riskFlags || []).slice(0, 1)" :key="flag">{{ riskFlagLabel(flag) }}</small></div>
                                         <em class="review-mouse-review-status" :class="`status-${review.status?.toLowerCase()}`">{{ statusLabel(review.status) }}</em>
-                                        <time class="review-mouse-review-date mono">{{ review.createdAt ? new Date(review.createdAt).toLocaleDateString("zh-CN") : "—" }}</time>
+                                        <time class="review-mouse-review-date mono">{{ review.createdAt ? new Date(review.createdAt).toLocaleDateString("zh-CN") : "-" }}</time>
                                         <button class="button button-ghost review-mouse-review-action" type="button" @click="openReviewDetails(review)">查看与处理</button>
                                     </article>
                                 </div>
@@ -1382,7 +1382,7 @@ const showAdminToast = ({ type, message }) => {
                                 <aside class="review-governance-details">
                                     <div class="review-score-summary"><span>记录贡献</span><strong>{{ selectedReview.supportByGrip?.length || 0 }}</strong><small> 种握姿支撑图</small></div>
                                     <section class="review-evidence-summary"><span>治理信号</span><div class="review-chip-row"><em :class="`risk-${selectedReview.riskLevel?.toLowerCase()}`">{{ riskLabel(selectedReview.riskLevel) }}</em><em v-for="flag in (selectedReview.riskFlags || [])" :key="flag">{{ riskFlagLabel(flag) }}</em></div><p><strong>{{ selectedReview.openReportCount || 0 }}</strong> 条待处理举报 · 共 {{ selectedReview.reportCount || 0 }} 条历史举报</p></section>
-                                    <section class="review-report-list"><span>举报反馈</span><p v-if="!selectedReview.reports?.length">暂无关联举报</p><article v-for="report in (selectedReview.reports || []).slice(0, 3)" :key="report.id"><div><strong>{{ reviewReportCategoryLabel(report.category) }}</strong><em>{{ report.status === 'OPEN' ? '待处理' : report.status === 'IN_PROGRESS' ? '处理中' : report.status === 'RESOLVED' ? '已解决' : '已驳回' }}</em></div><p>{{ report.description }}</p><small>{{ report.reporterEmail }} · {{ report.createdAt ? new Date(report.createdAt).toLocaleString('zh-CN') : '—' }}</small><div v-if="report.status === 'OPEN' || report.status === 'IN_PROGRESS'" class="review-report-actions"><button type="button" :disabled="loading" @click="updateReviewReport(report, 'REJECTED')">驳回举报</button><button type="button" :disabled="loading" @click="updateReviewReport(report, 'RESOLVED')">标记已解决</button></div></article></section>
+                                    <section class="review-report-list"><span>举报反馈</span><p v-if="!selectedReview.reports?.length">暂无关联举报</p><article v-for="report in (selectedReview.reports || []).slice(0, 3)" :key="report.id"><div><strong>{{ reviewReportCategoryLabel(report.category) }}</strong><em>{{ report.status === 'OPEN' ? '待处理' : report.status === 'IN_PROGRESS' ? '处理中' : report.status === 'RESOLVED' ? '已解决' : '已驳回' }}</em></div><p>{{ report.description }}</p><small>{{ report.reporterEmail }} / {{ report.createdAt ? new Date(report.createdAt).toLocaleString('zh-CN') : '-' }}</small><div v-if="report.status === 'OPEN' || report.status === 'IN_PROGRESS'" class="review-report-actions"><button type="button" :disabled="loading" @click="updateReviewReport(report, 'REJECTED')">驳回举报</button><button type="button" :disabled="loading" @click="updateReviewReport(report, 'RESOLVED')">标记已解决</button></div></article></section>
                                     <section><span>握姿记录</span><p v-if="!selectedReview.supportByGrip?.length">暂无握姿支撑记录</p><p v-for="support in selectedReview.supportByGrip" :key="support.gripStyle"><strong>{{ gripLabel(support.gripStyle) }}</strong><em>已提交支撑图</em></p></section>
                                     <section><span>最近处理</span><p><strong>{{ selectedReview.moderatedBy || '尚未处理' }}</strong></p><p v-if="selectedReview.moderationReason">{{ selectedReview.moderationReason }}</p></section>
                                     <label class="moderation-reason">处理原因<textarea v-model.trim="moderationReason" maxlength="500" placeholder="停用时必填，说明判断依据；恢复时可填写复核说明。"></textarea></label>
@@ -1444,9 +1444,9 @@ const showAdminToast = ({ type, message }) => {
                         <tbody>
                             <tr v-for="entry in audits.items" :key="entry.id" class="audit-entry">
                                 <td class="mono">{{ new Date(entry.createdAt).toLocaleString("zh-CN") }}</td>
-                                <td><strong>{{ entry.actorEmail }}</strong><small>{{ entry.entityType }} · {{ entry.entityId || '—' }}</small></td>
+                                <td><strong>{{ entry.actorEmail }}</strong><small>{{ entry.entityType }} / {{ entry.entityId || '-' }}</small></td>
                                 <td><em>{{ actionLabel(entry.action) }}</em></td>
-                                <td>{{ entry.summary }}</td><td>{{ entry.reason || '—' }}</td><td class="row-actions"><button @click="selectAudit(entry)">查看变更</button></td>
+                                <td>{{ entry.summary }}</td><td>{{ entry.reason || '-' }}</td><td class="row-actions"><button @click="selectAudit(entry)">查看变更</button></td>
                             </tr>
                             <tr v-if="!audits.items.length"><td colspan="6" class="table-empty">暂无符合条件的操作记录</td></tr>
                         </tbody>

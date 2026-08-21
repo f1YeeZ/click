@@ -215,7 +215,7 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(searchTimer); clearTimeout(
           <article v-for="(item, index) in selectedItems" :key="item.id" class="selected-mouse-row">
             <div class="selected-row-top"><span class="selected-index">0{{ index + 1 }}</span><span class="selected-brand">{{ item.brand || '鼠标' }}</span><button type="button" :aria-label="`移除 ${compactName(item)}`" @click="remove(item.id)">×</button></div>
             <div class="selected-row-main"><div class="selected-row-thumb"><img v-if="item.imageUrl" :src="item.imageUrl" :alt="compactName(item)"><span v-else>{{ initials(item) }}</span></div><div class="selected-row-copy"><strong>{{ item.model || item.displayName }}</strong><small>{{ item.variant || '标准版' }}</small></div></div>
-            <dl class="selected-dimensions"><div><dt>长</dt><dd>{{ item.lengthMm ?? '—' }}<small>mm</small></dd></div><div><dt>宽</dt><dd>{{ item.widthMm ?? '—' }}<small>mm</small></dd></div><div><dt>高</dt><dd>{{ item.heightMm ?? '—' }}<small>mm</small></dd></div></dl>
+            <dl class="selected-dimensions"><div><dt>长</dt><dd>{{ item.lengthMm ?? '-' }}<small>mm</small></dd></div><div><dt>宽</dt><dd>{{ item.widthMm ?? '-' }}<small>mm</small></dd></div><div><dt>高</dt><dd>{{ item.heightMm ?? '-' }}<small>mm</small></dd></div></dl>
           </article>
         </div>
         <button v-else class="selected-sidebar-empty" type="button" @click="focusSearch"><span>＋</span><strong>从搜索开始</strong><small>选择鼠标后会出现在这里</small></button>

@@ -62,16 +62,29 @@ const readinessHint = computed(() => !gripStyle.value ? '请先选择握姿' : !
     </header>
     <section class="recommendation-lab">
       <div class="recommendation-controls">
-        <div class="recommendation-step"><span>01</span><div><h2>选择你的握姿</h2></div></div>
-        <div class="recommendation-grips" role="radiogroup" aria-label="选择握持方式">
-          <button v-for="item in gripOptions" :key="item.code" type="button" role="radio" :aria-checked="gripStyle === item.code" :class="{ selected: gripStyle === item.code }" @click="chooseGrip(item.code)">
-            <span>{{ item.label }}</span><small>{{ item.note }}</small><i>{{ item.code }}</i>
-          </button>
+        <div class="recommendation-step"><span>握姿</span><div><h2>选择你的握姿</h2></div></div>
+        <div class="recommendation-grips radio-container" role="radiogroup" aria-label="选择握持方式">
+          <template v-for="item in gripOptions" :key="item.code">
+            <input
+              :id="`recommendation-grip-${item.code.toLowerCase()}`"
+              v-model="gripStyle"
+              type="radio"
+              name="recommendation-grip"
+              :value="item.code"
+              :aria-label="item.label"
+              @change="chooseGrip(item.code)"
+            >
+            <label :for="`recommendation-grip-${item.code.toLowerCase()}`">
+              <span><strong>{{ item.label }}</strong><small>{{ item.note }}</small></span>
+              <i>{{ item.code }}</i>
+            </label>
+          </template>
+          <span class="glider-container" aria-hidden="true"><span class="glider"></span></span>
         </div>
       </div>
 
       <div class="recommendation-hand-panel">
-        <div class="recommendation-step"><span>02</span><div><h2>标记期望支撑位置</h2></div></div>
+        <div class="recommendation-step"><span>支撑</span><div><h2>标记期望支撑位置</h2></div></div>
         <p>按住鼠标或用手指，在手掌上连续涂抹期望被鼠标托住的位置。</p>
         <div class="recommendation-hand-map">
           <div class="recommendation-model-stage">
@@ -103,7 +116,7 @@ const readinessHint = computed(() => !gripStyle.value ? '请先选择握姿' : !
         </div>
       </div>
       <section class="recommendation-submit-panel" aria-labelledby="recommendation-submit-title">
-        <div class="recommendation-step"><span>03</span><div><h2 id="recommendation-submit-title">查看匹配结果</h2></div></div>
+        <div class="recommendation-step"><span>结果</span><div><h2 id="recommendation-submit-title">查看匹配结果</h2></div></div>
         <div class="recommendation-contract">
           <div><span>握姿</span><strong>{{ selectedGrip?.label || '尚未选择' }}</strong></div>
           <div><span>支撑范围</span><strong>{{ supportHasPaint ? `已涂抹约 ${supportCoverage}% 的掌面` : '尚未涂抹' }}</strong></div>

@@ -275,7 +275,7 @@ onBeforeUnmount(() => {
             <div class="image-stage-heading">
               <div>
                 <strong>拖动图片调整截选区域</strong>
-                <span>{{ sourceLabel }} · {{ originalWidth || '—' }} × {{ originalHeight || '—' }}</span>
+                <span>{{ sourceLabel }} / {{ originalWidth || '-' }} × {{ originalHeight || '-' }}</span>
               </div>
               <button type="button" :disabled="!image" @click="resetTransform">重置图片</button>
             </div>

@@ -4645,3 +4645,45 @@ body {
     min-height: 144px;
   }
 }
+
+/* Wide displays keep the fixed 1384px composition and its original side
+ * whitespace. Only small interface type is lifted to a readable floor. */
+@media (min-width: 1440px) {
+  #app .main-nav a,
+  #app .main-nav a:last-child {
+    font-size: 15px;
+  }
+
+  #app .header-search input {
+    font-size: 14px;
+  }
+
+  #app .header-search-submit {
+    font-size: 13px;
+  }
+
+  #app .filter-compact-bar .filter-search,
+  #app .filter-compact-bar .filter-quick-row button,
+  #app .filter-compact-actions > span,
+  #app .filter-more-button,
+  #app .filter-clear-button {
+    font-size: 13px;
+  }
+
+  #app .database-results-head > div > span,
+  #app .database-results-head > label,
+  #app .database-results-head select {
+    font-size: 14px;
+  }
+
+  #app .card-brand,
+  #app .card-facts,
+  #app .mouse-card .compare-add,
+  #app .footer-shell nav a {
+    font-size: 13px;
+  }
+
+  #app .mouse-card h3 {
+    font-size: 17px;
+  }
+}

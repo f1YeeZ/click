@@ -114,11 +114,12 @@ class ApiIntegrationTest {
 
     @Test
     @Transactional
-    void publicCatalogKeywordSearchMatchesOnlyMouseModel() throws Exception {
+    void publicCatalogKeywordSearchMatchesBrandModelAndVariant() throws Exception {
         MouseDevice mouse = publishedMouse();
         mouse.setBrand("QueryScope Brand");
         mouse.setModel("Velocity V");
-        mouse.setSensorName("QueryScope Sensor");
+        mouse.setVariant("Ultra Edition");
+        mouse.setSensorName("SensorOnlyNeedle");
         mice.insert(mouse);
 
         mvc.perform(get("/api/v1/mice").param("q", "velocity"))
@@ -126,7 +127,17 @@ class ApiIntegrationTest {
                 .andExpect(jsonPath("$.items", hasSize(1)))
                 .andExpect(jsonPath("$.items[0].id", is(mouse.getId().toString())));
 
-        mvc.perform(get("/api/v1/mice").param("q", "queryscope"))
+        mvc.perform(get("/api/v1/mice").param("q", "queryscope brand"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].id", is(mouse.getId().toString())));
+
+        mvc.perform(get("/api/v1/mice").param("q", "ultra edition"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].id", is(mouse.getId().toString())));
+
+        mvc.perform(get("/api/v1/mice").param("q", "sensoronlyneedle"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items", hasSize(0)));
     }

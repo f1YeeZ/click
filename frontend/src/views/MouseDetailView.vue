@@ -94,11 +94,11 @@ const connectionModes = computed(() => {
   if (Array.isArray(value)) return value
   return String(value || '').split(',').map((item) => item.trim()).filter(Boolean)
 })
-const connection = computed(() => !mouse.value ? '—' : connectionModes.value.length >= 3 ? '三模' : connectionModes.value.length === 2 ? '双模' : connectionModes.value.includes('wired') ? '有线' : connectionModes.value.length ? '无线' : '—')
-const dimensions = computed(() => mouse.value ? `${mouse.value.lengthMm ?? '—'} × ${mouse.value.widthMm ?? '—'} × ${mouse.value.heightMm ?? '—'} mm` : '—')
-const yesNo = (value) => value == null ? '—' : value ? '是' : '否'
-const valueLabel = (value) => labels[value] || value || '—'
-const gripLabel = (value) => ({ PALM: '趴握', CLAW: '抓握', FINGERTIP: '指握', MIXED: '混合' }[value] || value || '—')
+const connection = computed(() => !mouse.value ? '-' : connectionModes.value.length >= 3 ? '三模' : connectionModes.value.length === 2 ? '双模' : connectionModes.value.includes('wired') ? '有线' : connectionModes.value.length ? '无线' : '-')
+const dimensions = computed(() => mouse.value ? `${mouse.value.lengthMm ?? '-'} × ${mouse.value.widthMm ?? '-'} × ${mouse.value.heightMm ?? '-'} mm` : '-')
+const yesNo = (value) => value == null ? '-' : value ? '是' : '否'
+const valueLabel = (value) => labels[value] || value || '-'
+const gripLabel = (value) => ({ PALM: '趴握', CLAW: '抓握', FINGERTIP: '指握', MIXED: '混合' }[value] || value || '-')
 const hasValue = (value) => value !== null && value !== undefined && value !== '' && (!Array.isArray(value) || value.length > 0)
 const isPublicSourceUrl = (value) => {
   if (!value) return false
@@ -347,14 +347,14 @@ onBeforeUnmount(() => { closeReviewEditor(); stopRealtime(); clearTimeout(realti
         <div class="detail-product-identity">
           <p class="page-label">{{ mouse.brand }}</p>
           <div><h1>{{ mouse.model }}</h1><span>{{ mouse.variant || '标准版' }}</span></div>
-          <div class="detail-tags"><span>{{ connection }}</span><span>{{ mouse.weightG ?? '—' }} g</span><span>{{ valueLabel(mouse.shapeType) }}</span></div>
+          <div class="detail-tags"><span>{{ connection }}</span><span>{{ mouse.weightG ?? '-' }} g</span><span>{{ valueLabel(mouse.shapeType) }}</span></div>
         </div>
         <div class="detail-product-actions">
           <button class="button primary-action-button" type="button" @click="toggleCompare">{{ compare.contains(mouse.id) ? '✓ 已加入对比' : '+ 加入对比' }}</button>
           <a v-if="publicSourceUrl" class="detail-source-link" :href="publicSourceUrl" target="_blank" rel="noopener noreferrer">数据来源 ↗</a>
         </div>
       </div>
-      <div class="hero-statline"><div><span>尺寸</span><strong>{{ dimensions }}</strong></div><div><span>重量</span><strong>{{ mouse.weightG ?? '—' }} g</strong></div><div><span>传感器</span><strong>{{ mouse.sensorName || '—' }}</strong></div><div class="hero-polling-stat"><span>回报率</span><strong>{{ mouse.maxPollingRateHz ?? '—' }} Hz</strong></div></div>
+      <div class="hero-statline"><div><span>尺寸</span><strong>{{ dimensions }}</strong></div><div><span>重量</span><strong>{{ mouse.weightG ?? '-' }} g</strong></div><div><span>传感器</span><strong>{{ mouse.sensorName || '-' }}</strong></div><div class="hero-polling-stat"><span>回报率</span><strong>{{ mouse.maxPollingRateHz ?? '-' }} Hz</strong></div></div>
       <div class="detail-model-stage">
         <section class="detail-visual-panel detail-mouse-viewport" :class="{ 'image-missing': productPanelView === 'image' && (!mouse.imageUrl || productImageFailed) }" aria-labelledby="product-panel-title">
           <header class="model-panel-heading">

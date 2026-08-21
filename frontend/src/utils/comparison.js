@@ -1,5 +1,5 @@
 const NUMBER_PATTERN = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/
-const MISSING_VALUES = new Set(['', '—'])
+const MISSING_VALUES = new Set(['', '-', '—'])
 
 const parseDecimal = (value) => {
   const text = String(value ?? '').trim()
@@ -35,7 +35,9 @@ const formatDifference = (base, value) => {
 const isMissing = (value) => value == null || MISSING_VALUES.has(String(value).trim())
 
 const normalizeRow = (row) => {
-  const cells = Array.isArray(row?.cells) ? row.cells : []
+  const cells = Array.isArray(row?.cells)
+    ? row.cells.map((cell) => ({ ...cell, value: isMissing(cell?.value) ? '-' : cell.value }))
+    : []
   const base = parseDecimal(cells[0]?.value)
   const hasTextDifference = cells.some((cell) => cell?.delta === '不同')
   const isNumericRow = base && !hasTextDifference && cells.every((cell) => isMissing(cell?.value) || parseDecimal(cell?.value))

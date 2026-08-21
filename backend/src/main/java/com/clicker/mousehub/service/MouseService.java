@@ -51,7 +51,9 @@ public class MouseService {
                 .eq(MouseDevice::getStatus, "PUBLISHED");
         if (StringUtils.hasText(q)) {
             String pattern = caseInsensitivePattern(q);
-            query.apply("LOWER(model) LIKE {0}", pattern);
+            query.and(w -> w.apply("LOWER(brand) LIKE {0}", pattern)
+                    .or().apply("LOWER(model) LIKE {0}", pattern)
+                    .or().apply("LOWER(variant) LIKE {0}", pattern));
         }
         query.in(StringUtils.hasText(brand), MouseDevice::getBrand, csv(brand))
                 .in(StringUtils.hasText(size), MouseDevice::getSizeCategory, csv(size))

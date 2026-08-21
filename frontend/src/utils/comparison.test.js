@@ -43,7 +43,7 @@ describe('comparison response normalization', () => {
           { value: '2.0', delta: '' },
           { value: '3.0', delta: '不同' }
         ] },
-        numericRow('重量', 'g', ['51.5', '—'])
+        numericRow('重量', 'g', ['51.5', '-'])
       ]
     })
 

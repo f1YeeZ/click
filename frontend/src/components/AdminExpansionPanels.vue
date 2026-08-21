@@ -66,7 +66,7 @@ const niceStep = max => {
 }
 const comparison = values => {
   const days = Math.min(7, Math.floor(values.length / 2))
-  if (!days) return { label: '暂无对比区间', value: '—', direction: 'flat' }
+  if (!days) return { label: '暂无对比区间', value: '-', direction: 'flat' }
   const recent = values.slice(-days).reduce((sum, value) => sum + value, 0)
   const previous = values.slice(-(days * 2), -days).reduce((sum, value) => sum + value, 0)
   if (!previous) return recent
@@ -239,7 +239,7 @@ const reportPriority = report => {
 }
 const reportPriorityLabel = report => ({ high: '高优先级', medium: '需关注', low: '常规' }[reportPriority(report)])
 const reportStatusIcon = status => ({ OPEN: '!', IN_PROGRESS: '↻', RESOLVED: '✓', REJECTED: '×' }[status] || '•')
-const date = value => value ? new Date(value).toLocaleString('zh-CN') : '—'
+const date = value => value ? new Date(value).toLocaleString('zh-CN') : '-'
 watch(() => settingDrafts['advertising.left.image-url'], () => { adPreviewErrors.left = false })
 watch(() => settingDrafts['advertising.right.image-url'], () => { adPreviewErrors.right = false })
 const loadActive = () => ({ analytics: loadAnalytics, brands: loadBrands, feedback: loadReports, operations: loadOperations }[props.activeTab]?.())
@@ -266,7 +266,7 @@ onBeforeUnmount(() => {
   <div class="expansion-shell">
     <section v-if="activeTab === 'analytics'" class="admin-panel full-panel expansion-panel">
       <div class="panel-heading expansion-heading"><div><h3>运营分析与通知</h3><p>按指标查看每日变化、区间累计和近期趋势。</p></div><select v-model.number="analyticsDays" aria-label="选择统计时间范围" @change="loadAnalytics"><option :value="7">近 7 天</option><option :value="14">近 14 天</option><option :value="30">近 30 天</option><option :value="90">近 90 天</option></select></div>
-      <div class="signal-cards"><article><span>待处理反馈</span><strong>{{ analytics?.openReports ?? '—' }}</strong></article><article><span>未读通知</span><strong>{{ analytics?.unreadNotifications ?? '—' }}</strong></article><article><span>活跃会话</span><strong>{{ analytics?.activeSessions ?? '—' }}</strong></article><article><span>过期数据</span><strong>{{ analytics?.staleMice ?? '—' }}</strong></article></div>
+      <div class="signal-cards"><article><span>待处理反馈</span><strong>{{ analytics?.openReports ?? '-' }}</strong></article><article><span>未读通知</span><strong>{{ analytics?.unreadNotifications ?? '-' }}</strong></article><article><span>活跃会话</span><strong>{{ analytics?.activeSessions ?? '-' }}</strong></article><article><span>过期数据</span><strong>{{ analytics?.staleMice ?? '-' }}</strong></article></div>
       <div class="analytics-report">
         <section v-for="group in analyticsGroups" :key="group.key" class="analytics-report-group">
           <header class="analytics-group-heading"><div><h4>{{ group.title }}</h4><p>{{ group.description }}</p></div><span>{{ group.charts.length }} 项指标</span></header>
@@ -355,7 +355,7 @@ onBeforeUnmount(() => {
           </form>
         </section>
         <section class="ops-card wide-card"><header><div><h4>导入历史</h4><small>保留预检结果、错误报告和最终写入数量</small></div></header><table class="admin-table"><thead><tr><th>文件</th><th>状态</th><th>数据量</th><th>操作人</th><th>时间</th><th></th></tr></thead><tbody><tr v-for="item in imports.items" :key="item.checksum"><td><strong>{{ item.filename }}</strong><small class="mono">{{ item.checksum.slice(0, 12) }}</small></td><td><em>{{ statusLabel(item.status) }}</em></td><td>{{ item.totalCount || 0 }} 行 · +{{ item.createdCount || 0 }} / ↻{{ item.updatedCount || 0 }}</td><td>{{ item.actorEmail }}</td><td>{{ date(item.completedAt || item.createdAt) }}</td><td><button v-if="item.hasErrorReport" @click="download(`/admin/mice/imports/${item.checksum}/errors`, `import-errors-${item.checksum}.csv`)">下载错误</button></td></tr></tbody></table></section>
-        <section class="ops-card wide-card"><header><div><h4>登录会话</h4><small>查看最后活动并按设备撤销访问</small></div><div class="session-filter"><input v-model="sessionQuery" class="session-search" placeholder="搜索邮箱" aria-label="搜索登录会话邮箱" @keyup.enter="loadSessions(1)"><label class="session-active-toggle"><input v-model="sessionActiveOnly" type="checkbox" @change="loadSessions(1)"><span class="session-check-indicator" aria-hidden="true"></span><span>仅活跃</span></label></div></header><table class="admin-table"><thead><tr><th>用户</th><th>设备</th><th>网络</th><th>最后活动</th><th>到期</th><th></th></tr></thead><tbody><tr v-for="session in sessions.items" :key="session.id"><td><strong>{{ session.userEmail }}</strong><small>{{ session.active ? '活跃' : '已失效' }}</small></td><td class="session-agent">{{ session.userAgent || '未知设备' }}</td><td class="mono">{{ session.ipAddress || '—' }}</td><td>{{ date(session.lastUsedAt || session.createdAt) }}</td><td>{{ date(session.expiresAt) }}</td><td><button v-if="session.active" class="danger-link" @click="revokeSession(session)">强制下线</button></td></tr></tbody></table></section>
+        <section class="ops-card wide-card"><header><div><h4>登录会话</h4><small>查看最后活动并按设备撤销访问</small></div><div class="session-filter"><input v-model="sessionQuery" class="session-search" placeholder="搜索邮箱" aria-label="搜索登录会话邮箱" @keyup.enter="loadSessions(1)"><label class="session-active-toggle"><input v-model="sessionActiveOnly" type="checkbox" @change="loadSessions(1)"><span class="session-check-indicator" aria-hidden="true"></span><span>仅活跃</span></label></div></header><table class="admin-table"><thead><tr><th>用户</th><th>设备</th><th>网络</th><th>最后活动</th><th>到期</th><th></th></tr></thead><tbody><tr v-for="session in sessions.items" :key="session.id"><td><strong>{{ session.userEmail }}</strong><small>{{ session.active ? '活跃' : '已失效' }}</small></td><td class="session-agent">{{ session.userAgent || '未知设备' }}</td><td class="mono">{{ session.ipAddress || '-' }}</td><td>{{ date(session.lastUsedAt || session.createdAt) }}</td><td>{{ date(session.expiresAt) }}</td><td><button v-if="session.active" class="danger-link" @click="revokeSession(session)">强制下线</button></td></tr></tbody></table></section>
       </div>
     </section>
     <div v-if="loading" class="expansion-loading">正在同步运营数据…</div>

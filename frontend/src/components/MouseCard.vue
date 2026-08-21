@@ -21,12 +21,12 @@ const toggle = () => { try { compare.toggle(props.mouse); error.value = '' } cat
       </div>
       <div class="card-body">
         <span class="card-brand">{{ mouse.brand }}</span>
-        <h3 :title="[mouse.model, mouse.variant].filter(Boolean).join(' · ')">{{ mouse.model }}<small v-if="mouse.variant"> · {{ mouse.variant }}</small></h3>
+        <h3 :title="[mouse.model, mouse.variant].filter(Boolean).join(' / ')">{{ mouse.model }}<small v-if="mouse.variant"> / {{ mouse.variant }}</small></h3>
       </div>
     </RouterLink>
     <div class="card-footer">
       <p class="card-facts">
-        <span>{{ mouse.weightG ?? '—' }}g</span>
+        <span>{{ mouse.weightG ?? '-' }}g</span>
         <span>{{ labels[mouse.shapeType] || mouse.shapeType || '未知形状' }}</span>
         <span>{{ connection }}</span>
       </p>

@@ -154,8 +154,12 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(filterTimer); clearTimeout(
       <aside id="catalog-filter-panel" class="database-filter-rail" :class="{ 'mobile-open': mobileFiltersOpen }">
         <form class="filter-studio filter-workbench" @submit.prevent="submit" @keydown.esc="advancedFiltersOpen = false">
           <div class="filter-compact-bar">
-            <label class="filter-search"><span>型号</span><input v-model.trim="filters.q" type="search" placeholder="搜索鼠标" autocomplete="off"></label>
+            <div class="filter-search-row">
+              <label class="filter-search"><span>型号</span><input v-model.trim="filters.q" type="search" placeholder="搜索鼠标" autocomplete="off"></label>
+              <label class="filter-page-size"><span>每页</span><select v-model.number="filters.pageSize" aria-label="每页显示卡片数量"><option :value="12">12</option><option :value="24">24</option><option :value="48">48</option></select></label>
+            </div>
             <div class="filter-quick-row" aria-label="快捷筛选">
+              <span class="filter-quick-label">常用</span>
               <button type="button" :aria-pressed="Number(filters.weightMax) === 60" @click="toggleQuickFilter('lightweight')">≤ 60g</button>
               <button type="button" :aria-pressed="filters.connection.includes('wireless_2_4g')" @click="toggleQuickFilter('wireless')">2.4G</button>
               <button type="button" :aria-pressed="filters.shape.includes('SYMMETRICAL')" @click="toggleQuickFilter('symmetrical')">对称</button>
@@ -171,7 +175,21 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(filterTimer); clearTimeout(
           <Transition name="filter-panel">
             <div v-if="advancedFiltersOpen" id="filter-advanced-panel" class="filter-advanced-panel">
               <nav class="filter-domain-tabs" aria-label="筛选参数分类">
-                <button v-for="tab in filterTabs" :key="tab.key" type="button" :class="{ active: activeFilterSection === tab.key }" :aria-pressed="activeFilterSection === tab.key" :aria-controls="`filter-domain-${tab.key}`" @click="activeFilterSection = tab.key"><strong>{{ tab.label }}</strong><small>{{ tab.hint }}</small></button>
+                <div class="filter-domain-radio radio-container" role="radiogroup" aria-label="选择筛选参数分类">
+                  <template v-for="tab in filterTabs" :key="tab.key">
+                    <input
+                      :id="`filter-domain-choice-${tab.key}`"
+                      v-model="activeFilterSection"
+                      type="radio"
+                      name="filter-domain"
+                      :value="tab.key"
+                      :aria-label="tab.label"
+                      :aria-controls="`filter-domain-${tab.key}`"
+                    >
+                    <label :for="`filter-domain-choice-${tab.key}`"><strong>{{ tab.label }}</strong><small>{{ tab.hint }}</small></label>
+                  </template>
+                  <span class="glider-container" aria-hidden="true"><span class="glider"></span></span>
+                </div>
               </nav>
 
               <section :id="`filter-domain-${activeFilterSection}`" :key="activeFilterSection" class="filter-domain-panel" aria-live="polite">
@@ -210,7 +228,7 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(filterTimer); clearTimeout(
               </template>
               </section>
 
-              <div class="filter-submitbar"><label>每页<select v-model.number="filters.pageSize"><option :value="12">12</option><option :value="24">24</option><option :value="48">48</option></select></label><button class="mobile-filter-done primary-action-button" type="button" @click="showMobileResults">查看 {{ result.page.totalItems }} 款结果</button></div>
+              <div class="filter-submitbar"><button class="mobile-filter-done primary-action-button" type="button" @click="showMobileResults">查看 {{ result.page.totalItems }} 款结果</button></div>
             </div>
           </Transition>
 
@@ -221,7 +239,7 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(filterTimer); clearTimeout(
       <section ref="resultsSection" class="database-results">
         <header class="database-results-head">
           <div><h1>鼠标数据库</h1><span>找到 {{ result.page.totalItems }} 款符合当前条件的鼠标</span></div>
-          <label>排序方式<select v-model="filters.sort"><option value="newest">最近录入</option><option value="brand_asc">品牌 A—Z</option><option value="weight_asc">从轻到重</option><option value="weight_desc">从重到轻</option></select></label>
+          <label>排序方式<select v-model="filters.sort"><option value="newest">最近录入</option><option value="brand_asc">品牌 A-Z</option><option value="weight_asc">从轻到重</option><option value="weight_desc">从重到轻</option></select></label>
         </header>
         <div class="active-filter-strip" v-if="activeFilterChips.length"><span class="active-filter-title">当前筛选</span><button v-for="(chip, index) in activeFilterChips" :key="`${chip.label}-${index}`" type="button" class="active-filter-chip" @click="clearChip(chip)"><span>{{ chip.label }}</span><b>{{ chip.value }}</b><i>×</i></button><button class="active-filter-clear" type="button" @click="reset">清空全部</button></div>
         <div class="flash error" v-if="error">{{ error }}</div>
@@ -233,3 +251,45 @@ onBeforeUnmount(() => { stopRealtime(); clearTimeout(filterTimer); clearTimeout(
     </div>
   </main>
 </template>
+
+<style>
+.database-page.section-shell {
+  width: var(--content-max-width, 105rem) !important;
+  max-width: var(--content-max-width, 105rem) !important;
+  margin-inline: auto !important;
+  padding-inline: 0 !important;
+}
+
+.database-page .database-content-layout,
+.database-page .database-filter-rail,
+.database-page .filter-workbench,
+.database-page .database-results,
+.database-page .database-results-head,
+.database-page .mouse-grid.catalog-grid {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-inline: 0;
+}
+
+.database-page .mouse-grid.catalog-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 1rem !important;
+}
+
+@media (max-width: 820px) {
+  .database-page.section-shell {
+    width: min(calc(100% - 2rem), var(--content-max-width, 105rem)) !important;
+  }
+
+  .database-page .mouse-grid.catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+}
+
+@media (max-width: 560px) {
+  .database-page .mouse-grid.catalog-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+</style>

@@ -10,5 +10,7 @@ import './assets/app-mobile.css'
 import './assets/figma-redesign.css'
 import './assets/app-admin.css'
 import './assets/app-select.css'
+import './assets/geardb-responsive.css'
+import './assets/precision-system.css'
 
 createApp(App).use(createPinia()).use(router).mount('#app')
