@@ -39,6 +39,10 @@ docker compose ps
 docker compose logs --tail=200 backend
 ```
 
+后端镜像构建固定使用 `backend/maven-settings.xml` 中的腾讯云 Maven 镜像，并通过 BuildKit 缓存 Maven 本地仓库。首次构建仍需下载依赖，后续源码更新会复用缓存。构建日志不再使用 Maven 静默模式，可以直接看到依赖解析和编译进度。
+
+不要在日常更新时执行 `docker builder prune -a` 或 `docker system prune -a`；这会删除 Maven 构建缓存，导致下次后端构建重新下载全部依赖。若必须清理构建缓存，应预留一次完整依赖下载的时间。
+
 Flyway 会在后端接受流量前自动执行版本化迁移。首次接管由旧版 `schema.sql` 创建的数据库时，会建立 Flyway 基线并执行幂等迁移。
 
 容器内健康检查：
@@ -140,6 +144,16 @@ docker compose up -d
 docker compose ps
 docker compose logs --tail=200 backend frontend
 ```
+
+若仅后端或前端发生变化，可以缩小构建范围：
+
+```bash
+docker compose build --pull backend
+docker compose build frontend
+docker compose up -d
+```
+
+腾讯云 Maven 镜像已固化在仓库中，不需要在服务器创建临时 Dockerfile 或手工修改 Maven 配置。
 
 当前拓扑是单后端实例，会存在短暂重启窗口。需要无损升级时，应在外部负载均衡器后运行至少两个后端实例，并把实时事件与限流状态迁移到共享基础设施。
 

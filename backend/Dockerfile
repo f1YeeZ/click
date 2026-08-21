@@ -1,9 +1,12 @@
+# syntax=docker/dockerfile:1
+
 FROM maven:3.9.9-eclipse-temurin-17 AS build
 WORKDIR /workspace
+COPY maven-settings.xml /root/.m2/settings.xml
 COPY pom.xml .
-RUN mvn -B -q dependency:go-offline
 COPY src ./src
-RUN mvn -B clean package -DskipTests
+RUN --mount=type=cache,id=clicker-maven,target=/root/.m2/repository \
+    mvn -B -ntp -s /root/.m2/settings.xml clean package -DskipTests
 
 FROM eclipse-temurin:17-jre-alpine
 RUN apk add --no-cache curl && addgroup -S clicker && adduser -S clicker -G clicker
